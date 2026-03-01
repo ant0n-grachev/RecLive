@@ -1,0 +1,128 @@
+import type {Location} from "../types/facility";
+
+export const nick: Record<number, Location[]> = {
+    0: [
+        {
+            facilityId: 1186,
+            locationId: 5761,
+            locationName: "Nick Power House",
+            floor: 0,
+            isClosed: null,
+            currentCapacity: null,
+            maxCapacity: 140,
+            lastUpdated: null,
+        },
+        {
+            facilityId: 1186,
+            locationId: 5764,
+            locationName: "Nick Soderholm Family Aquatic Center",
+            floor: 0,
+            isClosed: null,
+            currentCapacity: null,
+            maxCapacity: 230,
+            lastUpdated: null,
+        },
+    ],
+
+    1: [
+        {
+            facilityId: 1186,
+            locationId: 5760,
+            locationName: "Nick Level 1 Fitness",
+            floor: 1,
+            isClosed: null,
+            currentCapacity: null,
+            maxCapacity: 150,
+            lastUpdated: null,
+        },
+        {
+            facilityId: 1186,
+            locationId: 7089,
+            locationName: "Nick Courts 1 & 2",
+            floor: 1,
+            isClosed: null,
+            currentCapacity: null,
+            maxCapacity: 24,
+            lastUpdated: null,
+        },
+    ],
+
+    2: [
+        {
+            facilityId: 1186,
+            locationId: 5762,
+            locationName: "Nick Level 2 Fitness",
+            floor: 2,
+            isClosed: null,
+            currentCapacity: null,
+            maxCapacity: 100,
+            lastUpdated: null,
+        },
+    ],
+
+    3: [
+        {
+            facilityId: 1186,
+            locationId: 5758,
+            locationName: "Nick Level 3 Fitness",
+            floor: 3,
+            isClosed: null,
+            currentCapacity: null,
+            maxCapacity: 200,
+            lastUpdated: null,
+        },
+        {
+            facilityId: 1186,
+            locationId: 7090,
+            locationName: "Nick Courts 3-6",
+            floor: 3,
+            isClosed: null,
+            currentCapacity: null,
+            maxCapacity: 48,
+            lastUpdated: null,
+        },
+        {
+            facilityId: 1186,
+            locationId: 5766,
+            locationName: "Nick Courts 7 & 8",
+            floor: 3,
+            isClosed: null,
+            currentCapacity: null,
+            maxCapacity: 24,
+            lastUpdated: null,
+        },
+    ],
+
+    4: [
+        {
+            facilityId: 1186,
+            locationId: 5753,
+            locationName: "Nick Racquetball Court 1",
+            floor: 4,
+            isClosed: null,
+            currentCapacity: null,
+            maxCapacity: 6,
+            lastUpdated: null,
+        },
+        {
+            facilityId: 1186,
+            locationId: 5754,
+            locationName: "Nick Racquetball Court 2",
+            floor: 4,
+            isClosed: null,
+            currentCapacity: null,
+            maxCapacity: 6,
+            lastUpdated: null,
+        },
+        {
+            facilityId: 1186,
+            locationId: 5763,
+            locationName: "Nick Track",
+            floor: 4,
+            isClosed: null,
+            currentCapacity: null,
+            maxCapacity: 100,
+            lastUpdated: null,
+        },
+    ],
+};
