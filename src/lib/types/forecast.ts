@@ -15,10 +15,19 @@ export interface ForecastBand {
     level: "low" | "medium" | "peak";
 }
 
+export interface ForecastOccupancyThresholds {
+    lowMax: number;
+    peakMin: number;
+}
+
 export interface ForecastHour {
     hourStart: string;
     expectedCount: number;
     expectedPct?: number | null;
+    actualCount?: number | null;
+    actualPct?: number | null;
+    actualSampleCount?: number;
+    actualCoverage?: number | null;
 }
 
 export interface ForecastCategoryDay {
@@ -40,5 +49,10 @@ export interface ForecastDay {
 export interface FacilityForecastResponse {
     facilityId: number;
     facilityName: string;
+    forecastDayStartHour?: number;
+    forecastDayEndHour?: number;
+    occupancyThresholds?: ForecastOccupancyThresholds | null;
+    sectionOccupancyThresholds?: Record<string, ForecastOccupancyThresholds> | null;
+    locationOccupancyThresholds?: Record<string, ForecastOccupancyThresholds> | null;
     weeklyForecast: ForecastDay[];
 }

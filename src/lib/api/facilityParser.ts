@@ -1,10 +1,14 @@
 import axios from "axios";
-import type {FacilityId, FacilityPayload, Location} from "../types/facility";
+import type {FacilityId, FacilityPayload, LiveDataSource, Location} from "../types/facility";
 import {nick} from "../data/nick";
 import {bakke} from "../data/bakke";
+import {env} from "../config/env";
+import {FACILITY_DISPLAY_NAMES} from "../config/facilitySections";
 
-const URL =
-    "https://goboardapi.azurewebsites.net/api/FacilityCount/GetCountsByAccount?AccountAPIKey=7938fc89-a15c-492d-9566-12c961bc1f27";
+const FORECAST_API_BASE_URL = env.forecastApiBaseUrl;
+const LIVE_COUNTS_FACILITY_URL = env.liveCountsUrl;
+const LIVE_COUNTS_FALLBACK_URL = `${FORECAST_API_BASE_URL}/api/live-counts`;
+const LIVE_COUNTS_REQUEST_TIMEOUT_MS = 10_000;
 
 interface LiveLocationRow {
     LocationId: number;
@@ -13,10 +17,10 @@ interface LiveLocationRow {
     LastUpdatedDateAndTime: string | null;
 }
 
-const FACILITY_NAMES: Record<FacilityId, string> = {
-    1186: "Nicholas Recreation Center",
-    1656: "Bakke Recreation & Wellbeing Center",
-};
+interface LiveCountsPayloadEnvelope {
+    rows?: LiveLocationRow[];
+    data?: LiveLocationRow[];
+}
 
 const FACILITY_LAYOUTS: Record<FacilityId, Record<number, Location[]>> = {
     1186: nick,
@@ -40,14 +44,57 @@ const flatten = (floors: Record<number, Location[]>) => {
         );
 };
 
+const normalizeLiveRows = (payload: unknown): LiveLocationRow[] => {
+    if (Array.isArray(payload)) return payload as LiveLocationRow[];
+    if (!payload || typeof payload !== "object") {
+        throw new Error("Unexpected live counts payload");
+    }
+
+    const envelope = payload as LiveCountsPayloadEnvelope;
+    if (Array.isArray(envelope.rows)) return envelope.rows;
+    if (Array.isArray(envelope.data)) return envelope.data;
+    throw new Error("Unexpected live counts payload");
+};
+
+const ensureNonEmptyLiveRows = (rows: LiveLocationRow[]): LiveLocationRow[] => {
+    if (rows.length === 0) {
+        throw new Error("Live counts feed is empty");
+    }
+    return rows;
+};
+
+const fetchLiveRows = async (
+    signal?: AbortSignal
+): Promise<{rows: LiveLocationRow[]; source: LiveDataSource}> => {
+    try {
+        const directResp = await axios.get<unknown>(LIVE_COUNTS_FACILITY_URL, {
+            signal,
+            timeout: LIVE_COUNTS_REQUEST_TIMEOUT_MS,
+        });
+        return {
+            rows: ensureNonEmptyLiveRows(normalizeLiveRows(directResp.data)),
+            source: "facility_api",
+        };
+    } catch (directError) {
+        if (signal?.aborted) throw directError;
+    }
+
+    const fallbackResp = await axios.get<unknown>(LIVE_COUNTS_FALLBACK_URL, {
+        signal,
+        timeout: LIVE_COUNTS_REQUEST_TIMEOUT_MS,
+    });
+    return {
+        rows: ensureNonEmptyLiveRows(normalizeLiveRows(fallbackResp.data)),
+        source: "fallback_api",
+    };
+};
+
 export async function fetchFacility(
     facilityId: FacilityId,
     signal?: AbortSignal
 ): Promise<FacilityPayload> {
     const layout = cloneLayout(FACILITY_LAYOUTS[facilityId]);
-
-    const resp = await axios.get<LiveLocationRow[]>(URL, {signal});
-    const live = resp.data ?? [];
+    const {rows: live, source} = await fetchLiveRows(signal);
 
     const index: Record<number, Location> = {};
 
@@ -72,8 +119,9 @@ export async function fetchFacility(
 
     return {
         facilityId,
-        facilityName: FACILITY_NAMES[facilityId],
+        facilityName: FACILITY_DISPLAY_NAMES[facilityId],
         floors: layout,
         locations: flatten(layout),
+        liveDataSource: source,
     };
 }
