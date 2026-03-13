@@ -4,21 +4,36 @@ import requests
 import pymysql
 from datetime import datetime
 import pytz
+from env_loader import load_project_dotenv
+from facility_capacities import load_facility_capacities
 
-URL = "https://goboardapi.azurewebsites.net/api/FacilityCount/GetCountsByAccount?AccountAPIKey=YOUR_ACCOUNT_API_KEY"
+SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
+load_project_dotenv()
+
+def require_env(name: str) -> str:
+    value = os.getenv(name)
+    if value is None:
+        raise RuntimeError(f"Missing required env var: {name}")
+
+    normalized = value.strip()
+    if not normalized:
+        raise RuntimeError(f"Missing required env var: {name}")
+    return normalized
+
+
+def require_int_env(name: str) -> int:
+    raw = require_env(name)
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"Invalid integer for env var {name}: {raw}") from exc
+
+
+LIVE_COUNTS_URL = require_env("LIVE_COUNTS_URL")
 TZ_NAME = "America/Chicago"
 TZ = pytz.timezone(TZ_NAME)
 
-# location_id -> max_capacity
-MAX_CAP = {
-    # Nick
-    5761: 140, 5764: 230, 5760: 150, 7089: 24, 5762: 100,
-    5758: 200, 7090: 48, 5766: 24, 5753: 6, 5754: 6, 5763: 100,
-    # Bakke
-    8718: 30, 8717: 130, 8720: 24, 8714: 24, 8716: 116, 10550: 200,
-    8705: 65, 8708: 27, 8712: 12, 8700: 246, 8698: 48, 8701: 39,
-    8699: 75, 8696: 46, 8694: 100, 8695: 18,
-}
+MAX_CAP = load_facility_capacities()
 
 LATEST_SQL = """
 SELECT h.location_id, h.last_updated
@@ -50,11 +65,11 @@ def chicago_now_str(milliseconds: bool = False) -> str:
     return value[:-3] if milliseconds else value
 
 def db_connect():
-    host = os.getenv("GYM_DB_HOST", "localhost")
-    port = int(os.getenv("GYM_DB_PORT", "3306"))
-    user = os.getenv("GYM_DB_USER", "root")
-    password = os.getenv("GYM_DB_PASSWORD", "REMOVED_DB_PASSWORD")
-    database = os.getenv("GYM_DB_NAME", "gym_data")
+    host = require_env("GYM_DB_HOST")
+    port = require_int_env("GYM_DB_PORT")
+    user = require_env("GYM_DB_USER")
+    password = require_env("GYM_DB_PASSWORD")
+    database = require_env("GYM_DB_NAME")
 
     return pymysql.connect(
         host=host,
@@ -64,12 +79,18 @@ def db_connect():
         database=database,
         autocommit=True,
         charset="utf8mb4",
+        connect_timeout=10,
+        read_timeout=20,
+        write_timeout=20,
     )
 
 def fetch_live():
-    r = requests.get(URL, timeout=20)
+    r = requests.get(LIVE_COUNTS_URL, timeout=20)
     r.raise_for_status()
-    return r.json()
+    payload = r.json()
+    if not isinstance(payload, list):
+        raise RuntimeError("Live feed payload is not a list")
+    return payload
 
 def get_latest_map(conn):
     with conn.cursor() as cur:
@@ -86,12 +107,20 @@ def insert_if_changed(conn, live):
     skipped = 0
 
     for f in live:
+        if not isinstance(f, dict):
+            continue
+
         loc_id = f.get("LocationId")
         if loc_id is None:
             continue
 
-        loc_id = int(loc_id)
-        last_updated = f.get("LastUpdatedDateAndTime") or ""
+        try:
+            loc_id = int(loc_id)
+        except (TypeError, ValueError):
+            continue
+
+        last_updated_raw = f.get("LastUpdatedDateAndTime")
+        last_updated = str(last_updated_raw).strip() if last_updated_raw is not None else ""
 
         if latest.get(loc_id, "") == last_updated:
             skipped += 1

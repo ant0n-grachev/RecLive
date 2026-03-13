@@ -1,4 +1,5 @@
 export type FacilityId = 1186 | 1656;
+export type LiveDataSource = "facility_api" | "fallback_api" | "cache";
 
 export interface Location {
     facilityId: FacilityId;
@@ -16,4 +17,5 @@ export interface FacilityPayload {
     facilityName: string;
     floors: Record<number, Location[]>;
     locations: Location[];
+    liveDataSource?: LiveDataSource;
 }

@@ -1,4 +1,5 @@
 import type {Location} from "../types/facility";
+import {getFacilityCapacity} from "./facilityCapacities";
 
 export const nick: Record<number, Location[]> = {
     0: [
@@ -9,7 +10,7 @@ export const nick: Record<number, Location[]> = {
             floor: 0,
             isClosed: null,
             currentCapacity: null,
-            maxCapacity: 140,
+            maxCapacity: getFacilityCapacity(5761),
             lastUpdated: null,
         },
         {
@@ -19,7 +20,7 @@ export const nick: Record<number, Location[]> = {
             floor: 0,
             isClosed: null,
             currentCapacity: null,
-            maxCapacity: 230,
+            maxCapacity: getFacilityCapacity(5764),
             lastUpdated: null,
         },
     ],
@@ -32,7 +33,7 @@ export const nick: Record<number, Location[]> = {
             floor: 1,
             isClosed: null,
             currentCapacity: null,
-            maxCapacity: 150,
+            maxCapacity: getFacilityCapacity(5760),
             lastUpdated: null,
         },
         {
@@ -42,7 +43,7 @@ export const nick: Record<number, Location[]> = {
             floor: 1,
             isClosed: null,
             currentCapacity: null,
-            maxCapacity: 24,
+            maxCapacity: getFacilityCapacity(7089),
             lastUpdated: null,
         },
     ],
@@ -55,7 +56,7 @@ export const nick: Record<number, Location[]> = {
             floor: 2,
             isClosed: null,
             currentCapacity: null,
-            maxCapacity: 100,
+            maxCapacity: getFacilityCapacity(5762),
             lastUpdated: null,
         },
     ],
@@ -68,7 +69,7 @@ export const nick: Record<number, Location[]> = {
             floor: 3,
             isClosed: null,
             currentCapacity: null,
-            maxCapacity: 200,
+            maxCapacity: getFacilityCapacity(5758),
             lastUpdated: null,
         },
         {
@@ -78,7 +79,7 @@ export const nick: Record<number, Location[]> = {
             floor: 3,
             isClosed: null,
             currentCapacity: null,
-            maxCapacity: 48,
+            maxCapacity: getFacilityCapacity(7090),
             lastUpdated: null,
         },
         {
@@ -88,7 +89,7 @@ export const nick: Record<number, Location[]> = {
             floor: 3,
             isClosed: null,
             currentCapacity: null,
-            maxCapacity: 24,
+            maxCapacity: getFacilityCapacity(5766),
             lastUpdated: null,
         },
     ],
@@ -101,7 +102,7 @@ export const nick: Record<number, Location[]> = {
             floor: 4,
             isClosed: null,
             currentCapacity: null,
-            maxCapacity: 6,
+            maxCapacity: getFacilityCapacity(5753),
             lastUpdated: null,
         },
         {
@@ -111,7 +112,7 @@ export const nick: Record<number, Location[]> = {
             floor: 4,
             isClosed: null,
             currentCapacity: null,
-            maxCapacity: 6,
+            maxCapacity: getFacilityCapacity(5754),
             lastUpdated: null,
         },
         {
@@ -121,7 +122,7 @@ export const nick: Record<number, Location[]> = {
             floor: 4,
             isClosed: null,
             currentCapacity: null,
-            maxCapacity: 100,
+            maxCapacity: getFacilityCapacity(5763),
             lastUpdated: null,
         },
     ],

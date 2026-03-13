@@ -1,10 +1,12 @@
 import type {FacilityId, FacilityPayload} from "../types/facility";
 
 export const CACHE_KEY = "reclive:facilityCache";
-export const CACHE_VERSION = 1;
+export const CACHE_VERSION = 2;
+export const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
-type CacheEntry = {
+export type CacheEntry = {
     version: number;
+    cachedAt: number;
     payload: FacilityPayload;
 };
 
@@ -34,10 +36,36 @@ const writeCache = (map: CacheMap) => {
     }
 };
 
+const isFreshEntry = (entry: CacheEntry | undefined, now = Date.now()): entry is CacheEntry => (
+    Boolean(entry)
+    && entry?.version === CACHE_VERSION
+    && Number.isFinite(entry.cachedAt)
+    && now - entry.cachedAt <= CACHE_MAX_AGE_MS
+);
+
+const pruneStaleEntries = (map: CacheMap, now = Date.now()): {map: CacheMap; changed: boolean} => {
+    let changed = false;
+    const freshMap: CacheMap = {};
+
+    for (const [facilityId, entry] of Object.entries(map)) {
+        if (!isFreshEntry(entry, now)) {
+            changed = true;
+            continue;
+        }
+        freshMap[facilityId] = entry;
+    }
+
+    return {map: freshMap, changed};
+};
+
 export const getFacilityCache = (facilityId: FacilityId): CacheEntry | null => {
-    const map = readCache();
+    const {map, changed} = pruneStaleEntries(readCache());
+    if (changed) {
+        writeCache(map);
+    }
+
     const entry = map[String(facilityId)];
-    if (!entry || entry.version !== CACHE_VERSION) return null;
+    if (!isFreshEntry(entry)) return null;
     return entry;
 };
 
@@ -47,9 +75,11 @@ export const setFacilityCache = (
 ): void => {
     if (!hasWindow()) return;
     const map = readCache();
-    map[String(facilityId)] = {
+    const {map: prunedMap} = pruneStaleEntries(map);
+    prunedMap[String(facilityId)] = {
         version: CACHE_VERSION,
+        cachedAt: Date.now(),
         payload,
     };
-    writeCache(map);
+    writeCache(prunedMap);
 };

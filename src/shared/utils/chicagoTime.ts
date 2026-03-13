@@ -27,6 +27,11 @@ const chicagoTimeFormatter = new Intl.DateTimeFormat("en-US", {
     hour: "numeric",
     minute: "2-digit",
 });
+const chicagoHourFormatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: CHICAGO_TIMEZONE,
+    hour: "2-digit",
+    hourCycle: "h23",
+});
 
 const chicagoDateTimeFormatter = new Intl.DateTimeFormat("en-US", {
     timeZone: CHICAGO_TIMEZONE,
@@ -192,8 +197,45 @@ export const formatChicagoTime = (value: string | null | undefined): string | nu
     return chicagoTimeFormatter.format(new Date(timestampMs));
 };
 
+export const formatChicagoUpdatedRelative = (
+    value: string | null | undefined,
+    now: Date = new Date()
+): string | null => {
+    const formattedTime = formatChicagoTime(value);
+    if (!formattedTime) return null;
+
+    const daysAgo = getChicagoDayAge(value, now);
+    if (daysAgo === 0) return `Updated today at ${formattedTime}`;
+    if (daysAgo === 1) return `Updated yesterday at ${formattedTime}`;
+    if (typeof daysAgo === "number") return `Updated ${daysAgo} days ago at ${formattedTime}`;
+    return `Updated at ${formattedTime}`;
+};
+
 export const formatChicagoDateTime = (value: string | null | undefined): string | null => {
     const timestampMs = getChicagoTimestampMs(value);
     if (timestampMs === null) return null;
     return chicagoDateTimeFormatter.format(new Date(timestampMs));
+};
+
+export const getChicagoHour = (value: Date = new Date()): number | null => {
+    const parts = chicagoHourFormatter.formatToParts(value);
+    const hourText = parts.find((part) => part.type === "hour")?.value;
+    if (!hourText) return null;
+
+    const hour = Number(hourText);
+    if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+        return null;
+    }
+
+    return hour;
+};
+
+export const isWithinChicagoHours = (
+    startHourInclusive: number,
+    endHourExclusive: number,
+    value: Date = new Date()
+): boolean => {
+    const hour = getChicagoHour(value);
+    if (hour === null) return false;
+    return hour >= startHourInclusive && hour < endHourExclusive;
 };

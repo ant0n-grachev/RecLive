@@ -1,20 +1,24 @@
 import {Card} from "@mui/material";
 import type {ReactNode} from "react";
+import {CARD_SHELL_SX} from "../utils/styles";
 
-export default function ModernCard({children}: { children: ReactNode }) {
+interface ModernCardProps {
+    children: ReactNode;
+    disableMinHeight?: boolean;
+}
+
+export default function ModernCard({children, disableMinHeight = false}: ModernCardProps) {
     return (
         <Card
             variant="outlined"
             sx={{
-                p: 3,
-                borderRadius: 3,
-                borderColor: "divider",
-                backgroundColor: "background.paper",
+                ...CARD_SHELL_SX,
+                p: {xs: 2, sm: 2.25},
                 display: "flex",
                 flexDirection: "column",
                 gap: 1.25,
-                minHeight: 150,
-                height: "100%",
+                minHeight: disableMinHeight ? 0 : 150,
+                height: disableMinHeight ? "auto" : "100%",
             }}
         >
             {children}
