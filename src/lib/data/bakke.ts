@@ -34,12 +34,12 @@ export const bakke: Record<number, Location[]> = {
         },
         {
             facilityId: 1656,
-            locationId: 8714,
-            locationName: "Bakke Courts 3&4",
+            locationId: 8698,
+            locationName: "Bakke Courts 5-8",
             floor: 1,
             isClosed: null,
             currentCapacity: null,
-            maxCapacity: 24,
+            maxCapacity: 48,
             lastUpdated: null,
         },
         {
@@ -100,12 +100,12 @@ export const bakke: Record<number, Location[]> = {
         },
         {
             facilityId: 1656,
-            locationId: 8698,
-            locationName: "Bakke Courts 5-8",
+            locationId: 8714,
+            locationName: "Bakke Courts 3&4",
             floor: 3,
             isClosed: null,
             currentCapacity: null,
-            maxCapacity: 48,
+            maxCapacity: 24,
             lastUpdated: null,
         },
         {

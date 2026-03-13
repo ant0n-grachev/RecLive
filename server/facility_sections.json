@@ -1,0 +1,81 @@
+{
+  "facilities": {
+    "1186": {
+      "shortName": "Nick",
+      "facilityName": "Nicholas Recreation Center",
+      "sections": [
+        {
+          "key": "fitness floors",
+          "title": "Fitness Floors",
+          "ids": [5761, 5760, 5762, 5758]
+        },
+        {
+          "key": "basketball courts",
+          "title": "Basketball Courts",
+          "ids": [7089, 7090, 5766]
+        },
+        {
+          "key": "racquetball courts",
+          "title": "Racquetball Courts",
+          "ids": [5753, 5754]
+        },
+        {
+          "key": "running track",
+          "title": "Running Track",
+          "ids": [5763]
+        },
+        {
+          "key": "swimming pool",
+          "title": "Swimming Pool",
+          "ids": [5764]
+        }
+      ]
+    },
+    "1656": {
+      "shortName": "Bakke",
+      "facilityName": "Bakke Recreation & Wellbeing Center",
+      "sections": [
+        {
+          "key": "fitness floors",
+          "title": "Fitness Floors",
+          "ids": [8718, 8717, 8705, 8700, 8699, 8696]
+        },
+        {
+          "key": "basketball courts",
+          "title": "Basketball Courts",
+          "ids": [8720, 8714, 8698]
+        },
+        {
+          "key": "running track",
+          "title": "Running Track",
+          "ids": [8694]
+        },
+        {
+          "key": "swimming pool",
+          "title": "Swimming Pool",
+          "ids": [8716]
+        },
+        {
+          "key": "rock climbing",
+          "title": "Rock Climbing",
+          "ids": [8701]
+        },
+        {
+          "key": "ice skating",
+          "title": "Ice Skating",
+          "ids": [10550]
+        },
+        {
+          "key": "esports room",
+          "title": "Esports Room",
+          "ids": [8712]
+        },
+        {
+          "key": "sports simulators",
+          "title": "Sports Simulators",
+          "ids": [8695]
+        }
+      ]
+    }
+  }
+}

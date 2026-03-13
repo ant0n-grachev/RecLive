@@ -1,19 +1,5 @@
 import type {FacilityId} from "../lib/types/facility";
-
-export const NICK_FITNESS = [5761, 5760, 5762, 5758] as const;
-export const NICK_POOL = [5764] as const;
-export const NICK_TRACK = [5763] as const;
-export const NICK_COURTS = [7089, 7090, 5766] as const;
-export const NICK_RACQUETBALL = [5753, 5754] as const;
-
-export const BAKKE_FITNESS = [8718, 8717, 8705, 8700, 8699, 8696] as const;
-export const BAKKE_ICE = [10550] as const;
-export const BAKKE_POOL = [8716] as const;
-export const BAKKE_TRACK = [8694] as const;
-export const BAKKE_MENDOTA = [8701] as const;
-export const BAKKE_COURTS = [8720, 8714, 8698] as const;
-export const BAKKE_ESPORTS = [8712] as const;
-export const BAKKE_SKYBOX = [8695] as const;
+import {FACILITY_SHARED_CONFIG} from "../lib/config/facilitySections";
 
 export interface SectionConfig {
     title: string;
@@ -31,41 +17,70 @@ export interface FacilityDashboardConfig {
     otherTitle: string;
 }
 
+const buildSectionLookup = (facilityId: FacilityId): Record<string, SectionConfig> => {
+    const sections = FACILITY_SHARED_CONFIG[facilityId].sections;
+    const lookup: Record<string, SectionConfig> = {};
+
+    for (const section of sections) {
+        lookup[section.key] = {
+            title: section.title,
+            ids: section.ids,
+        };
+    }
+
+    return lookup;
+};
+
+const sectionOrThrow = (
+    lookup: Record<string, SectionConfig>,
+    facilityId: FacilityId,
+    key: string
+): SectionConfig => {
+    const section = lookup[key];
+    if (!section) {
+        throw new Error(`Missing shared section '${key}' for facility ${facilityId}`);
+    }
+    return section;
+};
+
+const nickLookup = buildSectionLookup(1186);
+const bakkeLookup = buildSectionLookup(1656);
+
 const nickSections: readonly SectionLayout[] = [
-    {title: "🏋️ Fitness Floors", ids: NICK_FITNESS},
-    {title: "🏀 Basketball Courts", ids: NICK_COURTS},
+    sectionOrThrow(nickLookup, 1186, "fitness floors"),
+    sectionOrThrow(nickLookup, 1186, "basketball courts"),
+    sectionOrThrow(nickLookup, 1186, "racquetball courts"),
     [
-        {title: "👟 Running Track", ids: NICK_TRACK},
-        {title: "🏊‍♀️ Swimming Pool", ids: NICK_POOL},
+        sectionOrThrow(nickLookup, 1186, "running track"),
+        sectionOrThrow(nickLookup, 1186, "swimming pool"),
     ],
-    {title: "🎾 Racquetball Courts", ids: NICK_RACQUETBALL},
 ];
 
 const bakkeSections: readonly SectionLayout[] = [
-    {title: "🏋️ Fitness Floors", ids: BAKKE_FITNESS},
-    {title: "🏀 Basketball Courts", ids: BAKKE_COURTS},
+    sectionOrThrow(bakkeLookup, 1656, "fitness floors"),
+    sectionOrThrow(bakkeLookup, 1656, "basketball courts"),
     [
-        {title: "👟 Running Track", ids: BAKKE_TRACK},
-        {title: "🏊‍♂️ Swimming Pool", ids: BAKKE_POOL},
+        sectionOrThrow(bakkeLookup, 1656, "running track"),
+        sectionOrThrow(bakkeLookup, 1656, "swimming pool"),
     ],
     [
-        {title: "🧗 Rock Climbing", ids: BAKKE_MENDOTA},
-        {title: "🧊 Ice Skating", ids: BAKKE_ICE},
+        sectionOrThrow(bakkeLookup, 1656, "rock climbing"),
+        sectionOrThrow(bakkeLookup, 1656, "ice skating"),
     ],
     [
-        {title: "🎮 Esports Room", ids: BAKKE_ESPORTS},
-        {title: "⛳ Sports Simulators", ids: BAKKE_SKYBOX},
+        sectionOrThrow(bakkeLookup, 1656, "esports room"),
+        sectionOrThrow(bakkeLookup, 1656, "sports simulators"),
     ],
 ];
 
 export const FACILITY_DASHBOARD_CONFIG: Record<FacilityId, FacilityDashboardConfig> = {
     1186: {
         sections: nickSections,
-        otherTitle: "🧩 Other Spaces",
+        otherTitle: "Other Spaces",
     },
     1656: {
         sections: bakkeSections,
-        otherTitle: "🧩 Other Spaces",
+        otherTitle: "Other Spaces",
     },
 };
 
