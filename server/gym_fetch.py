@@ -4,8 +4,31 @@ import requests
 import pymysql
 from datetime import datetime
 import pytz
+from env_loader import load_project_dotenv
 
-URL = "https://goboardapi.azurewebsites.net/api/FacilityCount/GetCountsByAccount?AccountAPIKey=7938fc89-a15c-492d-9566-12c961bc1f27"
+SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
+load_project_dotenv()
+
+def require_env(name: str) -> str:
+    value = os.getenv(name)
+    if value is None:
+        raise RuntimeError(f"Missing required env var: {name}")
+
+    normalized = value.strip()
+    if not normalized:
+        raise RuntimeError(f"Missing required env var: {name}")
+    return normalized
+
+
+def require_int_env(name: str) -> int:
+    raw = require_env(name)
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"Invalid integer for env var {name}: {raw}") from exc
+
+
+LIVE_COUNTS_URL = require_env("LIVE_COUNTS_URL")
 TZ_NAME = "America/Chicago"
 TZ = pytz.timezone(TZ_NAME)
 
@@ -50,11 +73,11 @@ def chicago_now_str(milliseconds: bool = False) -> str:
     return value[:-3] if milliseconds else value
 
 def db_connect():
-    host = os.getenv("GYM_DB_HOST", "localhost")
-    port = int(os.getenv("GYM_DB_PORT", "3306"))
-    user = os.getenv("GYM_DB_USER", "root")
-    password = os.getenv("GYM_DB_PASSWORD", "faDpud-vydqys-batto9")
-    database = os.getenv("GYM_DB_NAME", "gym_data")
+    host = require_env("GYM_DB_HOST")
+    port = require_int_env("GYM_DB_PORT")
+    user = require_env("GYM_DB_USER")
+    password = require_env("GYM_DB_PASSWORD")
+    database = require_env("GYM_DB_NAME")
 
     return pymysql.connect(
         host=host,
@@ -64,12 +87,18 @@ def db_connect():
         database=database,
         autocommit=True,
         charset="utf8mb4",
+        connect_timeout=10,
+        read_timeout=20,
+        write_timeout=20,
     )
 
 def fetch_live():
-    r = requests.get(URL, timeout=20)
+    r = requests.get(LIVE_COUNTS_URL, timeout=20)
     r.raise_for_status()
-    return r.json()
+    payload = r.json()
+    if not isinstance(payload, list):
+        raise RuntimeError("Live feed payload is not a list")
+    return payload
 
 def get_latest_map(conn):
     with conn.cursor() as cur:
@@ -86,12 +115,20 @@ def insert_if_changed(conn, live):
     skipped = 0
 
     for f in live:
+        if not isinstance(f, dict):
+            continue
+
         loc_id = f.get("LocationId")
         if loc_id is None:
             continue
 
-        loc_id = int(loc_id)
-        last_updated = f.get("LastUpdatedDateAndTime") or ""
+        try:
+            loc_id = int(loc_id)
+        except (TypeError, ValueError):
+            continue
+
+        last_updated_raw = f.get("LastUpdatedDateAndTime")
+        last_updated = str(last_updated_raw).strip() if last_updated_raw is not None else ""
 
         if latest.get(loc_id, "") == last_updated:
             skipped += 1
