@@ -1,14 +1,17 @@
+from __future__ import annotations
+
 import os
 import sys
-import requests
+from datetime import datetime, timezone
+from typing import Any
+
 import pymysql
-from datetime import datetime
-import pytz
+import requests
+
 from env_loader import load_project_dotenv
 from facility_capacities import load_facility_capacities
+from reclive.ingestion import failed_result, finish_ingestion_result, run_ingestion
 
-SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
-load_project_dotenv()
 
 def require_env(name: str) -> str:
     value = os.getenv(name)
@@ -26,135 +29,51 @@ def require_int_env(name: str) -> int:
     try:
         return int(raw)
     except ValueError as exc:
-        raise RuntimeError(f"Invalid integer for env var {name}: {raw}") from exc
+        raise RuntimeError(f"Invalid integer for env var {name}") from exc
 
 
-LIVE_COUNTS_URL = require_env("LIVE_COUNTS_URL")
-TZ_NAME = "America/Chicago"
-TZ = pytz.timezone(TZ_NAME)
-
-MAX_CAP = load_facility_capacities()
-
-LATEST_SQL = """
-SELECT h.location_id, h.last_updated
-FROM location_history h
-JOIN (
-    SELECT location_id, MAX(id) AS max_id
-    FROM location_history
-    GROUP BY location_id
-) x ON x.location_id = h.location_id AND x.max_id = h.id;
-"""
-
-INSERT_SQL = """
-INSERT INTO location_history
-(
-    location_id,
-    is_closed,
-    current_capacity,
-    max_capacity,
-    last_updated,
-    fetched_at
-)
-VALUES (%s, %s, %s, %s, %s, %s);
-"""
+LIVE_COUNTS_URL: str | None = None
 
 
-def chicago_now_str(milliseconds: bool = False) -> str:
-    pattern = "%Y-%m-%d %H:%M:%S.%f" if milliseconds else "%Y-%m-%d %H:%M:%S"
-    value = datetime.now(TZ).strftime(pattern)
-    return value[:-3] if milliseconds else value
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
-def db_connect():
-    host = require_env("GYM_DB_HOST")
-    port = require_int_env("GYM_DB_PORT")
-    user = require_env("GYM_DB_USER")
-    password = require_env("GYM_DB_PASSWORD")
-    database = require_env("GYM_DB_NAME")
 
+def db_connect() -> Any:
     return pymysql.connect(
-        host=host,
-        port=port,
-        user=user,
-        password=password,
-        database=database,
-        autocommit=True,
+        host=require_env("GYM_DB_HOST"),
+        port=require_int_env("GYM_DB_PORT"),
+        user=require_env("GYM_DB_USER"),
+        password=require_env("GYM_DB_PASSWORD"),
+        database=require_env("GYM_DB_NAME"),
+        autocommit=False,
         charset="utf8mb4",
         connect_timeout=10,
         read_timeout=20,
         write_timeout=20,
     )
 
-def fetch_live():
-    r = requests.get(LIVE_COUNTS_URL, timeout=20)
-    r.raise_for_status()
-    payload = r.json()
-    if not isinstance(payload, list):
-        raise RuntimeError("Live feed payload is not a list")
-    return payload
 
-def get_latest_map(conn):
-    with conn.cursor() as cur:
-        cur.execute(LATEST_SQL)
-        rows = cur.fetchall()
-    # normalize None -> "" so comparisons are consistent
-    return {int(loc_id): (last_upd or "") for (loc_id, last_upd) in rows}
+def fetch_live() -> object:
+    url = LIVE_COUNTS_URL or require_env("LIVE_COUNTS_URL")
+    response = requests.get(url, timeout=(5, 20))
+    response.raise_for_status()
+    return response.json()
 
-def insert_if_changed(conn, live):
-    latest = get_latest_map(conn)
-    fetched_at = chicago_now_str(milliseconds=True)
 
-    to_insert = []
-    skipped = 0
-
-    for f in live:
-        if not isinstance(f, dict):
-            continue
-
-        loc_id = f.get("LocationId")
-        if loc_id is None:
-            continue
-
-        try:
-            loc_id = int(loc_id)
-        except (TypeError, ValueError):
-            continue
-
-        last_updated_raw = f.get("LastUpdatedDateAndTime")
-        last_updated = str(last_updated_raw).strip() if last_updated_raw is not None else ""
-
-        if latest.get(loc_id, "") == last_updated:
-            skipped += 1
-            continue
-
-        to_insert.append((
-            loc_id,
-            f.get("IsClosed"),
-            f.get("LastCount"),
-            MAX_CAP.get(loc_id),
-            last_updated,
-            fetched_at,
-        ))
-
-    if to_insert:
-        with conn.cursor() as cur:
-            cur.executemany(INSERT_SQL, to_insert)
-
-    return len(to_insert), skipped
-
-def main():
-    conn = db_connect()
+def main() -> int:
     try:
-        live = fetch_live()
-        inserted, skipped = insert_if_changed(conn, live)
-        print(
-            f"{chicago_now_str()} OK: fetched {len(live)} | inserted {inserted} | skipped {skipped}"
+        load_project_dotenv()
+        capacities = load_facility_capacities()
+    except Exception:
+        finish_ingestion_result(
+            failed_result("validation"), None, utc_now, print
         )
-        return 0
-    except Exception as e:
-        print(chicago_now_str(), "ERROR:", e)
         return 1
-    finally:
-        conn.close()
+
+    result = run_ingestion(fetch_live, db_connect, capacities, utc_now)
+    return 0 if result.status == "succeeded" else 1
+
 
 if __name__ == "__main__":
     sys.exit(main())

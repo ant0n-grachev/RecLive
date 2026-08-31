@@ -4,7 +4,7 @@ import os
 import threading
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Any, AsyncIterator, Dict, List, Optional, Sequence, Tuple
+from typing import Any, AsyncIterator, Dict, Iterator, List, Optional, Sequence, Tuple
 
 import pytz
 import pymysql
@@ -17,9 +17,23 @@ from env_loader import load_project_dotenv
 try:
     from forecast_shared import normalize_section_key
     from facility_capacities import load_facility_capacities
+    from reclive.ingestion import safe_close
+    from reclive.occupancy_repository import (
+        RepositoryFactory,
+        SnapshotReadProtocol,
+        SnapshotRepository,
+        SnapshotRow,
+    )
 except ImportError:
     from server.forecast_shared import normalize_section_key
     from server.facility_capacities import load_facility_capacities
+    from server.reclive.ingestion import safe_close
+    from server.reclive.occupancy_repository import (
+        RepositoryFactory,
+        SnapshotReadProtocol,
+        SnapshotRepository,
+        SnapshotRow,
+    )
 
 SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
 load_project_dotenv()
@@ -814,9 +828,77 @@ def facility_actual_hours(
     }
 
 
+def get_snapshot_repository() -> Iterator[SnapshotRepository]:
+    try:
+        connection = open_db_connection(autocommit=False)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail="Live occupancy DB is unavailable"
+        ) from exc
+    try:
+        yield SnapshotRepository(connection)
+    finally:
+        safe_close(connection)
+
+
 @app.get("/api/live-counts")
-def live_counts() -> List[Dict[str, Any]]:
-    return fetch_live_counts()
+def live_counts(
+    repository: SnapshotRepository = Depends(get_snapshot_repository),
+) -> Dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    try:
+        snapshot = repository.fetch_live_snapshot(now)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail="Failed to query live occupancy snapshot"
+        ) from exc
+
+    if not snapshot.rows:
+        raise HTTPException(status_code=503, detail="Live occupancy snapshot is empty")
+
+    last_successful_fetch_at = snapshot.last_successful_fetch_at
+    if last_successful_fetch_at is None:
+        ingestion = {
+            "lastSuccessfulFetchAt": None,
+            "ageSeconds": None,
+            "status": "unavailable",
+        }
+    else:
+        elapsed_seconds = max(
+            0.0, (now - last_successful_fetch_at).total_seconds()
+        )
+        age_seconds = int(elapsed_seconds)
+        ingestion = {
+            "lastSuccessfulFetchAt": utc_iso(last_successful_fetch_at),
+            "ageSeconds": age_seconds,
+            "status": "healthy" if elapsed_seconds <= 600 else "stale",
+        }
+    try:
+        rows = [
+            {
+                "LocationId": row.location_id,
+                "IsClosed": row.is_closed,
+                "LastCount": row.current_capacity,
+                "LastUpdatedDateAndTime": (
+                    utc_iso(row.source_updated_at)
+                    if row.source_updated_at is not None
+                    else None
+                ),
+                "FetchedAt": utc_iso(row.fetched_at),
+            }
+            for row in snapshot.rows
+        ]
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=503, detail="Failed to query live occupancy snapshot"
+        ) from exc
+    return {"ingestion": ingestion, "rows": rows}
+
+
+def utc_iso(value: datetime) -> str:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("timestamp must be timezone-aware")
+    return value.astimezone(timezone.utc).isoformat()
 
 
 @app.get("/api/facility-hours")
@@ -1269,63 +1351,6 @@ def send_notification(
         raise HTTPException(status_code=502, detail="Failed to send push notification") from exc
 
 
-def fetch_live_counts() -> List[Dict[str, Any]]:
-    latest_sql = """
-    SELECT h.location_id, h.is_closed, h.current_capacity, h.last_updated
-    FROM location_history h
-    JOIN (
-        SELECT location_id, MAX(id) AS max_id
-        FROM location_history
-        GROUP BY location_id
-    ) x ON x.location_id = h.location_id AND x.max_id = h.id
-    ORDER BY h.location_id;
-    """
-
-    try:
-        conn = open_db_connection()
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail="Live occupancy DB is unavailable") from exc
-
-    try:
-        with conn.cursor() as cur:
-            cur.execute(latest_sql)
-            rows = cur.fetchall()
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail="Failed to query live occupancy snapshot") from exc
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-
-    if not rows:
-        raise HTTPException(status_code=503, detail="Live occupancy snapshot is empty")
-
-    payload: List[Dict[str, Any]] = []
-    for row in rows:
-        try:
-            location_id, is_closed, current_capacity, last_updated = row
-        except Exception:
-            continue
-
-        if isinstance(last_updated, datetime):
-            last_updated_text = last_updated.strftime("%Y-%m-%d %H:%M:%S")
-        elif last_updated is None:
-            last_updated_text = None
-        else:
-            last_updated_text = str(last_updated)
-
-        payload.append(
-            {
-                "LocationId": int(location_id),
-                "IsClosed": None if is_closed is None else bool(is_closed),
-                "LastCount": None if current_capacity is None else int(current_capacity),
-                "LastUpdatedDateAndTime": last_updated_text,
-            }
-        )
-    return payload
-
-
 def push_db_available() -> bool:
     table_name = push_rules_table_name()
     conn = None
@@ -1345,21 +1370,17 @@ def push_db_available() -> bool:
                 pass
 
 
-def index_live_rows(rows: List[Dict[str, Any]]) -> Dict[int, Dict[str, Any]]:
-    output: Dict[int, Dict[str, Any]] = {}
+def index_live_rows(rows: Sequence[SnapshotRow]) -> Dict[int, SnapshotRow]:
+    output: Dict[int, SnapshotRow] = {}
     for row in rows:
-        try:
-            location_id = int(row.get("LocationId"))
-        except (TypeError, ValueError):
-            continue
-        output[location_id] = row
+        output[row.location_id] = row
     return output
 
 
 def compute_section_metrics(
     facility_id: int,
     section_key: str,
-    live_index: Dict[int, Dict[str, Any]],
+    live_index: Dict[int, SnapshotRow],
 ) -> Optional[Dict[str, int]]:
     location_ids = location_ids_for_section(facility_id, section_key)
     if not location_ids:
@@ -1368,8 +1389,8 @@ def compute_section_metrics(
     total = 0
     max_capacity = 0
     for location_id in location_ids:
-        row = live_index.get(location_id, {})
-        count_value = row.get("LastCount")
+        row = live_index.get(location_id)
+        count_value = row.current_capacity if row is not None else None
         try:
             current = int(count_value) if count_value is not None else 0
         except (TypeError, ValueError):
@@ -1387,91 +1408,119 @@ def compute_section_metrics(
     return {"total": total, "max": max_capacity, "percent": percent}
 
 
-def evaluate_rules_once() -> Dict[str, Any]:
-    with STORE_LOCK:
-        rules = list(load_store_from_db().get("rules", []))
-        if not rules:
-            return {"status": "ok", "rules": 0, "sent": 0, "failed": 0}
+def evaluate_rules_once(
+    snapshot_reader: SnapshotReadProtocol | None = None,
+    repository_factory: RepositoryFactory = SnapshotRepository,
+) -> Dict[str, Any]:
+    snapshot_connection = None
+    try:
+        with STORE_LOCK:
+            rules = list(load_store_from_db().get("rules", []))
+            if not rules:
+                return {"status": "ok", "rules": 0, "sent": 0, "failed": 0}
 
-        live_rows = fetch_live_counts()
-        live_index = index_live_rows(live_rows)
-
-        sent = 0
-        failed = 0
-        skipped_threshold = 0
-        skipped_missing = 0
-        evaluator_lock_conn = db_acquire_evaluator_lock()
-        if evaluator_lock_conn is None:
-            return {
-                "status": "ok",
-                "rules": db_rules_count(),
-                "sent": 0,
-                "failed": 0,
-                "skippedThreshold": 0,
-                "skippedCooldown": 0,
-                "skippedMissingSection": 0,
-                "skippedInactive": 0,
-                "skippedLocked": 1,
-                "evaluatedAt": now_iso(),
-            }
-
-        try:
-            for rule in rules:
-                rule_id = _int_or_default(rule.get("_id"), 0)
+            if snapshot_reader is None:
                 try:
-                    facility_id = int(rule.get("facilityId", 0))
-                    section_key = canonical_section_key(str(rule.get("sectionKey", "")))
-                    threshold = int(rule.get("threshold", 0))
+                    snapshot_connection = open_db_connection(autocommit=False)
+                    snapshot_reader = repository_factory(snapshot_connection)
+                except Exception as exc:
+                    raise HTTPException(
+                        status_code=503, detail="Live occupancy DB is unavailable"
+                    ) from exc
+            try:
+                live_rows = snapshot_reader.fetch_live_snapshot_rows()
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=503, detail="Failed to query live occupancy snapshot"
+                ) from exc
+            live_index = index_live_rows(live_rows)
 
-                    metrics = compute_section_metrics(facility_id, section_key, live_index)
-                    if metrics is None:
-                        skipped_missing += 1
-                        continue
+            sent = 0
+            failed = 0
+            skipped_threshold = 0
+            skipped_missing = 0
+            evaluator_lock_conn = db_acquire_evaluator_lock()
+            if evaluator_lock_conn is None:
+                return {
+                    "status": "ok",
+                    "rules": db_rules_count(),
+                    "sent": 0,
+                    "failed": 0,
+                    "skippedThreshold": 0,
+                    "skippedCooldown": 0,
+                    "skippedMissingSection": 0,
+                    "skippedInactive": 0,
+                    "skippedLocked": 1,
+                    "evaluatedAt": now_iso(),
+                }
 
-                    percent = int(metrics["percent"])
-                    if percent > threshold:
-                        skipped_threshold += 1
-                        continue
+            try:
+                for rule in rules:
+                    rule_id = _int_or_default(rule.get("_id"), 0)
+                    try:
+                        facility_id = int(rule.get("facilityId", 0))
+                        section_key = canonical_section_key(
+                            str(rule.get("sectionKey", ""))
+                        )
+                        threshold = int(rule.get("threshold", 0))
 
-                    section_label = "entire facility" if section_key == "overall" else str(section_key or "Selected area")
-                    facility_label = FACILITY_NAMES.get(facility_id, "Gym")
-                    notification_title = "RecLive Alert"
-                    notification_body = (
-                        f"{facility_label} {section_label} is {percent}% full "
-                        f"(at or below your {threshold}% alert)."
-                    )
-                    notification_url = f"/?facility={facility_id}"
+                        metrics = compute_section_metrics(
+                            facility_id, section_key, live_index
+                        )
+                        if metrics is None:
+                            skipped_missing += 1
+                            continue
 
-                    send_notification(
-                        subscription=rule.get("subscription", {}),
-                        title=notification_title,
-                        body=notification_body,
-                        url=notification_url,
-                    )
-                    sent += 1
-                    if rule_id > 0:
-                        db_delete_rule_by_id(rule_id)
-                except HTTPException as exc:
-                    failed += 1
-                    if exc.status_code == 410 and rule_id > 0:
-                        db_delete_rule_by_id(rule_id)
-                except Exception:
-                    failed += 1
-        finally:
-            db_release_evaluator_lock(evaluator_lock_conn)
+                        percent = int(metrics["percent"])
+                        if percent > threshold:
+                            skipped_threshold += 1
+                            continue
 
-    final_rules = db_rules_count()
-    return {
-        "status": "ok",
-        "rules": final_rules,
-        "sent": sent,
-        "failed": failed,
-        "skippedThreshold": skipped_threshold,
-        "skippedCooldown": 0,
-        "skippedMissingSection": skipped_missing,
-        "skippedInactive": 0,
-        "evaluatedAt": now_iso(),
-    }
+                        section_label = (
+                            "entire facility"
+                            if section_key == "overall"
+                            else str(section_key or "Selected area")
+                        )
+                        facility_label = FACILITY_NAMES.get(facility_id, "Gym")
+                        notification_title = "RecLive Alert"
+                        notification_body = (
+                            f"{facility_label} {section_label} is {percent}% full "
+                            f"(at or below your {threshold}% alert)."
+                        )
+                        notification_url = f"/?facility={facility_id}"
+
+                        send_notification(
+                            subscription=rule.get("subscription", {}),
+                            title=notification_title,
+                            body=notification_body,
+                            url=notification_url,
+                        )
+                        sent += 1
+                        if rule_id > 0:
+                            db_delete_rule_by_id(rule_id)
+                    except HTTPException as exc:
+                        failed += 1
+                        if exc.status_code == 410 and rule_id > 0:
+                            db_delete_rule_by_id(rule_id)
+                    except Exception:
+                        failed += 1
+            finally:
+                db_release_evaluator_lock(evaluator_lock_conn)
+
+        final_rules = db_rules_count()
+        return {
+            "status": "ok",
+            "rules": final_rules,
+            "sent": sent,
+            "failed": failed,
+            "skippedThreshold": skipped_threshold,
+            "skippedCooldown": 0,
+            "skippedMissingSection": skipped_missing,
+            "skippedInactive": 0,
+            "evaluatedAt": now_iso(),
+        }
+    finally:
+        safe_close(snapshot_connection)
 
 
 async def evaluator_loop() -> None:

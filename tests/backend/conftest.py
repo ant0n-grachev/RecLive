@@ -1,9 +1,19 @@
 import os
 import re
 from collections.abc import Iterator
+from pathlib import Path
+import sys
 
 import pymysql
 import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from reclive.ingestion import validate_and_deduplicate_rows  # noqa: E402
+from tests.fixtures.live_counts import LIVE_ROWS  # noqa: E402
+from tests.fixtures.reclive_fakes import FakeConnection  # noqa: E402
 
 
 def mysql_settings() -> dict[str, object]:
@@ -49,3 +59,20 @@ def clean_test_database() -> Iterator[dict[str, object]]:
         with connection.cursor() as cursor:
             cursor.execute(f"DROP DATABASE IF EXISTS `{database}`")
         connection.close()
+
+
+@pytest.fixture()
+def fake_db() -> FakeConnection:
+    return FakeConnection()
+
+
+@pytest.fixture()
+def fixed_utc_clock():
+    from datetime import datetime, timezone
+
+    return datetime(2026, 8, 31, 12, 0, tzinfo=timezone.utc)
+
+
+@pytest.fixture()
+def normalized_live_rows():
+    return validate_and_deduplicate_rows(LIVE_ROWS, {5761: 100}).rows
