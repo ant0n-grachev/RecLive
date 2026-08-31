@@ -17,6 +17,7 @@
 - Preserve facility IDs `1186` and `1656`, routes `/nick` and `/bakke`, existing product identity, forecasting, Web Push, installation behavior, and the executable `server/forecast_api.py` entry point.
 - Public write endpoints reject a request body larger than 16 KiB before JSON validation. A non-integer, negative, or above-limit `Content-Length` is rejected safely before body consumption; unheadered bodies are accumulated from `request.stream()` only through the first over-limit chunk, never through FastAPI's cached whole-body helper.
 - A subscription endpoint must be HTTPS and no longer than 2,048 characters; `keys.p256dh` must base64url-decode to a 65-byte uncompressed P-256 key beginning with `0x04`; `keys.auth` must base64url-decode to exactly 16 bytes.
+- The shared Phase 1 endpoint normalizer rejects localhost/local-only names, single-label hosts, and every non-global or special-use IP literal. Immediately before each send, Phase 5 resolves the canonical hostname, rejects an empty, non-global, or mixed public/non-public answer set, pins one validated public address for the TLS connection while preserving the original hostname for SNI, certificate verification, and the `Host` header, and rejects every redirect. A resolve-then-unpinned `pywebpush` call is forbidden.
 - Thresholds are integer percentages from 1 through 100 inclusive. The default TTL is 86,400 seconds (24 hours); the maximum accepted TTL is 604,800 seconds (seven days); one endpoint may have at most ten active rules.
 - Use the Phase 1 shared `server/reclive/push_identity.py` `normalize_push_endpoint` and `endpoint_hash` helpers for endpoint validation, persisted identity, ownership comparison, and legacy backfill lookup; use `rate_limit_subject_hash` only for fixed-window subjects. Store HMAC-SHA-256 results in the Phase 1 `BINARY(32)` identity fields, never an indexed raw endpoint or address. Store the PushSubscription JSON needed by `pywebpush`; never return it to the browser and never log a raw endpoint, key, subscription body, client address, credential, VAPID key, or environment value.
 - `PUSH_ENDPOINT_HASH_KEY` is a dedicated secret and production startup rejects it when missing or shorter than 32 bytes. Admin authorization uses `hmac.compare_digest`, and production startup rejects an enabled admin route with a missing or shorter-than-32-byte admin token.
@@ -108,7 +109,7 @@ def validate_push_configuration() -> None:
 ```python
 @pytest.fixture
 def valid_subscription() -> dict[str, object]:
-    return {"endpoint": "https://push.example.test/subscription-a", "keys": {"p256dh": VALID_P256DH, "auth": VALID_AUTH}}
+    return {"endpoint": "https://push.reclive-notify.net/subscription-a", "keys": {"p256dh": VALID_P256DH, "auth": VALID_AUTH}}
 
 @pytest.fixture
 def push_test_client(monkeypatch: pytest.MonkeyPatch, push_repository: FakePushRepository) -> TestClient:
@@ -146,9 +147,9 @@ git commit -m "feat(push): add secure lifecycle configuration"
 
 ```python
 @pytest.mark.parametrize("subscription", [
-    {"endpoint": "http://push.example.test/a", "keys": VALID_KEYS},
-    {"endpoint": "https://push.example.test/" + "x" * 2049, "keys": VALID_KEYS},
-    {"endpoint": "https://push.example.test/a", "keys": {"p256dh": "AA", "auth": "AA"}},
+    {"endpoint": "http://push.reclive-notify.net/a", "keys": VALID_KEYS},
+    {"endpoint": "https://push.reclive-notify.net/" + "x" * 2049, "keys": VALID_KEYS},
+    {"endpoint": "https://push.reclive-notify.net/a", "keys": {"p256dh": "AA", "auth": "AA"}},
 ])
 def test_subscribe_rejects_invalid_subscription_without_echoing_endpoint(push_test_client, subscription):
     response = push_test_client.post("/api/push/subscribe", json={
@@ -468,8 +469,8 @@ git commit -m "feat(push): add idempotent rule management"
 - Modify: `tests/backend/test_push_lifecycle.py`
 
 **Interfaces:**
-- Consumes: pending rule schema, `db_acquire_evaluator_lock() -> Optional[Any]`, Phase 2 snapshot/ingestion tables, current official-hours JSON, and `send_notification(subscription: Mapping[str, Any], title: str, body: str, url: str) -> None`.
-- Produces: `evaluate_rules_once(now: datetime | None = None) -> EvaluatorResult`, `load_evaluator_candidates(conn: Any, now: datetime) -> list[PushRuleRecord]`, `official_facility_is_open(payload: Mapping[str, Any], facility_id: int, at: datetime) -> bool`, `compute_fresh_section_metrics(facility_id: int, section_key: str, snapshots: Mapping[int, SnapshotRow], now: datetime) -> SectionMetrics | None`, `claim_pending_rule(conn: Any, rule_id: int, now: datetime) -> bool`, and terminal `sent`, `failed`, `invalid_subscription`, and `expired` states.
+- Consumes: pending rule schema, `db_acquire_evaluator_lock() -> Optional[Any]`, Phase 2 snapshot/ingestion tables, current official-hours JSON, an injected DNS resolver, and an injected pinned-TLS Web Push transport.
+- Produces: `evaluate_rules_once(now: datetime | None = None) -> EvaluatorResult`, `load_evaluator_candidates(conn: Any, now: datetime) -> list[PushRuleRecord]`, `official_facility_is_open(payload: Mapping[str, Any], facility_id: int, at: datetime) -> bool`, `compute_fresh_section_metrics(facility_id: int, section_key: str, snapshots: Mapping[int, SnapshotRow], now: datetime) -> SectionMetrics | None`, `claim_pending_rule(conn: Any, rule_id: int, now: datetime) -> bool`, `resolve_public_push_addresses(endpoint: str) -> tuple[IPAddress, ...]`, `send_notification_pinned(subscription: Mapping[str, Any], title: str, body: str, url: str) -> None`, and terminal `sent`, `failed`, `invalid_subscription`, and `expired` states.
 
 - [ ] **Step 1: Write the failing evaluator-state tests**
 
@@ -497,11 +498,95 @@ def test_web_push_410_marks_rule_invalid_without_deleting_audit_state(push_repos
     api.evaluate_rules_once()
     rule = push_repository.rule(valid_rule.id)
     assert (rule.status, rule.failure_code, rule.finalized_at is not None) == ("invalid_subscription", "webpush_410", True)
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "https://127.0.0.1/push",
+        "https://10.0.0.1/push",
+        "https://[::1]/push",
+        "https://push.local/push",
+        "https://localhost/push",
+    ],
+)
+def test_static_private_or_local_push_destination_is_rejected(valid_subscription, endpoint):
+    valid_subscription["endpoint"] = endpoint
+    with pytest.raises(ValueError):
+        validate_push_subscription(valid_subscription)
+
+
+@pytest.mark.parametrize(
+    "answers",
+    [
+        ["10.0.0.8"],
+        ["2606:4700:4700::1111", "fc00::8"],
+        [],
+    ],
+)
+def test_dispatch_rejects_private_mixed_or_empty_dns_answers(
+    monkeypatch, valid_subscription, answers
+):
+    monkeypatch.setattr(api, "resolve_endpoint_host", lambda *_: answers)
+    monkeypatch.setattr(
+        api, "send_prepared_web_push",
+        lambda **_: pytest.fail("unsafe destination must not reach transport"),
+    )
+
+    with pytest.raises(api.SafePushDispatchError):
+        api.send_notification_pinned(
+            valid_subscription, title="RecLive", body="Ready", url="/nick"
+        )
+
+
+def test_dispatch_pins_validated_address_and_preserves_tls_hostname(
+    monkeypatch, valid_subscription
+):
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        api,
+        "resolve_endpoint_host",
+        lambda *_: ["2606:4700:4700::1111", "8.8.8.8"],
+    )
+    monkeypatch.setattr(
+        api, "send_prepared_web_push", lambda **kwargs: calls.append(kwargs)
+    )
+
+    api.send_notification_pinned(
+        valid_subscription, title="RecLive", body="Ready", url="/nick"
+    )
+
+    assert calls == [{
+        "connect_ip": "2606:4700:4700::1111",
+        "tls_server_hostname": "push.reclive-notify.net",
+        "host_header": "push.reclive-notify.net",
+        "allow_redirects": False,
+        "subscription": valid_subscription,
+        "title": "RecLive",
+        "body": "Ready",
+        "url": "/nick",
+    }]
+
+
+def test_dispatch_rejects_redirect_without_resolving_or_following_new_origin(
+    monkeypatch, valid_subscription
+):
+    monkeypatch.setattr(
+        api, "resolve_endpoint_host", lambda *_: ["8.8.8.8"]
+    )
+    monkeypatch.setattr(
+        api, "send_prepared_web_push", raise_web_push_status(302)
+    )
+
+    with pytest.raises(api.SafePushDispatchError):
+        api.send_notification_pinned(
+            valid_subscription, title="RecLive", body="Ready", url="/nick"
+        )
 ```
 
 - [ ] **Step 2: Run the focused tests to verify they fail**
 
-Run: `python -m pytest tests/backend/test_push_lifecycle.py -k 'two_evaluators or required_gate or web_push_410' -q`
+Run: `python -m pytest tests/backend/test_push_lifecycle.py -k 'two_evaluators or required_gate or web_push_410 or static_private or dns_answers or pins_validated or rejects_redirect' -q`
 
 Expected: FAIL because the current evaluator loads rules and live data before taking the advisory lock, has no freshness/coverage/schedule/expiry gates, deletes terminal rules, and uses no atomic claim.
 
@@ -528,13 +613,15 @@ def facility_notification_url(facility_id: int) -> str:
 
 Acquire `GET_LOCK` before loading anything else, return a safe `skippedLocked` result when unavailable, and release the same connection in `finally`. Under that lock, mark expired pending rows as `expired`, load only unexpired pending rules, load the official hours payload, latest successful ingestion time, and relevant `location_snapshot` rows, then evaluate each rule. `official_facility_is_open` must return `False` for a missing facility, non-`ok` official schedule, missing matching day row, `closed`/maintenance notice, unparseable hours, or a time outside the matching official interval; it therefore fails closed until a trustworthy schedule proves the facility open. `compute_fresh_section_metrics` must count only relevant fresh rows, calculate coverage against configured section capacity, and return no eligible metric below `0.80`.
 
-Call `claim_pending_rule` immediately before `send_notification`. After a successful send, finalize the claimed row as `sent` with `sent_at` and `finalized_at`. Map Web Push 404 and 410 to `invalid_subscription` and `failure_code` `webpush_404` or `webpush_410`; map every other send error to `failed` with bounded non-sensitive code `webpush_failed`. Do not change `claimed` rows back to pending, do not delete a terminal row, and do not print exception text. Make the admin evaluate and dispatch routes use the same terminal-state helper and `hmac.compare_digest` authorization.
+Immediately before every outbound attempt, call `normalize_push_endpoint`, resolve the canonical hostname and port with the injected resolver, normalize every returned address with `ipaddress.ip_address`, and require a nonempty set containing only global unicast addresses. Reject a private-only, loopback, link-local, multicast, unspecified, reserved, or mixed public/non-public answer without opening a socket. Select the first address from a deterministically sorted validated set and pass that literal as `connect_ip` to the constrained transport. The transport must connect directly to that pinned literal, create TLS with the canonical endpoint hostname as `server_hostname`, retain normal certificate and hostname verification, send the canonical hostname in `Host`, and set `allow_redirects=False`. Prepare the encrypted Web Push request with the library, but do not let `pywebpush`, `requests`, or another client resolve the hostname again; a custom HTTPS connection/adapter or equivalently constrained outbound proxy is required. Treat every 3xx as `webpush_failed` without following `Location` or resolving another origin. Resolver and transport doubles are mandatory in tests; never contact a provider.
+
+Call `claim_pending_rule` immediately before `send_notification_pinned`. After a successful send, finalize the claimed row as `sent` with `sent_at` and `finalized_at`. Map Web Push 404 and 410 to `invalid_subscription` and `failure_code` `webpush_404` or `webpush_410`; map every other send, DNS-validation, TLS, redirect, or transport error to `failed` with bounded non-sensitive code `webpush_failed`. Do not change `claimed` rows back to pending, do not delete a terminal row, and do not print exception text. Make the admin evaluate and dispatch routes use the same terminal-state helper and `hmac.compare_digest` authorization.
 
 - [ ] **Step 4: Run the focused tests to verify they pass**
 
-Run: `python -m pytest tests/backend/test_push_lifecycle.py -k 'two_evaluators or required_gate or web_push_410' -q`
+Run: `python -m pytest tests/backend/test_push_lifecycle.py -k 'two_evaluators or required_gate or web_push_410 or static_private or dns_answers or pins_validated or rejects_redirect' -q`
 
-Expected: PASS; only one worker sends, every failed eligibility gate prevents dispatch, expired rows are terminally expired, and `410` becomes `invalid_subscription` without a raw endpoint leak.
+Expected: PASS; only one worker sends, every failed eligibility gate prevents dispatch, expired rows are terminally expired, `410` becomes `invalid_subscription`, DNS answers are all-global, the TLS socket is pinned while SNI/certificate verification retain the hostname, and redirects fail closed without a raw endpoint leak or provider call.
 
 - [ ] **Step 5: Commit the evaluator slice**
 
@@ -620,7 +707,7 @@ import {HttpResponse, http} from "msw";
 import {server} from "../../test/msw/server";
 
 const validSubscription: PushSubscriptionJSON = {
-    endpoint: "https://push.example.test/subscription-a",
+    endpoint: "https://push.reclive-notify.net/subscription-a",
     expirationTime: null,
     keys: {p256dh: "p256dh-fixture", auth: "auth-fixture"},
 };
@@ -731,7 +818,7 @@ vi.mock("../lib/api/pushNotifications", () => ({
 }));
 
 const validSubscription: PushSubscriptionJSON = {
-    endpoint: "https://push.example.test/subscription-a",
+    endpoint: "https://push.reclive-notify.net/subscription-a",
     expirationTime: null,
     keys: {p256dh: "p256dh-fixture", auth: "auth-fixture"},
 };

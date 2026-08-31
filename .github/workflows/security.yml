@@ -1,0 +1,29 @@
+name: Security
+
+on:
+  push:
+    branches: [main, hardening/reclive-security-data-trust]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Scan all reachable history with redacted output
+        run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.28.0 git --redact --log-opts="--all" /repo
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/dependency-review-action@v4

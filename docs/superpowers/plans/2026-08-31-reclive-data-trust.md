@@ -15,6 +15,7 @@
 - Implement Phases 2-4 only. Do not merge, deploy, contact providers, change current production credentials, or run full XGBoost training.
 - Preserve facility IDs `1186` and `1656`, routes `/nick` and `/bakke`, forecasting, push notifications, install behavior, product identity, and executable entry points `server/gym_fetch.py`, `server/forecast_api.py`, `server/forecast_job.py`, and `server/facility_hours_fetch.py`.
 - Store database timestamps in UTC with microsecond precision and serialize timezone-aware ISO 8601. Use `America/Chicago` for schedules, date grouping, and forecast display.
+- Preserve every Phase 1 `location_history.fetched_at` byte unchanged: legacy values are ambiguous naive `America/Chicago` wall times and must never be reinterpreted or rewritten as UTC. The UTC `started_at` of the first Phase 2 `succeeded` ingestion run is the history trust cutover; Phase 4 excludes all earlier history and reports hours without a post-cutover UTC baseline plus successful heartbeat as unavailable.
 - Never store, return, print, or log credentials, upstream URLs, response bodies, database values, or unsanitized exceptions. Persist allowlisted failure categories and whitespace-normalized messages capped at 240 characters.
 - A successful poll updates every valid snapshot row’s `fetched_at`, including unchanged state. An empty or wholly invalid payload cannot modify a healthy snapshot.
 - Preserve `LocationId`, `IsClosed`, `LastCount`, and `LastUpdatedDateAndTime`; add `FetchedAt`. Backend returns `{ingestion, rows}`; frontend temporarily accepts legacy array and `{data: []}` forms.
@@ -181,6 +182,20 @@ def test_changed_count_with_same_source_timestamp_inserts_history(fake_db) -> No
 
     assert counts.history_inserted == 1
     assert fake_db.history_inserts[0]["current_capacity"] == 48
+
+
+def test_first_success_preserves_legacy_wall_time_and_inserts_utc_baseline(fake_db) -> None:
+    fake_db.legacy_history_bytes = b"2026-11-01 01:30:00.000000"
+    fake_db.succeeded_run_count = 0
+
+    counts = SnapshotRepository(fake_db).persist_successful_poll(
+        7, [NormalizedLiveRow(5761, False, 48, 100, None)],
+        datetime(2026, 11, 1, 7, 0, tzinfo=timezone.utc),
+    )
+
+    assert fake_db.legacy_history_bytes == b"2026-11-01 01:30:00.000000"
+    assert counts.history_inserted == 1
+    assert fake_db.history_inserts[0]["fetched_at"] == "2026-11-01T07:00:00+00:00"
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -224,10 +239,11 @@ class SnapshotRepository:
     def persist_successful_poll(self, run_id: int, rows: Sequence[NormalizedLiveRow],
                                 fetched_at: datetime) -> IngestionWriteCounts:
         previous = self.lock_snapshots([row.location_id for row in rows])
+        requires_utc_baseline = not self.has_succeeded_ingestion_run()
         inserted = 0
         for row in rows:
             self.upsert_snapshot(row, fetched_at)
-            if previous.get(row.location_id) != state_fingerprint(row):
+            if requires_utc_baseline or previous.get(row.location_id) != state_fingerprint(row):
                 self.insert_history(row, fetched_at)
                 inserted += 1
         return IngestionWriteCounts(history_inserted=inserted, snapshot_updated=len(rows))
@@ -235,13 +251,13 @@ class SnapshotRepository:
 
 Consume the already-applied `0002_snapshot_and_ingestion.sql` from Phase 1; do not edit its checksum-controlled contents. Verify it supplies `location_snapshot`, `ingestion_runs`, and indexes on `location_snapshot(fetched_at)`, `ingestion_runs(status, completed_at)`, and `location_history(location_id, fetched_at)`. Phase 1 `0001_core_history.sql` must provide nullable `location_history.source_updated_at DATETIME(6)` with a safe backfill from legacy `last_updated`; new code reads/writes `source_updated_at` and writes `last_updated` as a compatibility alias.
 
-Implement `lock_snapshots` with a dynamic validated-ID placeholder query, `upsert_snapshot` with an explicit `INSERT INTO location_snapshot(location_id, is_closed, current_capacity, max_capacity, source_updated_at, fetched_at, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE is_closed=VALUES(is_closed), current_capacity=VALUES(current_capacity), max_capacity=VALUES(max_capacity), source_updated_at=VALUES(source_updated_at), fetched_at=VALUES(fetched_at), updated_at=VALUES(updated_at)` statement, and `insert_history` with identical provenance values in `source_updated_at` and legacy `last_updated`. Compare exactly `(is_closed, current_capacity, max_capacity, source_updated_at)`. Mark the run `succeeded` and store sorted integer observed IDs before transaction commit. Convert aware UTC input to naive UTC only at the MySQL `DATETIME(6)` bind boundary.
+Implement `lock_snapshots` with a dynamic validated-ID placeholder query, `upsert_snapshot` with an explicit `INSERT INTO location_snapshot(location_id, is_closed, current_capacity, max_capacity, source_updated_at, fetched_at, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE is_closed=VALUES(is_closed), current_capacity=VALUES(current_capacity), max_capacity=VALUES(max_capacity), source_updated_at=VALUES(source_updated_at), fetched_at=VALUES(fetched_at), updated_at=VALUES(updated_at)` statement, and `insert_history` with identical provenance values in `source_updated_at` and legacy `last_updated`. Compare exactly `(is_closed, current_capacity, max_capacity, source_updated_at)`. While the first new run is still `running`, detect that no earlier `succeeded` run exists and insert one UTC history baseline for every observed location even when its snapshot fingerprint is unchanged; only then mark that run `succeeded` and store sorted integer observed IDs before transaction commit. This run's UTC `started_at` is the durable trust cutover. Do not update, reinterpret, or timezone-shift any pre-existing history value. Convert aware UTC input to naive UTC only at the MySQL `DATETIME(6)` bind boundary.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `pytest tests/backend/test_ingestion.py -q`
 
-Expected: PASS; unchanged state advances `fetched_at` without history, while a count change inserts exactly one event.
+Expected: PASS; the first successful new poll inserts one UTC baseline per observed location without changing legacy bytes, later unchanged state advances `fetched_at` without history, and a later count change inserts exactly one event.
 
 ### Task 3: Delegate the durable poll lifecycle from the preserved script entry point
 
@@ -707,7 +723,7 @@ def calculate_actual_hour(
 
 For every location, seed with its latest event strictly before range start and append later events ordered by `fetched_at`. `fetched_at` is the only event time. A state is known only from event time through the next successful heartbeat containing that location, capped by next state change and hour end. Within each location, average count and capacity over only its confirmed intervals; sum those per-location observed averages without filling unknown time with zero. Capacity coverage is the summed observed-location capacity divided by full expected capacity. Temporal coverage is independently the confirmed capacity-seconds divided by the observed-location capacity-seconds that would exist for the full hour. Thus one 100-capacity location observed for 57 minutes in a 200-capacity facility reports `actualCoverage=0.5` and `temporalCoverage=0.95`, rather than collapsing both dimensions to `0.475`. Return actual count only when both independent measures meet threshold. Never multiply an observed count by a capacity ratio or include unknown seconds as zero.
 
-Build Chicago hours as timezone-aware local boundaries converted to UTC, keeping both fall-back 01:00 offsets and omitting the nonexistent spring-forward hour.
+Build Chicago hours as timezone-aware local boundaries converted to UTC, keeping both fall-back 01:00 offsets and omitting the nonexistent spring-forward hour. Accept only timezone-aware UTC states already filtered by the repository's trust cutover; the service must never parse a naive legacy wall time, guess an offset, or place such a value into either repeated fall-back hour or across the spring-forward gap. Task 2's first-baseline test, this task's 23/25-hour DST test, and Task 8's fall-back legacy-row exclusion test jointly lock the boundary.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
@@ -749,6 +765,24 @@ def test_actual_hours_loads_pre_range_seed_and_succeeded_heartbeats(client, sql_
 
     assert any("fetched_at <" in query and "ORDER BY fetched_at DESC" in query for query in sql_recorder.queries)
     assert any("ingestion_runs" in query and "observed_location_ids" in query and "status = 'succeeded'" in query for query in sql_recorder.queries)
+
+
+def test_actual_hours_excludes_legacy_wall_time_before_first_utc_baseline(client, sql_recorder) -> None:
+    sql_recorder.first_succeeded_started_at = datetime(
+        2026, 11, 1, 6, 59, tzinfo=timezone.utc
+    )
+    sql_recorder.history_rows = [
+        (5761, False, 90, 100, "2026-11-01 01:30:00.000000"),
+        (5761, False, 40, 100, datetime(2026, 11, 1, 7, 0)),
+    ]
+
+    response = client.get(
+        "/api/forecast/facilities/1186/actual-hours?date=2026-11-01"
+    ).json()
+
+    assert sql_recorder.history_cutover == datetime(2026, 11, 1, 6, 59)
+    assert sql_recorder.returned_history_rows == sql_recorder.history_rows[1:]
+    assert response["totalHours"][0]["actualCount"] is None
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -766,13 +800,20 @@ def load_actual_hour_inputs(
     placeholders = ",".join(["%s"] * len(location_ids))
     with self.connection.cursor() as cursor:
         cursor.execute(
-            f"SELECT h.location_id, h.is_closed, h.current_capacity, h.max_capacity, h.fetched_at FROM location_history h JOIN (SELECT location_id, MAX(fetched_at) AS fetched_at FROM location_history WHERE location_id IN ({placeholders}) AND fetched_at < %s GROUP BY location_id) seed ON seed.location_id=h.location_id AND seed.fetched_at=h.fetched_at",
-            (*location_ids, as_mysql_utc(range_start)),
+            "SELECT started_at FROM ingestion_runs WHERE status='succeeded' ORDER BY started_at, id LIMIT 1"
+        )
+        first_success = cursor.fetchone()
+        if first_success is None:
+            return [], []
+        cutover_started_at = first_success[0]
+        cursor.execute(
+            f"SELECT h.location_id, h.is_closed, h.current_capacity, h.max_capacity, h.fetched_at FROM location_history h JOIN (SELECT location_id, MAX(fetched_at) AS fetched_at FROM location_history WHERE location_id IN ({placeholders}) AND fetched_at >= %s AND fetched_at < %s GROUP BY location_id) seed ON seed.location_id=h.location_id AND seed.fetched_at=h.fetched_at",
+            (*location_ids, cutover_started_at, as_mysql_utc(range_start)),
         )
         seed_rows = cursor.fetchall()
         cursor.execute(
-            f"SELECT location_id, is_closed, current_capacity, max_capacity, fetched_at FROM location_history WHERE location_id IN ({placeholders}) AND fetched_at >= %s AND fetched_at < %s ORDER BY location_id, fetched_at",
-            (*location_ids, as_mysql_utc(range_start), as_mysql_utc(range_end)),
+            f"SELECT location_id, is_closed, current_capacity, max_capacity, fetched_at FROM location_history WHERE location_id IN ({placeholders}) AND fetched_at >= GREATEST(%s, %s) AND fetched_at < %s ORDER BY location_id, fetched_at",
+            (*location_ids, cutover_started_at, as_mysql_utc(range_start), as_mysql_utc(range_end)),
         )
         change_rows = cursor.fetchall()
         cursor.execute(
@@ -783,7 +824,7 @@ def load_actual_hour_inputs(
     return parse_history_states(seed_rows + change_rows), parse_ingestion_heartbeats(heartbeat_rows)
 ```
 
-Query latest `location_history` state before range start per requested location, then all events where `fetched_at >= range_start AND fetched_at < range_end`; include `is_closed`, `current_capacity`, `max_capacity`, and `fetched_at`. Query `succeeded` `ingestion_runs` over that range for `completed_at` and `observed_location_ids`, retaining only integer JSON IDs. Retain existing facility/forecast-day/category selection and route path, but remove `by_location_hour` and `adjusted_total`. Call `calculate_actual_hour` for every category and facility total hour. Each `categories[].hours[]` and `totalHours[]` item carries its own rounded `coverageThreshold`, `actualCoverage`, and `temporalCoverage`; the client schema requires all three item fields and does not read a response-level threshold. Derive `actualPct` only for non-null `actualCount / expectedCapacity`.
+Load the earliest `succeeded` ingestion run's UTC `started_at` first. If none exists, return no actual-hour inputs. Query the latest `location_history` state before range start per requested location only when `fetched_at >= cutover_started_at`, then all events where `fetched_at >= GREATEST(cutover_started_at, range_start) AND fetched_at < range_end`; include `is_closed`, `current_capacity`, `max_capacity`, and `fetched_at`. Never parse or bind a pre-cutover naive legacy value as UTC. Query `succeeded` `ingestion_runs` over that range for `completed_at` and `observed_location_ids`, retaining only integer JSON IDs. A location-hour remains unavailable until both a new UTC baseline and a successful observed-ID heartbeat confirm it; do not shift, estimate, or borrow a pre-cutover state. Retain existing facility/forecast-day/category selection and route path, but remove `by_location_hour` and `adjusted_total`. Call `calculate_actual_hour` for every category and facility total hour. Each `categories[].hours[]` and `totalHours[]` item carries its own rounded `coverageThreshold`, `actualCoverage`, and `temporalCoverage`; the client schema requires all three item fields and does not read a response-level threshold. Derive `actualPct` only for non-null `actualCount / expectedCapacity`.
 
 - [ ] **Step 4: Run backend Phase 4 checks**
 
