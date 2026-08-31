@@ -12,6 +12,7 @@ export const nick: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(5761),
             lastUpdated: null,
+            fetchedAt: null,
         },
         {
             facilityId: 1186,
@@ -22,6 +23,7 @@ export const nick: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(5764),
             lastUpdated: null,
+            fetchedAt: null,
         },
     ],
 
@@ -35,6 +37,7 @@ export const nick: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(5760),
             lastUpdated: null,
+            fetchedAt: null,
         },
         {
             facilityId: 1186,
@@ -45,6 +48,7 @@ export const nick: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(7089),
             lastUpdated: null,
+            fetchedAt: null,
         },
     ],
 
@@ -58,6 +62,7 @@ export const nick: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(5762),
             lastUpdated: null,
+            fetchedAt: null,
         },
     ],
 
@@ -71,6 +76,7 @@ export const nick: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(5758),
             lastUpdated: null,
+            fetchedAt: null,
         },
         {
             facilityId: 1186,
@@ -81,6 +87,7 @@ export const nick: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(7090),
             lastUpdated: null,
+            fetchedAt: null,
         },
         {
             facilityId: 1186,
@@ -91,6 +98,7 @@ export const nick: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(5766),
             lastUpdated: null,
+            fetchedAt: null,
         },
     ],
 
@@ -104,6 +112,7 @@ export const nick: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(5753),
             lastUpdated: null,
+            fetchedAt: null,
         },
         {
             facilityId: 1186,
@@ -114,6 +123,7 @@ export const nick: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(5754),
             lastUpdated: null,
+            fetchedAt: null,
         },
         {
             facilityId: 1186,
@@ -124,6 +134,7 @@ export const nick: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(5763),
             lastUpdated: null,
+            fetchedAt: null,
         },
     ],
 };

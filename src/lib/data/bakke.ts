@@ -12,6 +12,7 @@ export const bakke: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(8718),
             lastUpdated: null,
+            fetchedAt: null,
         },
         {
             facilityId: 1656,
@@ -22,6 +23,7 @@ export const bakke: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(8717),
             lastUpdated: null,
+            fetchedAt: null,
         },
         {
             facilityId: 1656,
@@ -32,6 +34,7 @@ export const bakke: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(8720),
             lastUpdated: null,
+            fetchedAt: null,
         },
         {
             facilityId: 1656,
@@ -42,6 +45,7 @@ export const bakke: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(8698),
             lastUpdated: null,
+            fetchedAt: null,
         },
         {
             facilityId: 1656,
@@ -52,6 +56,7 @@ export const bakke: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(8716),
             lastUpdated: null,
+            fetchedAt: null,
         },
         {
             facilityId: 1656,
@@ -62,6 +67,7 @@ export const bakke: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(10550),
             lastUpdated: null,
+            fetchedAt: null,
         },
     ],
 
@@ -75,6 +81,7 @@ export const bakke: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(8705),
             lastUpdated: null,
+            fetchedAt: null,
         },
         {
             facilityId: 1656,
@@ -85,6 +92,7 @@ export const bakke: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(8712),
             lastUpdated: null,
+            fetchedAt: null,
         },
     ],
 
@@ -98,6 +106,7 @@ export const bakke: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(8700),
             lastUpdated: null,
+            fetchedAt: null,
         },
         {
             facilityId: 1656,
@@ -108,6 +117,7 @@ export const bakke: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(8714),
             lastUpdated: null,
+            fetchedAt: null,
         },
         {
             facilityId: 1656,
@@ -118,6 +128,7 @@ export const bakke: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(8701),
             lastUpdated: null,
+            fetchedAt: null,
         },
     ],
 
@@ -131,6 +142,7 @@ export const bakke: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(8699),
             lastUpdated: null,
+            fetchedAt: null,
         },
         {
             facilityId: 1656,
@@ -141,6 +153,7 @@ export const bakke: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(8696),
             lastUpdated: null,
+            fetchedAt: null,
         },
         {
             facilityId: 1656,
@@ -151,6 +164,7 @@ export const bakke: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(8694),
             lastUpdated: null,
+            fetchedAt: null,
         },
         {
             facilityId: 1656,
@@ -161,6 +175,7 @@ export const bakke: Record<number, Location[]> = {
             currentCapacity: null,
             maxCapacity: getFacilityCapacity(8695),
             lastUpdated: null,
+            fetchedAt: null,
         },
     ],
 };

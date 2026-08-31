@@ -20,6 +20,10 @@ import {
     type OccupancyThresholds,
 } from "../shared/utils/styles";
 import {env} from "../lib/config/env";
+import {
+    computeOccupancySummary,
+    type OccupancySummary,
+} from "../shared/occupancy/computeOccupancySummary";
 
 declare global {
     interface Window {
@@ -30,6 +34,7 @@ declare global {
 interface Props {
     facilityId: FacilityId;
     locations: Location[];
+    nowTs: number;
     occupancyThresholds?: OccupancyThresholds | null;
     locationOccupancyThresholds?: Partial<Record<number, OccupancyThresholds>>;
 }
@@ -395,15 +400,6 @@ const FLOOR_MAPS: Record<FacilityId, Partial<Record<number, FloorMapConfig>>> = 
     },
 };
 
-const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
-
-const getZoneRatio = (zone: ZoneConfig, locations: Location[]): number => {
-    const matched = locations.filter((loc) => zone.ids.includes(loc.locationId));
-    const current = matched.reduce((sum, loc) => sum + Math.max(0, loc.currentCapacity ?? 0), 0);
-    const max = matched.reduce((sum, loc) => sum + Math.max(0, loc.maxCapacity ?? 0), 0);
-    return max > 0 ? current / max : 0;
-};
-
 const getZoneBounds = (zone: ZoneConfig): {minX: number; maxX: number; minY: number; maxY: number} => ({
     minX: Math.min(...zone.corners.map((point) => point.x)),
     maxX: Math.max(...zone.corners.map((point) => point.x)),
@@ -422,7 +418,9 @@ const getZoneOccupancyThresholds = (
             .filter((loc) => zone.ids.includes(loc.locationId))
             .map((loc) => ({
                 thresholds: locationOccupancyThresholds[loc.locationId],
-                weight: loc.maxCapacity ?? 0,
+                weight: typeof loc.maxCapacity === "number" && Number.isFinite(loc.maxCapacity)
+                    ? Math.max(0, loc.maxCapacity)
+                    : 0,
             }))
     ) ?? fallback ?? null
 );
@@ -434,16 +432,25 @@ interface HeatCell {
     fill: string;
 }
 
-const HEATMAP_BASE_FILL = alpha("#023020", 0.46);
+interface ZoneSummaryModel {
+    key: string;
+    zone: ZoneConfig;
+    summary: OccupancySummary;
+    thresholds: OccupancyThresholds | null;
+}
 
-const getOverlayFill = (ratio: number, occupancyThresholds?: OccupancyThresholds | null): string | null => {
-    const percent = clamp01(ratio) * 100;
+interface ZonePresentation {
+    ariaLabel: string;
+    value: string;
+    valueColor: string;
+}
+
+const HEATMAP_BASE_FILL = "rgba(100, 116, 139, 0.18)";
+
+const getOverlayFill = (percent: number, occupancyThresholds?: OccupancyThresholds | null): string => {
     const tone = getOccupancyTone(percent, occupancyThresholds);
     if (tone === null) {
         return "rgba(100, 116, 139, 0.22)";
-    }
-    if (tone === "success") {
-        return null;
     }
     return alpha(OCCUPANCY_MAIN_HEX[tone], 0.75);
 };
@@ -477,12 +484,7 @@ interface FloorRenderData {
     mapScale: number;
     heatCells: HeatCell[];
     closedZones: readonly ZoneConfig[];
-    zoneSummaries: readonly {
-        zone: ZoneConfig;
-        percent: number;
-        closed: boolean;
-        thresholds: OccupancyThresholds | null;
-    }[];
+    zoneSummaries: readonly ZoneSummaryModel[];
 }
 
 const EMPTY_RENDER_DATA: FloorRenderData = {
@@ -499,6 +501,7 @@ const buildFloorRenderData = (
     facilityId: FacilityId,
     floor: number,
     locations: Location[],
+    nowTs: number,
     occupancyThresholds?: OccupancyThresholds | null,
     locationOccupancyThresholds: Partial<Record<number, OccupancyThresholds>> = {}
 ): FloorRenderData => {
@@ -508,15 +511,16 @@ const buildFloorRenderData = (
     }
 
     const floorLocations = locations.filter((loc) => loc.floor === floor);
-    const zoneModels = floorMap.zones.map((zone) => ({
-        bounds: getZoneBounds(zone),
-        zone,
-        ratio: getZoneRatio(zone, floorLocations),
-        thresholds: getZoneOccupancyThresholds(zone, floorLocations, locationOccupancyThresholds, occupancyThresholds),
-        closed: zone.ids.length > 0 && zone.ids.every((id) => (
-            floorLocations.some((loc) => loc.locationId === id && loc.isClosed === true)
-        )),
-    }));
+    const zoneModels = floorMap.zones.map((zone, zoneIndex) => {
+        const matched = floorLocations.filter((loc) => zone.ids.includes(loc.locationId));
+        return {
+            key: `${facilityId}:${floor}:${zoneIndex}`,
+            bounds: getZoneBounds(zone),
+            zone,
+            summary: computeOccupancySummary(matched, {nowMs: nowTs}),
+            thresholds: getZoneOccupancyThresholds(zone, floorLocations, locationOccupancyThresholds, occupancyThresholds),
+        };
+    });
 
     const baseGridCols = floorMap.aspectRatio === "9 / 16" ? 25 : 48;
     const baseGridRows = floorMap.aspectRatio === "9 / 16" ? 44 : 28;
@@ -528,8 +532,8 @@ const buildFloorRenderData = (
         for (let col = 0; col < gridCols; col += 1) {
             const x = ((col + 0.5) / gridCols) * 100;
             const y = ((row + 0.5) / gridRows) * 100;
-            let zoneValue = 0;
-            let insideAnyOpenZone = false;
+            let zonePercent = Number.NEGATIVE_INFINITY;
+            let insideAnyUsableZone = false;
             let zoneThresholds: OccupancyThresholds | null = occupancyThresholds ?? null;
 
             for (const item of zoneModels) {
@@ -540,22 +544,26 @@ const buildFloorRenderData = (
                     continue;
                 }
 
-                if (item.closed) {
+                if (
+                    (item.summary.status !== "live" && item.summary.status !== "partial")
+                    || item.summary.percent === null
+                ) {
                     continue;
                 }
-                insideAnyOpenZone = true;
-                if (item.ratio >= zoneValue) {
-                    zoneValue = item.ratio;
+                insideAnyUsableZone = true;
+                if (item.summary.percent >= zonePercent) {
+                    zonePercent = item.summary.percent;
                     zoneThresholds = item.thresholds ?? occupancyThresholds ?? null;
                 }
             }
 
-            if (insideAnyOpenZone) {
-                const value = clamp01(zoneValue);
-                const fill = getOverlayFill(value, zoneThresholds);
-                if (fill) {
-                    heatCells.push({x: col, y: row, size: 1, fill});
-                }
+            if (insideAnyUsableZone) {
+                heatCells.push({
+                    x: col,
+                    y: row,
+                    size: 1,
+                    fill: getOverlayFill(zonePercent, zoneThresholds),
+                });
             }
         }
     }
@@ -566,11 +574,11 @@ const buildFloorRenderData = (
         gridRows,
         mapScale: floorMap.zoom,
         heatCells,
-        closedZones: zoneModels.filter((item) => item.closed).map((item) => item.zone),
+        closedZones: zoneModels.filter((item) => item.summary.status === "closed").map((item) => item.zone),
         zoneSummaries: zoneModels.map((item) => ({
+            key: item.key,
             zone: item.zone,
-            percent: item.ratio * 100,
-            closed: item.closed,
+            summary: item.summary,
             thresholds: item.thresholds,
         })),
     };
@@ -578,9 +586,49 @@ const buildFloorRenderData = (
 
 const floorLabel = (floor: number): string => (floor === 0 ? "Lower" : `Floor ${floor}`);
 
+const getZonePresentation = (
+    zoneSummary: ZoneSummaryModel,
+    fallbackThresholds?: OccupancyThresholds | null
+): ZonePresentation => {
+    const {summary, zone} = zoneSummary;
+    if (summary.status === "closed") {
+        return {
+            ariaLabel: `${zone.label}: CLOSED`,
+            value: "CLOSED",
+            valueColor: "error.main",
+        };
+    }
+
+    const isObserved = (
+        (summary.status === "live" || summary.status === "partial")
+        && summary.percent !== null
+    );
+    if (!isObserved || summary.percent === null) {
+        return {
+            ariaLabel: `${zone.label}: Live occupancy unavailable`,
+            value: "Live occupancy unavailable",
+            valueColor: "text.secondary",
+        };
+    }
+
+    const percentText = `${Math.round(summary.percent)}% full`;
+    const coverageText = summary.status === "partial"
+        ? `Coverage: ${Math.round(summary.coverage * 100)}% of open capacity observed`
+        : null;
+    return {
+        ariaLabel: `${zone.label}: ${percentText}${coverageText ? `. ${coverageText}` : ""}`,
+        value: `${percentText}${coverageText ? `\n${coverageText}` : ""}`,
+        valueColor: getOccupancyColor(
+            summary.percent,
+            zoneSummary.thresholds ?? fallbackThresholds
+        ),
+    };
+};
+
 export default function FloorHeatMapCard({
     facilityId,
     locations,
+    nowTs,
     occupancyThresholds = null,
     locationOccupancyThresholds = {},
 }: Props) {
@@ -595,9 +643,7 @@ export default function FloorHeatMapCard({
     const [expanded, setExpanded] = useState(false);
     const [selectedFloor, setSelectedFloor] = useState<number>(floors[0] ?? 0);
     const [selectedZoneInfo, setSelectedZoneInfo] = useState<{
-        label: string;
-        value: string;
-        valueColor: string;
+        key: string;
         top: number;
         left: number;
     } | null>(null);
@@ -648,12 +694,19 @@ export default function FloorHeatMapCard({
                 facilityId,
                 effectiveSelectedFloor,
                 locations,
+                nowTs,
                 occupancyThresholds,
                 locationOccupancyThresholds
             );
         },
-        [expanded, facilityId, effectiveSelectedFloor, locations, occupancyThresholds, locationOccupancyThresholds]
+        [expanded, facilityId, effectiveSelectedFloor, locations, nowTs, occupancyThresholds, locationOccupancyThresholds]
     );
+    const selectedZoneSummary = selectedZoneInfo
+        ? singleFloorData.zoneSummaries.find((zoneSummary) => zoneSummary.key === selectedZoneInfo.key) ?? null
+        : null;
+    const selectedZonePresentation = selectedZoneSummary
+        ? getZonePresentation(selectedZoneSummary, occupancyThresholds)
+        : null;
 
     const renderFloorMap = (floor: number, data: FloorRenderData) => {
         if (!data.floorMap) {
@@ -811,33 +864,46 @@ export default function FloorHeatMapCard({
                         );
                     })}
 
-                    {data.zoneSummaries.map((summary, zoneIndex) => {
-                        const polygonPoints = summary.zone.corners
+                    {data.zoneSummaries.map((zoneSummary, zoneIndex) => {
+                        const polygonPoints = zoneSummary.zone.corners
                             .map((point) => `${(point.x / 100) * data.gridCols},${(point.y / 100) * data.gridRows}`)
                             .join(" ");
+                        const presentation = getZonePresentation(zoneSummary, occupancyThresholds);
+                        const openZonePopover = (top: number, left: number) => {
+                            setSelectedZoneInfo({
+                                key: zoneSummary.key,
+                                top,
+                                left,
+                            });
+                        };
 
                         return (
                             <polygon
-                                key={`hit-area-${floor}-${summary.zone.label}-${zoneIndex}`}
+                                key={`hit-area-${floor}-${zoneSummary.zone.label}-${zoneIndex}`}
                                 points={polygonPoints}
                                 fill="rgba(0, 0, 0, 0.001)"
                                 stroke="transparent"
                                 strokeWidth={0.2}
+                                role="button"
+                                tabIndex={0}
+                                aria-label={presentation.ariaLabel}
                                 style={{cursor: "pointer"}}
                                 onClick={(event) => {
                                     event.stopPropagation();
-                                    const percentText = `${Math.round(summary.percent)}% full`;
-                                    const percentColor = getOccupancyColor(
-                                        summary.percent,
-                                        summary.thresholds ?? occupancyThresholds
+                                    openZonePopover(
+                                        Math.round(event.clientY),
+                                        Math.round(event.clientX)
                                     );
-                                    setSelectedZoneInfo({
-                                        label: summary.zone.label,
-                                        value: summary.closed ? "CLOSED" : percentText,
-                                        valueColor: summary.closed ? "error.main" : percentColor,
-                                        top: Math.round(event.clientY),
-                                        left: Math.round(event.clientX),
-                                    });
+                                }}
+                                onKeyDown={(event) => {
+                                    if (event.key !== "Enter" && event.key !== " ") return;
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    const bounds = event.currentTarget.getBoundingClientRect();
+                                    openZonePopover(
+                                        Math.round(bounds.top + bounds.height / 2),
+                                        Math.round(bounds.left + bounds.width / 2)
+                                    );
                                 }}
                             />
                         );
@@ -989,7 +1055,7 @@ export default function FloorHeatMapCard({
                 </Stack>
             </Collapse>
             <Popover
-                open={Boolean(selectedZoneInfo)}
+                open={Boolean(selectedZoneInfo && selectedZoneSummary && selectedZonePresentation)}
                 onClose={() => setSelectedZoneInfo(null)}
                 anchorReference="anchorPosition"
                 anchorPosition={selectedZoneInfo ? {top: selectedZoneInfo.top, left: selectedZoneInfo.left} : undefined}
@@ -1007,13 +1073,17 @@ export default function FloorHeatMapCard({
                 }}
             >
                 <Typography variant="body2" sx={{fontWeight: 700, color: "text.primary"}}>
-                    {selectedZoneInfo?.label}
+                    {selectedZoneSummary?.zone.label}
                 </Typography>
                 <Typography
                     variant="caption"
-                    sx={{fontWeight: 800, color: selectedZoneInfo?.valueColor ?? "text.secondary"}}
+                    sx={{
+                        fontWeight: 800,
+                        color: selectedZonePresentation?.valueColor ?? "text.secondary",
+                        whiteSpace: "pre-line",
+                    }}
                 >
-                    {selectedZoneInfo?.value}
+                    {selectedZonePresentation?.value}
                 </Typography>
             </Popover>
         </ModernCard>

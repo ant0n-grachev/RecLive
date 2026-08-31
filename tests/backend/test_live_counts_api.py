@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
-from typing import Sequence
+from typing import Any, Sequence
 
 from fastapi.testclient import TestClient
 from freezegun import freeze_time
@@ -10,6 +12,13 @@ import pytest
 
 import forecast_api
 from reclive.occupancy_repository import SnapshotRepository, SnapshotRow
+
+
+PARITY_FIXTURE = json.loads(
+    (Path(__file__).resolve().parents[1] / "fixtures" / "occupancy_summary_parity.json").read_text(
+        encoding="utf-8"
+    )
+)
 
 
 class RouteSnapshotRepository:
@@ -62,13 +71,14 @@ class EvaluatorConnection:
 
 def snapshot_row(
     *,
+    location_id: int = 5761,
     source_updated_at: datetime | None = datetime(
         2026, 8, 31, 11, 59, tzinfo=timezone.utc
     ),
     fetched_at: datetime = datetime(2026, 8, 31, 12, 0, tzinfo=timezone.utc),
 ) -> SnapshotRow:
     return SnapshotRow(
-        location_id=5761,
+        location_id=location_id,
         is_closed=False,
         current_capacity=47,
         max_capacity=100,
@@ -91,7 +101,13 @@ def get_live_counts(repository: object):
         forecast_api.app.dependency_overrides.clear()
 
 
-def configure_evaluator_rule(monkeypatch: pytest.MonkeyPatch) -> None:
+def configure_evaluator_rule(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    facility_id: int = 1186,
+    section_key: str = "fitness floors",
+    threshold: int = 1,
+) -> None:
     monkeypatch.setattr(
         forecast_api,
         "load_store_from_db",
@@ -99,9 +115,9 @@ def configure_evaluator_rule(monkeypatch: pytest.MonkeyPatch) -> None:
             "rules": [
                 {
                     "_id": 0,
-                    "facilityId": 1186,
-                    "sectionKey": "fitness floors",
-                    "threshold": 1,
+                    "facilityId": facility_id,
+                    "sectionKey": section_key,
+                    "threshold": threshold,
                     "subscription": {},
                 }
             ]
@@ -113,6 +129,354 @@ def configure_evaluator_rule(monkeypatch: pytest.MonkeyPatch) -> None:
         forecast_api, "db_release_evaluator_lock", lambda connection: None
     )
     monkeypatch.setattr(forecast_api, "db_rules_count", lambda: 1)
+
+
+def utc_datetime(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def configure_parity_case(
+    monkeypatch: pytest.MonkeyPatch,
+    fixture_case: dict[str, Any],
+) -> list[SnapshotRow]:
+    location_ids = [entry["locationId"] for entry in fixture_case["locations"]]
+    capacities = {
+        entry["locationId"]: entry["maxCapacity"]
+        for entry in fixture_case["locations"]
+    }
+    monkeypatch.setattr(
+        forecast_api,
+        "location_ids_for_section",
+        lambda facility_id, section_key: location_ids,
+    )
+    monkeypatch.setattr(forecast_api, "MAX_CAP", capacities)
+
+    rows: list[SnapshotRow] = []
+    for entry in fixture_case["locations"]:
+        row = entry["row"]
+        if row is None:
+            continue
+        rows.append(
+            SnapshotRow(
+                location_id=entry["locationId"],
+                is_closed=row["isClosed"],
+                current_capacity=row["currentCapacity"],
+                max_capacity=entry["maxCapacity"],
+                source_updated_at=None,
+                fetched_at=utc_datetime(row["fetchedAt"]),
+            )
+        )
+    return rows
+
+
+@pytest.mark.parametrize(
+    "fixture_case",
+    PARITY_FIXTURE["cases"],
+    ids=[case["name"] for case in PARITY_FIXTURE["cases"]],
+)
+@freeze_time("2026-08-31 12:00:00")
+def test_section_metrics_match_shared_cross_layer_summary_cases(
+    monkeypatch: pytest.MonkeyPatch,
+    fixture_case: dict[str, Any],
+) -> None:
+    rows = configure_parity_case(monkeypatch, fixture_case)
+
+    metrics = forecast_api.compute_section_metrics(
+        9999,
+        "fixture section",
+        forecast_api.index_live_rows(rows),
+    )
+
+    assert metrics is not None
+    expected = fixture_case["expected"]
+    actual = {
+        "count": metrics.get("total"),
+        "observedCapacity": metrics.get("max"),
+        "expectedOpenCapacity": metrics.get("expectedOpenCapacity"),
+        "coverage": metrics.get("coverage"),
+        "percent": metrics.get("percent"),
+        "status": metrics.get("status"),
+    }
+    assert actual["count"] == expected["count"]
+    assert actual["observedCapacity"] == expected["observedCapacity"]
+    assert actual["expectedOpenCapacity"] == expected["expectedOpenCapacity"]
+    assert actual["coverage"] == pytest.approx(expected["coverage"])
+    assert actual["percent"] == expected["percent"]
+    assert actual["status"] == expected["status"]
+    assert (
+        actual["status"] == "live" and actual["coverage"] >= 0.8
+    ) is fixture_case["evaluatorEligible"]
+
+
+@pytest.mark.parametrize(
+    ("capacity", "is_closed", "current_capacity", "fetched_at"),
+    [
+        (100, None, 83, datetime(2026, 8, 31, 11, 55, tzinfo=timezone.utc)),
+        (100, False, True, datetime(2026, 8, 31, 11, 55, tzinfo=timezone.utc)),
+        (100, False, 83, datetime(2026, 8, 31, 11, 55)),
+        (True, False, 1, datetime(2026, 8, 31, 11, 55, tzinfo=timezone.utc)),
+    ],
+    ids=[
+        "indeterminate-closure",
+        "boolean-count",
+        "naive-fetched-at",
+        "boolean-configured-capacity",
+    ],
+)
+@freeze_time("2026-08-31 12:00:00")
+def test_section_metrics_reject_non_explicit_or_non_integer_observations(
+    monkeypatch: pytest.MonkeyPatch,
+    capacity: Any,
+    is_closed: Any,
+    current_capacity: Any,
+    fetched_at: datetime,
+) -> None:
+    monkeypatch.setattr(
+        forecast_api,
+        "location_ids_for_section",
+        lambda facility_id, section_key: [91001],
+    )
+    monkeypatch.setattr(forecast_api, "MAX_CAP", {91001: capacity})
+    row = SnapshotRow(
+        location_id=91001,
+        is_closed=is_closed,
+        current_capacity=current_capacity,
+        max_capacity=100,
+        source_updated_at=None,
+        fetched_at=fetched_at,
+    )
+
+    metrics = forecast_api.compute_section_metrics(
+        9999,
+        "fixture section",
+        forecast_api.index_live_rows([row]),
+    )
+
+    assert metrics is not None
+    expected_status = "unknown" if capacity is True else "insufficient"
+    assert metrics.get("total") is None
+    assert metrics.get("percent") is None
+    assert metrics.get("status") == expected_status
+
+
+@pytest.mark.parametrize(
+    "case_name",
+    [
+        "just-stale-row",
+        "future-row",
+        "fresh-explicit-closure",
+        "missing-row",
+        "partial-uses-observed-denominator",
+        "no-positive-configured-capacity",
+        "indeterminate-closure",
+    ],
+)
+@freeze_time("2026-08-31 12:00:00")
+def test_evaluator_skips_untrusted_or_above_threshold_shared_cases(
+    monkeypatch: pytest.MonkeyPatch,
+    case_name: str,
+) -> None:
+    fixture_case = next(
+        case for case in PARITY_FIXTURE["cases"] if case["name"] == case_name
+    )
+    rows = configure_parity_case(monkeypatch, fixture_case)
+    configure_evaluator_rule(
+        monkeypatch,
+        facility_id=9999,
+        section_key="fixture section",
+        threshold=70,
+    )
+    notifications: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        forecast_api,
+        "send_notification",
+        lambda **notification: notifications.append(notification),
+    )
+
+    result = forecast_api.evaluate_rules_once(
+        snapshot_reader=EvaluatorSnapshotReader(rows)
+    )
+
+    assert result["sent"] == 0
+    assert result["failed"] == 0
+    assert notifications == []
+
+
+@freeze_time("2026-08-31 12:00:00")
+def test_evaluator_never_sends_for_partial_summary_even_below_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture_case = next(
+        case
+        for case in PARITY_FIXTURE["cases"]
+        if case["name"] == "partial-uses-observed-denominator"
+    )
+    rows = configure_parity_case(monkeypatch, fixture_case)
+    configure_evaluator_rule(
+        monkeypatch,
+        facility_id=9999,
+        section_key="fixture section",
+        threshold=85,
+    )
+    notifications: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        forecast_api,
+        "send_notification",
+        lambda **notification: notifications.append(notification),
+    )
+
+    result = forecast_api.evaluate_rules_once(
+        snapshot_reader=EvaluatorSnapshotReader(rows)
+    )
+
+    assert fixture_case["evaluatorEligible"] is False
+    assert result["sent"] == 0
+    assert result["failed"] == 0
+    assert notifications == []
+
+
+@freeze_time("2026-08-31 12:00:00")
+def test_evaluator_can_send_for_live_summary_at_coverage_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture_case = next(
+        case
+        for case in PARITY_FIXTURE["cases"]
+        if case["name"] == "exact-live-coverage-boundary"
+    )
+    rows = configure_parity_case(monkeypatch, fixture_case)
+    configure_evaluator_rule(
+        monkeypatch,
+        facility_id=9999,
+        section_key="fixture section",
+        threshold=20,
+    )
+    notifications: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        forecast_api,
+        "send_notification",
+        lambda **notification: notifications.append(notification),
+    )
+
+    result = forecast_api.evaluate_rules_once(
+        snapshot_reader=EvaluatorSnapshotReader(rows)
+    )
+
+    assert fixture_case["evaluatorEligible"] is True
+    assert fixture_case["expected"]["coverage"] == 0.8
+    assert result["sent"] == 1
+    assert result["failed"] == 0
+    assert len(notifications) == 1
+    assert "20% full" in notifications[0]["body"]
+
+
+@freeze_time("2026-08-31 12:00:00")
+def test_evaluator_rounds_half_percent_up_for_comparison_and_copy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture_case = next(
+        case
+        for case in PARITY_FIXTURE["cases"]
+        if case["name"] == "raw-half-percent"
+    )
+    rows = configure_parity_case(monkeypatch, fixture_case)
+    notifications: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        forecast_api,
+        "send_notification",
+        lambda **notification: notifications.append(notification),
+    )
+
+    configure_evaluator_rule(
+        monkeypatch,
+        facility_id=9999,
+        section_key="fixture section",
+        threshold=12,
+    )
+    below_result = forecast_api.evaluate_rules_once(
+        snapshot_reader=EvaluatorSnapshotReader(rows)
+    )
+
+    assert fixture_case["expected"]["percent"] == 12.5
+    assert below_result["sent"] == 0
+    assert below_result["skippedThreshold"] == 1
+    assert notifications == []
+
+    configure_evaluator_rule(
+        monkeypatch,
+        facility_id=9999,
+        section_key="fixture section",
+        threshold=13,
+    )
+    at_result = forecast_api.evaluate_rules_once(
+        snapshot_reader=EvaluatorSnapshotReader(rows)
+    )
+
+    assert at_result["sent"] == 1
+    assert len(notifications) == 1
+    assert "13% full" in notifications[0]["body"]
+
+
+def test_evaluator_samples_one_aware_utc_now_for_metrics_and_notification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class CountingDateTime(datetime):
+        calls = 0
+
+        @classmethod
+        def now(cls, tz: timezone | None = None) -> "CountingDateTime":
+            assert tz is timezone.utc
+            cls.calls += 1
+            return cls(2026, 8, 31, 12, 0, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(forecast_api, "datetime", CountingDateTime)
+    monkeypatch.setattr(
+        forecast_api,
+        "location_ids_for_section",
+        lambda facility_id, section_key: [91001],
+    )
+    monkeypatch.setattr(forecast_api, "MAX_CAP", {91001: 100})
+    configure_evaluator_rule(
+        monkeypatch,
+        facility_id=9999,
+        section_key="fixture section",
+        threshold=85,
+    )
+    payloads: list[dict[str, Any]] = []
+    monkeypatch.setattr(forecast_api, "get_vapid_private_key", lambda: "private")
+    monkeypatch.setattr(
+        forecast_api,
+        "get_vapid_claims",
+        lambda: {"sub": "mailto:test@example.com"},
+    )
+    monkeypatch.setattr(
+        forecast_api,
+        "webpush",
+        lambda **kwargs: payloads.append(json.loads(kwargs["data"])),
+    )
+    row = SnapshotRow(
+        location_id=91001,
+        is_closed=False,
+        current_capacity=83,
+        max_capacity=100,
+        source_updated_at=None,
+        fetched_at=CountingDateTime(
+            2026,
+            8,
+            31,
+            11,
+            55,
+            tzinfo=timezone.utc,
+        ),
+    )
+
+    result = forecast_api.evaluate_rules_once(
+        snapshot_reader=EvaluatorSnapshotReader([row])
+    )
+
+    assert result["sent"] == 1
+    assert CountingDateTime.calls == 1
+    assert payloads[0]["sentAt"] == "2026-08-31T12:00:00+00:00"
 
 
 @freeze_time("2026-08-31 12:05:00")
@@ -271,11 +635,12 @@ def test_live_counts_returns_503_only_for_empty_or_unavailable_snapshot() -> Non
     assert "private database detail" not in unavailable.text
 
 
+@freeze_time("2026-08-31 12:05:00")
 def test_evaluator_uses_internal_snapshot_rows_without_opening_a_connection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    configure_evaluator_rule(monkeypatch)
-    reader = EvaluatorSnapshotReader([snapshot_row()])
+    configure_evaluator_rule(monkeypatch, section_key="running track")
+    reader = EvaluatorSnapshotReader([snapshot_row(location_id=5763)])
 
     def reject_connection(**kwargs: object) -> object:
         raise AssertionError(f"injected evaluator opened a connection: {kwargs}")
@@ -289,12 +654,13 @@ def test_evaluator_uses_internal_snapshot_rows_without_opening_a_connection(
     assert reader.public_envelope_read_count == 0
 
 
+@freeze_time("2026-08-31 12:05:00")
 def test_evaluator_factory_path_closes_its_connection_exactly_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    configure_evaluator_rule(monkeypatch)
+    configure_evaluator_rule(monkeypatch, section_key="running track")
     connection = EvaluatorConnection()
-    reader = EvaluatorSnapshotReader([snapshot_row()])
+    reader = EvaluatorSnapshotReader([snapshot_row(location_id=5763)])
     factory_connections: list[object] = []
 
     def open_connection(*, autocommit: bool = True) -> EvaluatorConnection:

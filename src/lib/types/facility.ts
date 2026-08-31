@@ -10,6 +10,7 @@ export interface Location {
     currentCapacity: number | null;
     maxCapacity: number | null;
     lastUpdated: string | null;
+    fetchedAt: string | null;
 }
 
 export interface FacilityPayload {

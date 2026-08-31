@@ -1,7 +1,6 @@
-import {useEffect, useRef, useState, type ReactNode} from "react";
+import type {ReactNode} from "react";
 import {Box, Button, LinearProgress, Link, Stack, Typography} from "@mui/material";
 import {alpha, useTheme} from "@mui/material/styles";
-import {animate, useMotionValue, useReducedMotion} from "framer-motion";
 import type {FacilityId} from "../lib/types/facility";
 import {
     CARD_SHELL_SX,
@@ -11,11 +10,11 @@ import {
 } from "../shared/utils/styles";
 import {formatChicagoUpdatedRelative} from "../shared/utils/chicagoTime";
 import {EXTERNAL_LINK_REL, openExternalInBrowser} from "../shared/utils/externalLink";
+import type {OccupancySummary} from "../shared/occupancy/computeOccupancySummary";
 
 interface Props {
-    total: number;
-    max: number;
-    lastUpdated?: string | null;
+    summary: OccupancySummary;
+    nowTs: number;
     facilityId: FacilityId;
     headerAction?: ReactNode;
     occupancyThresholds?: OccupancyThresholds | null;
@@ -28,115 +27,29 @@ const FACILITY_LINKS: Record<FacilityId, {label: string; href: string}> = {
 };
 
 export default function OccupancyHero({
-    total,
-    max,
-    lastUpdated,
+    summary,
+    nowTs,
     facilityId,
     headerAction = null,
     occupancyThresholds = null,
     onOpenAlerts,
 }: Props) {
     const theme = useTheme();
-    const reduceMotion = useReducedMotion();
-    const progressMotion = useMotionValue(0);
-    const [animatedTotal, setAnimatedTotal] = useState(0);
-    const [animatedPercent, setAnimatedPercent] = useState(0);
-    const [animatedBarPercent, setAnimatedBarPercent] = useState(0);
-    const animatedTotalRef = useRef(0);
-    const animatedPercentRef = useRef(0);
-    const animatedBarPercentRef = useRef(0);
-    const animationRangeRef = useRef({
-        fromTotal: 0,
-        toTotal: 0,
-        fromPercent: 0,
-        toPercent: 0,
-    });
-
-    const sampleAnimationRange = (progressValue: number) => {
-        const clampedProgress = Math.max(0, Math.min(1, progressValue));
-        const {fromTotal, toTotal, fromPercent, toPercent} = animationRangeRef.current;
-        return {
-            total: fromTotal + (toTotal - fromTotal) * clampedProgress,
-            percent: fromPercent + (toPercent - fromPercent) * clampedProgress,
-            barPercent: fromPercent + (toPercent - fromPercent) * clampedProgress,
-        };
-    };
-
-    useEffect(() => {
-        const unsubscribe = progressMotion.on("change", (progress) => {
-            const sampled = sampleAnimationRange(progress);
-            const nextTotal = sampled.total;
-            const nextPercent = sampled.percent;
-            const nextBarPercent = sampled.barPercent;
-
-            animatedTotalRef.current = nextTotal;
-            animatedPercentRef.current = nextPercent;
-            animatedBarPercentRef.current = nextBarPercent;
-            setAnimatedTotal(nextTotal);
-            setAnimatedPercent(nextPercent);
-            setAnimatedBarPercent(nextBarPercent);
-        });
-
-        return () => {
-            unsubscribe();
-        };
-    }, [progressMotion]);
-
-    useEffect(() => {
-        const nextPercent = max ? (total / max) * 100 : 0;
-        const sampledCurrent = sampleAnimationRange(progressMotion.get());
-        const fromTotal = sampledCurrent.total;
-        const fromPercent = sampledCurrent.percent;
-        const fromBarPercent = sampledCurrent.barPercent;
-
-        animatedTotalRef.current = fromTotal;
-        animatedPercentRef.current = fromPercent;
-        animatedBarPercentRef.current = fromBarPercent;
-
-        const unchanged = fromTotal === total && fromPercent === nextPercent;
-        if (unchanged) return;
-
-        if (reduceMotion) {
-            animatedTotalRef.current = total;
-            animatedPercentRef.current = nextPercent;
-            animatedBarPercentRef.current = nextPercent;
-            return;
-        }
-
-        animationRangeRef.current = {
-            fromTotal,
-            toTotal: total,
-            fromPercent,
-            toPercent: nextPercent,
-        };
-        progressMotion.set(0);
-
-        const timeline = animate(progressMotion, 1, {
-            duration: 0.95,
-            ease: [0.22, 1, 0.36, 1],
-            onComplete: () => {
-                animatedTotalRef.current = total;
-                animatedPercentRef.current = nextPercent;
-                animatedBarPercentRef.current = nextPercent;
-                setAnimatedTotal(total);
-                setAnimatedPercent(nextPercent);
-                setAnimatedBarPercent(nextPercent);
-            },
-        });
-
-        return () => {
-            timeline.stop();
-        };
-    }, [max, progressMotion, reduceMotion, total]);
-
-    const immediatePercent = max ? (total / max) * 100 : 0;
-    const displayTotal = reduceMotion ? Math.max(0, total) : Math.max(0, Math.round(animatedTotal));
-    const percent = reduceMotion ? clampPercent(immediatePercent) : clampPercent(animatedPercent);
-    const barPercent = reduceMotion ? percent : Math.max(0, Math.min(100, animatedBarPercent));
+    const hasObservedOccupancy = (
+        (summary.status === "live" || summary.status === "partial")
+        && summary.count !== null
+        && summary.percent !== null
+    );
+    const total = hasObservedOccupancy && summary.count !== null ? summary.count : 0;
+    const max = hasObservedOccupancy ? summary.observedCapacity : 0;
+    const targetPercent = hasObservedOccupancy && summary.percent !== null ? summary.percent : 0;
+    const displayTotal = Math.max(0, Math.round(total));
+    const percent = clampPercent(targetPercent);
+    const barPercent = percent;
     const occupancyColor = getOccupancyColor(percent, occupancyThresholds);
     const progressTrackBg = alpha(theme.palette.text.primary, theme.palette.mode === "dark" ? 0.24 : 0.1);
     const facilityLink = FACILITY_LINKS[facilityId];
-    const relativeUpdatedText = formatChicagoUpdatedRelative(lastUpdated);
+    const relativeUpdatedText = formatChicagoUpdatedRelative(summary.latestFetchedAt, new Date(nowTs));
 
     return (
         <Box
@@ -153,36 +66,63 @@ export default function OccupancyHero({
                     {headerAction}
                 </Stack>
 
-                <Typography variant="h3" sx={{fontWeight: 800, letterSpacing: -0.5}}>
-                    {displayTotal}
-                    <Typography
-                        component="span"
-                        sx={{fontSize: "0.58em", fontWeight: 700, color: "text.secondary", ml: 0.75}}
-                    >
-                        / {max}
+                {summary.status === "closed" ? (
+                    <Typography variant="h4" sx={{fontWeight: 900, color: "error.main", letterSpacing: 0.4}}>
+                        CLOSED
                     </Typography>
-                </Typography>
+                ) : hasObservedOccupancy ? (
+                    <>
+                        <Typography variant="h3" sx={{fontWeight: 800, letterSpacing: -0.5}}>
+                            {displayTotal}
+                            <Typography
+                                component="span"
+                                sx={{fontSize: "0.58em", fontWeight: 700, color: "text.secondary", ml: 0.75}}
+                            >
+                                / {max}
+                            </Typography>
+                        </Typography>
 
-                <Stack direction="row" spacing={1.5} alignItems="center">
-                    <Typography sx={{color: occupancyColor, fontWeight: 700, whiteSpace: "nowrap"}}>
-                        {percent}% full
-                    </Typography>
-                    <LinearProgress
-                        variant="determinate"
-                        value={barPercent}
-                        sx={{
-                            flexGrow: 1,
-                            height: 8,
-                            borderRadius: 999,
-                            bgcolor: progressTrackBg,
-                            "& .MuiLinearProgress-bar": {
+                        <Stack direction="row" spacing={1.5} alignItems="center">
+                            <Typography sx={{color: occupancyColor, fontWeight: 700, whiteSpace: "nowrap"}}>
+                                {percent}% full
+                            </Typography>
+                            <LinearProgress
+                                variant="determinate"
+                                value={barPercent}
+                                sx={{
+                                    flexGrow: 1,
+                                    height: 8,
+                                    borderRadius: 999,
+                                    bgcolor: progressTrackBg,
+                                    "& .MuiLinearProgress-bar": {
+                                        borderRadius: 999,
+                                        backgroundColor: occupancyColor,
+                                        transition: "none",
+                                    },
+                                }}
+                            />
+                        </Stack>
+                        {summary.status === "partial" && (
+                            <Typography variant="body2" color="text.secondary" sx={{fontWeight: 600}}>
+                                Coverage: {Math.round(summary.coverage * 100)}% of open capacity observed
+                            </Typography>
+                        )}
+                    </>
+                ) : (
+                    <>
+                        <Typography variant="h5" sx={{fontWeight: 800, color: "text.secondary"}}>
+                            Live occupancy unavailable
+                        </Typography>
+                        <Box
+                            aria-hidden="true"
+                            sx={{
+                                height: 8,
                                 borderRadius: 999,
-                                backgroundColor: occupancyColor,
-                                transition: "none",
-                            },
-                        }}
-                    />
-                </Stack>
+                                bgcolor: progressTrackBg,
+                            }}
+                        />
+                    </>
+                )}
 
                 <Stack direction="row" justifyContent="space-between" alignItems="flex-end" spacing={1.25}>
                     <Stack spacing={0.4} sx={{minWidth: 0, flexGrow: 1}}>

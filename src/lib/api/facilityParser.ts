@@ -15,11 +15,22 @@ interface LiveLocationRow {
     IsClosed: boolean | null;
     LastCount: number | null;
     LastUpdatedDateAndTime: string | null;
+    FetchedAt?: string | null;
 }
 
 interface LiveCountsPayloadEnvelope {
+    ingestion?: {
+        lastSuccessfulFetchAt: string | null;
+        ageSeconds: number | null;
+        status: "healthy" | "stale" | "unavailable";
+    };
     rows?: LiveLocationRow[];
     data?: LiveLocationRow[];
+}
+
+interface NormalizedLiveRows {
+    rows: LiveLocationRow[];
+    canonical: boolean;
 }
 
 const FACILITY_LAYOUTS: Record<FacilityId, Record<number, Location[]>> = {
@@ -44,15 +55,17 @@ const flatten = (floors: Record<number, Location[]>) => {
         );
 };
 
-const normalizeLiveRows = (payload: unknown): LiveLocationRow[] => {
-    if (Array.isArray(payload)) return payload as LiveLocationRow[];
+const normalizeLiveRows = (payload: unknown): NormalizedLiveRows => {
+    if (Array.isArray(payload)) {
+        return {rows: payload as LiveLocationRow[], canonical: false};
+    }
     if (!payload || typeof payload !== "object") {
         throw new Error("Unexpected live counts payload");
     }
 
     const envelope = payload as LiveCountsPayloadEnvelope;
-    if (Array.isArray(envelope.rows)) return envelope.rows;
-    if (Array.isArray(envelope.data)) return envelope.data;
+    if (Array.isArray(envelope.rows)) return {rows: envelope.rows, canonical: true};
+    if (Array.isArray(envelope.data)) return {rows: envelope.data, canonical: false};
     throw new Error("Unexpected live counts payload");
 };
 
@@ -65,15 +78,17 @@ const ensureNonEmptyLiveRows = (rows: LiveLocationRow[]): LiveLocationRow[] => {
 
 const fetchLiveRows = async (
     signal?: AbortSignal
-): Promise<{rows: LiveLocationRow[]; source: LiveDataSource}> => {
+): Promise<{rows: LiveLocationRow[]; source: LiveDataSource; canonical: boolean}> => {
     try {
         const directResp = await axios.get<unknown>(LIVE_COUNTS_FACILITY_URL, {
             signal,
             timeout: LIVE_COUNTS_REQUEST_TIMEOUT_MS,
         });
+        const normalized = normalizeLiveRows(directResp.data);
         return {
-            rows: ensureNonEmptyLiveRows(normalizeLiveRows(directResp.data)),
+            rows: ensureNonEmptyLiveRows(normalized.rows),
             source: "facility_api",
+            canonical: normalized.canonical,
         };
     } catch (directError) {
         if (signal?.aborted) throw directError;
@@ -83,9 +98,11 @@ const fetchLiveRows = async (
         signal,
         timeout: LIVE_COUNTS_REQUEST_TIMEOUT_MS,
     });
+    const normalized = normalizeLiveRows(fallbackResp.data);
     return {
-        rows: ensureNonEmptyLiveRows(normalizeLiveRows(fallbackResp.data)),
+        rows: ensureNonEmptyLiveRows(normalized.rows),
         source: "fallback_api",
+        canonical: normalized.canonical,
     };
 };
 
@@ -94,7 +111,7 @@ export async function fetchFacility(
     signal?: AbortSignal
 ): Promise<FacilityPayload> {
     const layout = cloneLayout(FACILITY_LAYOUTS[facilityId]);
-    const {rows: live, source} = await fetchLiveRows(signal);
+    const {rows: live, source, canonical} = await fetchLiveRows(signal);
 
     const index: Record<number, Location> = {};
 
@@ -105,6 +122,7 @@ export async function fetchFacility(
             loc.isClosed = null;
             loc.currentCapacity = null;
             loc.lastUpdated = null;
+            loc.fetchedAt = null;
         }
     }
 
@@ -115,6 +133,7 @@ export async function fetchFacility(
         loc.isClosed = row.IsClosed;
         loc.currentCapacity = row.LastCount;
         loc.lastUpdated = row.LastUpdatedDateAndTime ?? null;
+        loc.fetchedAt = canonical ? (row.FetchedAt ?? null) : null;
     }
 
     return {

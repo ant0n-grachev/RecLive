@@ -1,7 +1,7 @@
 import type {FacilityId, FacilityPayload} from "../types/facility";
 
 export const CACHE_KEY = "reclive:facilityCache";
-export const CACHE_VERSION = 2;
+export const CACHE_VERSION = 3;
 export const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 export type CacheEntry = {
@@ -38,8 +38,9 @@ const writeCache = (map: CacheMap) => {
 
 const isFreshEntry = (entry: CacheEntry | undefined, now = Date.now()): entry is CacheEntry => (
     Boolean(entry)
-    && entry?.version === CACHE_VERSION
+    && entry?.version === 3
     && Number.isFinite(entry.cachedAt)
+    && entry.cachedAt <= now
     && now - entry.cachedAt <= CACHE_MAX_AGE_MS
 );
 

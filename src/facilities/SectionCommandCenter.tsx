@@ -1,4 +1,3 @@
-import {useEffect, useRef, useState} from "react";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import EastRoundedIcon from "@mui/icons-material/EastRounded";
 import SouthRoundedIcon from "@mui/icons-material/SouthRounded";
@@ -13,7 +12,6 @@ import {
     Typography,
 } from "@mui/material";
 import {alpha, useTheme} from "@mui/material/styles";
-import {useReducedMotion} from "framer-motion";
 import type {Location} from "../lib/types/facility";
 import type {ForecastHour} from "../lib/types/forecast";
 import {
@@ -25,11 +23,13 @@ import {
     type OccupancyThresholds,
 } from "../shared/utils/styles";
 import {getSectionVisual} from "./sectionIcons";
+import {computeOccupancySummary} from "../shared/occupancy/computeOccupancySummary";
 
 interface Props {
     title: string;
     ids: number[];
     locations: Location[];
+    nowTs: number;
     forecast?: ForecastHour[];
     occupancyThresholds?: OccupancyThresholds | null;
     locationOccupancyThresholds?: Partial<Record<number, OccupancyThresholds>>;
@@ -39,6 +39,7 @@ export default function SectionCommandCenter({
     title,
     ids,
     locations,
+    nowTs,
     forecast,
     occupancyThresholds = null,
     locationOccupancyThresholds = {},
@@ -53,66 +54,31 @@ export default function SectionCommandCenter({
         alignItems: "flex-end",
         minHeight: 44,
     } as const;
-    const reduceMotion = useReducedMotion();
     const list = locations
         .filter((l) => ids.includes(l.locationId))
         .sort((a, b) => ids.indexOf(a.locationId) - ids.indexOf(b.locationId));
     const isSingleLocation = list.length <= 1;
-
-    const total = list.reduce((sum, loc) => sum + (loc.currentCapacity ?? 0), 0);
-    const max = list.reduce((sum, loc) => sum + (loc.maxCapacity ?? 0), 0);
-    const [animatedTotal, setAnimatedTotal] = useState(0);
-    const [animatedPercent, setAnimatedPercent] = useState(0);
-    const animatedTotalRef = useRef(0);
-    const animatedPercentRef = useRef(0);
-    const targetPercent = clampPercent(max ? (total / max) * 100 : 0);
-
-    useEffect(() => {
-        if (reduceMotion) return;
-
-        const fromTotal = animatedTotalRef.current;
-        const fromPercent = animatedPercentRef.current;
-        const toTotal = total;
-        const toPercent = targetPercent;
-        if (fromTotal === toTotal && fromPercent === toPercent) return;
-
-        let frameId = 0;
-        let startAt = 0;
-        const durationMs = 920;
-
-        const tick = (timestamp: number) => {
-            if (startAt === 0) startAt = timestamp;
-            const progress = Math.min(1, (timestamp - startAt) / durationMs);
-            const eased = 1 - Math.pow(1 - progress, 3);
-            const nextTotal = fromTotal + (toTotal - fromTotal) * eased;
-            const nextPercent = fromPercent + (toPercent - fromPercent) * eased;
-
-            animatedTotalRef.current = nextTotal;
-            animatedPercentRef.current = nextPercent;
-            setAnimatedTotal(nextTotal);
-            setAnimatedPercent(nextPercent);
-
-            if (progress < 1) {
-                frameId = window.requestAnimationFrame(tick);
-            } else {
-                animatedTotalRef.current = toTotal;
-                animatedPercentRef.current = toPercent;
-                setAnimatedTotal(toTotal);
-                setAnimatedPercent(toPercent);
-            }
-        };
-
-        frameId = window.requestAnimationFrame(tick);
-        return () => window.cancelAnimationFrame(frameId);
-    }, [reduceMotion, targetPercent, total]);
-
-    const displayTotal = reduceMotion ? Math.max(0, total) : Math.max(0, Math.round(animatedTotal));
-    const displayPercent = reduceMotion ? targetPercent : clampPercent(animatedPercent);
-    const closedCount = list.filter((loc) => loc.isClosed === true).length;
-    const allClosed = list.length > 0 && closedCount === list.length;
+    const summary = computeOccupancySummary(list, {nowMs: nowTs});
+    const locationModels = list.map((location) => ({
+        location,
+        summary: computeOccupancySummary([location], {nowMs: nowTs}),
+    }));
+    const hasObservedOccupancy = (
+        (summary.status === "live" || summary.status === "partial")
+        && summary.count !== null
+        && summary.percent !== null
+    );
+    const total = hasObservedOccupancy && summary.count !== null ? summary.count : 0;
+    const max = hasObservedOccupancy ? summary.observedCapacity : 0;
+    const targetPercent = hasObservedOccupancy && summary.percent !== null
+        ? clampPercent(summary.percent)
+        : 0;
+    const displayTotal = Math.max(0, Math.round(total));
+    const displayPercent = targetPercent;
+    const closedCount = locationModels.filter((item) => item.summary.status === "closed").length;
+    const allClosed = summary.status === "closed";
     const titleVisual = getSectionVisual(title);
     const singleLoc = list[0] ?? null;
-    const isSingleClosed = singleLoc?.isClosed === true;
     const singleLocationThresholds = singleLoc
         ? (locationOccupancyThresholds[singleLoc.locationId] ?? occupancyThresholds)
         : occupancyThresholds;
@@ -125,6 +91,36 @@ export default function SectionCommandCenter({
         ...CARD_SHELL_SX,
         overflow: "hidden",
     };
+    const summaryMetric = allClosed ? (
+        <Box sx={{...metricColumnSx, ...metricStackSx}}>
+            <Typography
+                variant="body1"
+                sx={{fontWeight: 900, color: "error.main", letterSpacing: 0.4}}
+            >
+                CLOSED
+            </Typography>
+        </Box>
+    ) : hasObservedOccupancy ? (
+        <Box sx={{...metricColumnSx, ...metricStackSx}}>
+            <Typography variant="body1" sx={{fontWeight: 800, fontVariantNumeric: "tabular-nums"}}>
+                {displayTotal} / {max}
+            </Typography>
+            <Typography variant="body2" sx={{fontWeight: 700, color: percentColor, fontVariantNumeric: "tabular-nums"}}>
+                {displayPercent}% full
+            </Typography>
+            {summary.status === "partial" && (
+                <Typography variant="caption" color="text.secondary" sx={{fontWeight: 600}}>
+                    Coverage: {Math.round(summary.coverage * 100)}% of open capacity observed
+                </Typography>
+            )}
+        </Box>
+    ) : (
+        <Box sx={{...metricColumnSx, ...metricStackSx}}>
+            <Typography variant="body2" sx={{fontWeight: 700, color: "text.secondary"}}>
+                Live occupancy unavailable
+            </Typography>
+        </Box>
+    );
 
     const forecastStrip = !!forecast?.length && (
         <Stack direction="row" spacing={0.75} sx={{mb: 1.25, flexWrap: "wrap", rowGap: 0.75}}>
@@ -149,8 +145,11 @@ export default function SectionCommandCenter({
                                 {(() => {
                                     const currentValue = Math.max(0, Math.round(point.expectedCount));
                                     const previousValue = index === 0
-                                        ? Math.max(0, total)
+                                        ? (summary.status === "live" ? summary.count : null)
                                         : Math.max(0, Math.round(forecast[index - 1]?.expectedCount ?? 0));
+                                    if (previousValue === null) {
+                                        return <EastRoundedIcon sx={{fontSize: 13, color: "text.disabled"}}/>;
+                                    }
                                     const delta = currentValue - previousValue;
 
                                     if (delta > 0) {
@@ -187,11 +186,11 @@ export default function SectionCommandCenter({
 
     const locationRows = (
         <Stack spacing={0.75}>
-            {list.map((loc) => {
-                const isClosed = loc.isClosed === true;
-                const current = loc.currentCapacity ?? 0;
-                const capacity = loc.maxCapacity ?? 0;
-                const locPct = capacity ? clampPercent((current / capacity) * 100) : 0;
+            {locationModels.map(({location: loc, summary: locationSummary}) => {
+                const isClosed = locationSummary.status === "closed";
+                const isObserved = locationSummary.status === "live"
+                    && locationSummary.count !== null
+                    && locationSummary.percent !== null;
                 const locationThresholds = locationOccupancyThresholds[loc.locationId] ?? occupancyThresholds;
 
                 return (
@@ -214,12 +213,16 @@ export default function SectionCommandCenter({
                             <Typography variant="body2" sx={{fontWeight: 700, color: "error.main"}}>
                                 CLOSED
                             </Typography>
-                        ) : (
+                        ) : isObserved && locationSummary.count !== null && locationSummary.percent !== null ? (
                             <Typography variant="body2" sx={{fontWeight: 700, color: "text.primary", whiteSpace: "nowrap"}}>
-                                {current} / {capacity}{" "}
-                                <Box component="span" sx={{color: getOccupancyColor(locPct, locationThresholds)}}>
-                                    ({locPct}%)
+                                {locationSummary.count} / {locationSummary.observedCapacity}{" "}
+                                <Box component="span" sx={{color: getOccupancyColor(locationSummary.percent, locationThresholds)}}>
+                                    ({Math.round(locationSummary.percent)}%)
                                 </Box>
+                            </Typography>
+                        ) : (
+                            <Typography variant="body2" sx={{fontWeight: 700, color: "text.secondary"}}>
+                                Live occupancy unavailable
                             </Typography>
                         )}
                     </Box>
@@ -264,25 +267,7 @@ export default function SectionCommandCenter({
                         </Stack>
                     </Box>
                     <Box sx={metricRailSx}>
-                        {isSingleClosed ? (
-                            <Box sx={{...metricColumnSx, ...metricStackSx}}>
-                                <Typography
-                                    variant="body1"
-                                    sx={{fontWeight: 900, color: "error.main", letterSpacing: 0.4}}
-                                >
-                                    CLOSED
-                                </Typography>
-                            </Box>
-                        ) : (
-                            <Box sx={{...metricColumnSx, ...metricStackSx}}>
-                                <Typography variant="body1" sx={{fontWeight: 800, fontVariantNumeric: "tabular-nums"}}>
-                                    {displayTotal} / {max}
-                                </Typography>
-                                <Typography variant="body2" sx={{fontWeight: 700, color: percentColor, fontVariantNumeric: "tabular-nums"}}>
-                                    {displayPercent}% full
-                                </Typography>
-                            </Box>
-                        )}
+                        {summaryMetric}
                         <Box sx={{width: 22, display: "flex", justifyContent: "center", opacity: 0}}>
                             <ExpandMoreIcon fontSize="small"/>
                         </Box>
@@ -353,25 +338,7 @@ export default function SectionCommandCenter({
                                 </Typography>
                             )}
                         </Box>
-                        {allClosed ? (
-                            <Box sx={{...metricColumnSx, ...metricStackSx}}>
-                                <Typography
-                                    variant="body1"
-                                    sx={{fontWeight: 900, color: "error.main", letterSpacing: 0.4}}
-                                >
-                                    CLOSED
-                                </Typography>
-                            </Box>
-                        ) : (
-                            <Box sx={{...metricColumnSx, ...metricStackSx}}>
-                                <Typography variant="body1" sx={{fontWeight: 800, fontVariantNumeric: "tabular-nums"}}>
-                                    {displayTotal} / {max}
-                                </Typography>
-                                <Typography variant="body2" sx={{fontWeight: 700, color: percentColor, fontVariantNumeric: "tabular-nums"}}>
-                                    {displayPercent}% full
-                                </Typography>
-                            </Box>
-                        )}
+                        {summaryMetric}
                     </Stack>
                 </AccordionSummary>
 

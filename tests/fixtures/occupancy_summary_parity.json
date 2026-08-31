@@ -1,0 +1,241 @@
+{
+  "now": "2026-08-31T12:00:00Z",
+  "cases": [
+    {
+      "name": "exact-ten-minute-boundary",
+      "evaluatorEligible": true,
+      "locations": [
+        {
+          "locationId": 91001,
+          "maxCapacity": 100,
+          "row": {
+            "isClosed": false,
+            "currentCapacity": 20,
+            "fetchedAt": "2026-08-31T11:50:00Z"
+          }
+        }
+      ],
+      "expected": {
+        "count": 20,
+        "observedCapacity": 100,
+        "expectedOpenCapacity": 100,
+        "coverage": 1,
+        "percent": 20,
+        "status": "live"
+      }
+    },
+    {
+      "name": "exact-live-coverage-boundary",
+      "evaluatorEligible": true,
+      "locations": [
+        {
+          "locationId": 91001,
+          "maxCapacity": 80,
+          "row": {
+            "isClosed": false,
+            "currentCapacity": 16,
+            "fetchedAt": "2026-08-31T11:55:00Z"
+          }
+        },
+        {
+          "locationId": 91002,
+          "maxCapacity": 20,
+          "row": null
+        }
+      ],
+      "expected": {
+        "count": 16,
+        "observedCapacity": 80,
+        "expectedOpenCapacity": 100,
+        "coverage": 0.8,
+        "percent": 20,
+        "status": "live"
+      }
+    },
+    {
+      "name": "just-stale-row",
+      "evaluatorEligible": false,
+      "locations": [
+        {
+          "locationId": 91001,
+          "maxCapacity": 100,
+          "row": {
+            "isClosed": false,
+            "currentCapacity": 83,
+            "fetchedAt": "2026-08-31T11:49:59.999Z"
+          }
+        }
+      ],
+      "expected": {
+        "count": null,
+        "observedCapacity": 0,
+        "expectedOpenCapacity": 100,
+        "coverage": 0,
+        "percent": null,
+        "status": "insufficient"
+      }
+    },
+    {
+      "name": "future-row",
+      "evaluatorEligible": false,
+      "locations": [
+        {
+          "locationId": 91001,
+          "maxCapacity": 100,
+          "row": {
+            "isClosed": false,
+            "currentCapacity": 83,
+            "fetchedAt": "2026-08-31T12:00:00.001Z"
+          }
+        }
+      ],
+      "expected": {
+        "count": null,
+        "observedCapacity": 0,
+        "expectedOpenCapacity": 100,
+        "coverage": 0,
+        "percent": null,
+        "status": "insufficient"
+      }
+    },
+    {
+      "name": "fresh-explicit-closure",
+      "evaluatorEligible": false,
+      "locations": [
+        {
+          "locationId": 91001,
+          "maxCapacity": 100,
+          "row": {
+            "isClosed": true,
+            "currentCapacity": 0,
+            "fetchedAt": "2026-08-31T11:55:00Z"
+          }
+        }
+      ],
+      "expected": {
+        "count": null,
+        "observedCapacity": 0,
+        "expectedOpenCapacity": 0,
+        "coverage": 0,
+        "percent": null,
+        "status": "closed"
+      }
+    },
+    {
+      "name": "missing-row",
+      "evaluatorEligible": false,
+      "locations": [
+        {
+          "locationId": 91001,
+          "maxCapacity": 100,
+          "row": null
+        }
+      ],
+      "expected": {
+        "count": null,
+        "observedCapacity": 0,
+        "expectedOpenCapacity": 100,
+        "coverage": 0,
+        "percent": null,
+        "status": "insufficient"
+      }
+    },
+    {
+      "name": "partial-uses-observed-denominator",
+      "evaluatorEligible": false,
+      "locations": [
+        {
+          "locationId": 91001,
+          "maxCapacity": 100,
+          "row": {
+            "isClosed": false,
+            "currentCapacity": 83,
+            "fetchedAt": "2026-08-31T11:55:00Z"
+          }
+        },
+        {
+          "locationId": 91002,
+          "maxCapacity": 32,
+          "row": null
+        }
+      ],
+      "expected": {
+        "count": 83,
+        "observedCapacity": 100,
+        "expectedOpenCapacity": 132,
+        "coverage": 0.7575757575757576,
+        "percent": 83,
+        "status": "partial"
+      }
+    },
+    {
+      "name": "no-positive-configured-capacity",
+      "evaluatorEligible": false,
+      "locations": [
+        {
+          "locationId": 91001,
+          "maxCapacity": 0,
+          "row": {
+            "isClosed": false,
+            "currentCapacity": 0,
+            "fetchedAt": "2026-08-31T11:55:00Z"
+          }
+        }
+      ],
+      "expected": {
+        "count": null,
+        "observedCapacity": 0,
+        "expectedOpenCapacity": 0,
+        "coverage": 0,
+        "percent": null,
+        "status": "unknown"
+      }
+    },
+    {
+      "name": "indeterminate-closure",
+      "evaluatorEligible": false,
+      "locations": [
+        {
+          "locationId": 91001,
+          "maxCapacity": 100,
+          "row": {
+            "isClosed": null,
+            "currentCapacity": 83,
+            "fetchedAt": "2026-08-31T11:55:00Z"
+          }
+        }
+      ],
+      "expected": {
+        "count": null,
+        "observedCapacity": 0,
+        "expectedOpenCapacity": 100,
+        "coverage": 0,
+        "percent": null,
+        "status": "insufficient"
+      }
+    },
+    {
+      "name": "raw-half-percent",
+      "evaluatorEligible": true,
+      "locations": [
+        {
+          "locationId": 91001,
+          "maxCapacity": 8,
+          "row": {
+            "isClosed": false,
+            "currentCapacity": 1,
+            "fetchedAt": "2026-08-31T11:55:00Z"
+          }
+        }
+      ],
+      "expected": {
+        "count": 1,
+        "observedCapacity": 8,
+        "expectedOpenCapacity": 8,
+        "coverage": 1,
+        "percent": 12.5,
+        "status": "live"
+      }
+    }
+  ]
+}

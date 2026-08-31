@@ -3,6 +3,7 @@ import {
     lazy,
     useCallback,
     useEffect,
+    useLayoutEffect,
     useMemo,
     useState,
 } from "react";
@@ -30,7 +31,7 @@ import {
     FACILITY_KNOWN_IDS,
     isSectionRow,
 } from "../facilities/constants";
-import type {FacilityId, FacilityPayload} from "../lib/types/facility";
+import type {FacilityId} from "../lib/types/facility";
 import type {ForecastDay, ForecastHour} from "../lib/types/forecast";
 import {
     getChicagoDayAge,
@@ -39,10 +40,10 @@ import {
     isWithinChicagoHours,
 } from "../shared/utils/chicagoTime";
 import {
-    clampPercent,
     combineOccupancyThresholds,
     type OccupancyThresholds,
 } from "../shared/utils/styles";
+import {computeOccupancySummary} from "../shared/occupancy/computeOccupancySummary";
 import {useFacilitySeo} from "./seo";
 import AlertsPanel from "./components/AlertsPanel";
 import InstallGuideDialog from "./components/InstallGuideDialog";
@@ -71,7 +72,6 @@ const AUTO_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 const AUTO_REFRESH_RETRY_INTERVAL_MS = 2 * 60 * 1000;
 const AUTO_REFRESH_CHECK_INTERVAL_MS = 60 * 1000;
 const MANUAL_REFRESH_COOLDOWN_MS = 3000;
-const STALE_HIDE_DAILY_FORECAST_AFTER_DAYS = 2;
 const FORECAST_VISIBLE_SECTIONS = new Set(["fitness floors", "basketball courts"]);
 const CLOCK_TICK_MS = 30 * 1000;
 const CONTENT_EASE = [0.22, 1, 0.36, 1] as const;
@@ -196,32 +196,6 @@ const shiftDateKeyByDays = (dateKey: string | null, dayShift: number): string | 
     const shifted = new Date(Date.UTC(year, month - 1, day + dayShift));
     if (Number.isNaN(shifted.getTime())) return null;
     return `${shifted.getUTCFullYear()}-${pad2(shifted.getUTCMonth() + 1)}-${pad2(shifted.getUTCDate())}`;
-};
-
-const getLatestTimestamp = (payload: FacilityPayload | null | undefined): string | null => {
-    if (!payload) return null;
-
-    let latest: string | null = null;
-    let latestTs: number | null = null;
-    for (const location of payload.locations) {
-        const value = location.lastUpdated;
-        if (!value) continue;
-
-        const timestampMs = getChicagoTimestampMs(value);
-        if (timestampMs !== null) {
-            if (latestTs === null || timestampMs > latestTs) {
-                latestTs = timestampMs;
-                latest = value;
-            }
-            continue;
-        }
-
-        if (!latest) {
-            latest = value;
-        }
-    }
-
-    return latest;
 };
 
 const normalizeSectionTitle = (title: string): string =>
@@ -533,7 +507,8 @@ export default function App({
     const [isCrowdAlertOpen, setIsCrowdAlertOpen] = useState(false);
     const [isInstallGuideOpen, setIsInstallGuideOpen] = useState(false);
     const [debugNowMs, setDebugNowMs] = useState<number | null>(() => getInitialDebugNowMs());
-    const [nowTs, setNowTs] = useState(() => getInitialDebugNowMs() ?? Date.now());
+    const [clockTickTs, setClockTickTs] = useState(() => Date.now());
+    const nowTs = debugNowMs ?? clockTickTs;
     const [predictionOverrideEnabled, setPredictionOverrideEnabled] = useState(false);
     const [closureOverrideEnabled, setClosureOverrideEnabled] = useState(() => getInitialClosureOverride());
     useFacilitySeo(facility);
@@ -586,7 +561,7 @@ export default function App({
         if (typeof window === "undefined") return;
 
         const timer = window.setInterval(() => {
-            setNowTs(Date.now());
+            setClockTickTs(Date.now());
         }, CLOCK_TICK_MS);
 
         return () => {
@@ -644,15 +619,25 @@ export default function App({
     };
 
     const activeData = data?.facilityId === facility ? data : null;
+    useLayoutEffect(() => {
+        if (debugNowMs !== null || !activeData) return;
 
-    const total = activeData
-        ? activeData.locations.reduce((sum, l) => sum + (l.currentCapacity ?? 0), 0)
-        : 0;
+        let isCancelled = false;
+        // Sample the clock when a new live snapshot is accepted without making render impure.
+        void Promise.resolve().then(() => {
+            if (!isCancelled) {
+                setClockTickTs(Date.now());
+            }
+        });
 
-    const max = activeData
-        ? activeData.locations.reduce((sum, l) => sum + (l.maxCapacity ?? 0), 0)
-        : 0;
-    const lastUpdated = getLatestTimestamp(activeData);
+        return () => {
+            isCancelled = true;
+        };
+    }, [activeData, debugNowMs]);
+    const facilitySummary = useMemo(
+        () => computeOccupancySummary(activeData?.locations ?? [], {nowMs: nowTs}),
+        [activeData, nowTs]
+    );
     const inferredHourBounds = useMemo(
         () => deriveForecastBounds(forecastDays),
         [forecastDays]
@@ -664,7 +649,6 @@ export default function App({
     const predictionStartHour = resolvedHourBounds.startHour ?? 0;
     const predictionEndHour = resolvedHourBounds.endHour ?? 23;
     const predictionEndHourExclusive = Math.min(24, predictionEndHour + 1);
-    const lastUpdatedDayAge = getChicagoDayAge(lastUpdated, new Date(nowTs));
     const todayDateKey = useMemo(() => {
         const nowParts = getChicagoDateParts(new Date(nowTs));
         return nowParts ? chicagoDayKey(nowParts) : null;
@@ -685,13 +669,14 @@ export default function App({
         const startMinutes = rule ? parseScheduleStartMinutes(rule.hours) : null;
         if (startMinutes === null) return false;
 
-        if (!lastUpdated) return true;
+        const latestFetchedAt = facilitySummary.latestFetchedAt;
+        if (!latestFetchedAt) return true;
 
-        const lastUpdatedMs = getChicagoTimestampMs(lastUpdated);
-        if (lastUpdatedMs === null) return true;
+        const latestFetchedMs = getChicagoTimestampMs(latestFetchedAt);
+        if (latestFetchedMs === null) return true;
 
         const nowParts = getChicagoDateParts(new Date(nowTs));
-        const updatedParts = getChicagoDateParts(new Date(lastUpdatedMs));
+        const updatedParts = getChicagoDateParts(new Date(latestFetchedMs));
         if (!nowParts || !updatedParts) return false;
 
         const nowDay = chicagoDayKey(nowParts);
@@ -703,7 +688,6 @@ export default function App({
         return updatedMinutes < startMinutes;
     })();
     const hasAnyError = Boolean(error) || Boolean(forecastError);
-    const isDataLikelyStale = typeof lastUpdatedDayAge === "number" && lastUpdatedDayAge >= 1;
     const isWithinPredictionHours = isWithinChicagoHours(
         predictionStartHour,
         predictionEndHourExclusive,
@@ -717,17 +701,12 @@ export default function App({
         forecastError,
         isScheduledClosedNow: isScheduledClosedNow && !closureOverrideEnabled,
         isScheduledOpenButDataNotLive,
-        isDataLikelyStale,
+        occupancyStatus: facilitySummary.status,
     });
-    const isDataVeryStale = typeof lastUpdatedDayAge === "number" && lastUpdatedDayAge >= STALE_HIDE_DAILY_FORECAST_AFTER_DAYS;
     const cacheAgeText = liveDataSource === "cache" ? formatCacheAge(cacheTimestampMs, nowTs) : null;
     const baseWarningText = predictionOverrideEnabled || closureOverrideEnabled
         ? null
-        : (
-            warning.kind === "stale" && isDataVeryStale
-                ? "The gym may be closed right now. Occupancy info is not live, and forecasts are hidden."
-                : warning.text
-        );
+        : warning.text;
     const warningText = (
         baseWarningText
         && cacheAgeText
@@ -770,7 +749,9 @@ export default function App({
         const parsed = parseDebugNowMs(value);
         writeDebugNowStorage(value && parsed !== null ? value : null);
         setDebugNowMs(parsed);
-        setNowTs(parsed ?? Date.now());
+        if (parsed === null) {
+            setClockTickTs(Date.now());
+        }
         return parsed;
     }, []);
 
@@ -893,9 +874,7 @@ export default function App({
             const overall: AlertSectionOption = {
                 key: "overall",
                 label: "Entire Facility",
-                total,
-                max,
-                percent: clampPercent(max ? (total / max) * 100 : 0),
+                summary: facilitySummary,
             };
 
             const bySection = sectionConfigs.map((section) => {
@@ -903,22 +882,17 @@ export default function App({
                 const sectionLocations = activeData
                     ? activeData.locations.filter((location) => idSet.has(location.locationId))
                     : [];
-                const sectionTotal = sectionLocations.reduce((sum, location) => sum + (location.currentCapacity ?? 0), 0);
-                const sectionMax = sectionLocations.reduce((sum, location) => sum + (location.maxCapacity ?? 0), 0);
-                const sectionPercent = clampPercent(sectionMax ? (sectionTotal / sectionMax) * 100 : 0);
 
                 return {
                     key: normalizeSectionTitle(section.title),
                     label: section.title,
-                    total: sectionTotal,
-                    max: sectionMax,
-                    percent: sectionPercent,
+                    summary: computeOccupancySummary(sectionLocations, {nowMs: nowTs}),
                 };
             });
 
             return [overall, ...bySection];
         },
-        [sectionConfigs, activeData, total, max]
+        [sectionConfigs, activeData, facilitySummary, nowTs]
     );
     const visibleForecastDays = useMemo(
         () => {
@@ -973,7 +947,6 @@ export default function App({
         && visibleForecastDays.length > 0;
     const canShowActiveDailyForecast = !showClosedFacilityMode && (predictionOverrideEnabled || closureOverrideEnabled || (
         !forecastError
-        && !isDataVeryStale
         && warning.kind !== "offline_cache"
         && warning.kind !== "total_outage_cache"
         && warning.kind !== "prediction_unavailable"
@@ -1000,7 +973,7 @@ export default function App({
             canShowActiveDailyForecast,
             canShowDailyForecastCard,
             warningKind: warning.kind,
-            isDataVeryStale,
+            occupancyStatus: facilitySummary.status,
         });
 
         return () => {
@@ -1012,7 +985,7 @@ export default function App({
         canShowDailyForecastCard,
         forecastDays,
         forecastError,
-        isDataVeryStale,
+        facilitySummary.status,
         isExpectedOpenTomorrow,
         nextOpenDateKey,
         nowTs,
@@ -1027,7 +1000,9 @@ export default function App({
         () => forecastOccupancyThresholds ?? combineOccupancyThresholds(
             (activeData?.locations ?? []).map((location) => ({
                 thresholds: forecastLocationOccupancyThresholds[location.locationId],
-                weight: location.maxCapacity ?? 0,
+                weight: typeof location.maxCapacity === "number" && Number.isFinite(location.maxCapacity)
+                    ? Math.max(0, location.maxCapacity)
+                    : 0,
             }))
         ),
         [activeData, forecastLocationOccupancyThresholds, forecastOccupancyThresholds]
@@ -1050,7 +1025,9 @@ export default function App({
                         .filter((location) => idSet.has(location.locationId))
                         .map((location) => ({
                             thresholds: forecastLocationOccupancyThresholds[location.locationId],
-                            weight: location.maxCapacity ?? 0,
+                            weight: typeof location.maxCapacity === "number" && Number.isFinite(location.maxCapacity)
+                                ? Math.max(0, location.maxCapacity)
+                                : 0,
                         }))
                 ) ?? occupancyThresholds;
 
@@ -1185,9 +1162,8 @@ export default function App({
                             {!showClosedFacilityMode && (
                                 <Box component={motion.div} variants={facilityItemVariants}>
                                     <OccupancyHero
-                                        total={total}
-                                        max={max}
-                                        lastUpdated={lastUpdated}
+                                        summary={facilitySummary}
+                                        nowTs={nowTs}
                                         facilityId={facility}
                                         headerAction={
                                             !showClosedFacilityMode
@@ -1277,6 +1253,7 @@ export default function App({
                                         <FloorHeatMapCard
                                             facilityId={facility}
                                             locations={activeData.locations}
+                                            nowTs={nowTs}
                                             occupancyThresholds={occupancyThresholds}
                                             locationOccupancyThresholds={forecastLocationOccupancyThresholds}
                                         />
@@ -1297,6 +1274,7 @@ export default function App({
                                                 title={section.title}
                                                 ids={[...section.ids]}
                                                 locations={activeData.locations}
+                                                nowTs={nowTs}
                                                 forecast={sectionForecastMap[normalizeSectionTitle(section.title)]}
                                                 occupancyThresholds={
                                                     sectionOccupancyThresholds[normalizeSectionTitle(section.title)]
@@ -1315,6 +1293,7 @@ export default function App({
                                         title={dashboardConfig.otherTitle}
                                         exclude={knownIds}
                                         locations={activeData.locations}
+                                        nowTs={nowTs}
                                         occupancyThresholds={occupancyThresholds}
                                         locationOccupancyThresholds={forecastLocationOccupancyThresholds}
                                     />

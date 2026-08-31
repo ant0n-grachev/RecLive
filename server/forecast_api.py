@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 import os
 import threading
 from contextlib import asynccontextmanager
@@ -1328,12 +1329,13 @@ def send_notification(
     title: str,
     body: str,
     url: str,
+    sent_at: str | None = None,
 ) -> None:
     payload = json.dumps({
         "title": title,
         "body": body,
         "url": url or DEFAULT_NOTIFICATION_URL,
-        "sentAt": now_iso(),
+        "sentAt": sent_at or now_iso(),
     })
 
     try:
@@ -1377,35 +1379,109 @@ def index_live_rows(rows: Sequence[SnapshotRow]) -> Dict[int, SnapshotRow]:
     return output
 
 
+OCCUPANCY_FRESHNESS = timedelta(minutes=10)
+
+
+def is_aware_utc_datetime(value: Any) -> bool:
+    return (
+        isinstance(value, datetime)
+        and value.tzinfo is not None
+        and value.utcoffset() == timedelta(0)
+    )
+
+
+def is_fresh_snapshot(row: SnapshotRow, now: datetime) -> bool:
+    fetched_at = row.fetched_at
+    if not is_aware_utc_datetime(fetched_at):
+        return False
+    elapsed = now - fetched_at
+    return timedelta(0) <= elapsed <= OCCUPANCY_FRESHNESS
+
+
+def round_nonnegative_percent(value: float) -> int:
+    return max(0, math.floor(value + 0.5))
+
+
 def compute_section_metrics(
     facility_id: int,
     section_key: str,
     live_index: Dict[int, SnapshotRow],
-) -> Optional[Dict[str, int]]:
+    now: datetime | None = None,
+) -> Optional[Dict[str, Any]]:
     location_ids = location_ids_for_section(facility_id, section_key)
     if not location_ids:
         return None
 
-    total = 0
-    max_capacity = 0
+    metric_now = now if now is not None else datetime.now(timezone.utc)
+    if not is_aware_utc_datetime(metric_now):
+        raise ValueError("section metric time must be an aware UTC datetime")
+
+    configured_locations = 0
+    closed_locations = 0
+    expected_open_capacity = 0
+    observed_locations = 0
+    observed_capacity = 0
+    observed_count = 0
     for location_id in location_ids:
+        configured_capacity = MAX_CAP.get(location_id)
+        if type(configured_capacity) is not int or configured_capacity <= 0:
+            continue
+
+        configured_locations += 1
         row = live_index.get(location_id)
-        count_value = row.current_capacity if row is not None else None
-        try:
-            current = int(count_value) if count_value is not None else 0
-        except (TypeError, ValueError):
-            current = 0
-        max_cap = int(MAX_CAP.get(location_id, 0))
-        total += max(0, current)
-        max_capacity += max(0, max_cap)
+        fresh = row is not None and is_fresh_snapshot(row, metric_now)
 
-    if max_capacity <= 0:
-        percent = 0
+        if fresh and row is not None and row.is_closed is True:
+            closed_locations += 1
+            continue
+
+        expected_open_capacity += configured_capacity
+
+        if (
+            fresh
+            and row is not None
+            and row.is_closed is False
+            and type(row.current_capacity) is int
+            and row.current_capacity >= 0
+        ):
+            observed_locations += 1
+            observed_capacity += configured_capacity
+            observed_count += row.current_capacity
+
+    coverage = (
+        observed_capacity / expected_open_capacity
+        if expected_open_capacity > 0
+        else 0
+    )
+    all_configured_locations_closed = (
+        configured_locations > 0
+        and closed_locations == configured_locations
+    )
+
+    if all_configured_locations_closed:
+        status = "closed"
+    elif expected_open_capacity <= 0:
+        status = "unknown"
+    elif coverage >= 0.8:
+        status = "live"
+    elif coverage >= 0.5:
+        status = "partial"
     else:
-        percent = int(round((total / max_capacity) * 100))
+        status = "insufficient"
 
-    percent = max(0, percent)
-    return {"total": total, "max": max_capacity, "percent": percent}
+    percent = (
+        (observed_count / observed_capacity) * 100
+        if status in {"live", "partial"} and observed_capacity > 0
+        else None
+    )
+    return {
+        "total": observed_count if observed_locations > 0 else None,
+        "max": observed_capacity,
+        "expectedOpenCapacity": expected_open_capacity,
+        "coverage": coverage,
+        "percent": percent,
+        "status": status,
+    }
 
 
 def evaluate_rules_once(
@@ -1418,6 +1494,9 @@ def evaluate_rules_once(
             rules = list(load_store_from_db().get("rules", []))
             if not rules:
                 return {"status": "ok", "rules": 0, "sent": 0, "failed": 0}
+
+            evaluation_now = datetime.now(timezone.utc)
+            evaluation_now_iso = evaluation_now.isoformat()
 
             if snapshot_reader is None:
                 try:
@@ -1451,7 +1530,7 @@ def evaluate_rules_once(
                     "skippedMissingSection": 0,
                     "skippedInactive": 0,
                     "skippedLocked": 1,
-                    "evaluatedAt": now_iso(),
+                    "evaluatedAt": evaluation_now_iso,
                 }
 
             try:
@@ -1465,13 +1544,27 @@ def evaluate_rules_once(
                         threshold = int(rule.get("threshold", 0))
 
                         metrics = compute_section_metrics(
-                            facility_id, section_key, live_index
+                            facility_id,
+                            section_key,
+                            live_index,
+                            now=evaluation_now,
                         )
                         if metrics is None:
                             skipped_missing += 1
                             continue
 
-                        percent = int(metrics["percent"])
+                        coverage_value = metrics.get("coverage")
+                        percent_value = metrics.get("percent")
+                        if (
+                            metrics.get("status") != "live"
+                            or type(coverage_value) not in {int, float}
+                            or float(coverage_value) < 0.8
+                            or type(percent_value) not in {int, float}
+                        ):
+                            skipped_missing += 1
+                            continue
+
+                        percent = round_nonnegative_percent(float(percent_value))
                         if percent > threshold:
                             skipped_threshold += 1
                             continue
@@ -1494,6 +1587,7 @@ def evaluate_rules_once(
                             title=notification_title,
                             body=notification_body,
                             url=notification_url,
+                            sent_at=evaluation_now_iso,
                         )
                         sent += 1
                         if rule_id > 0:
@@ -1517,7 +1611,7 @@ def evaluate_rules_once(
             "skippedCooldown": 0,
             "skippedMissingSection": skipped_missing,
             "skippedInactive": 0,
-            "evaluatedAt": now_iso(),
+            "evaluatedAt": evaluation_now_iso,
         }
     finally:
         safe_close(snapshot_connection)

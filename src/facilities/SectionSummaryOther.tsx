@@ -10,11 +10,13 @@ import {
     type OccupancyThresholds,
 } from "../shared/utils/styles";
 import {getSectionVisual} from "./sectionIcons";
+import {computeOccupancySummary} from "../shared/occupancy/computeOccupancySummary";
 
 interface Props {
     title: string;
     exclude: number[];
     locations: Location[];
+    nowTs: number;
     occupancyThresholds?: OccupancyThresholds | null;
     locationOccupancyThresholds?: Partial<Record<number, OccupancyThresholds>>;
 }
@@ -23,6 +25,7 @@ export default function SectionSummaryOther({
     title,
     exclude,
     locations,
+    nowTs,
     occupancyThresholds = null,
     locationOccupancyThresholds = {},
 }: Props) {
@@ -34,18 +37,27 @@ export default function SectionSummaryOther({
         return null;
     }
 
-    const total = list.reduce((s, l) => s + (l.currentCapacity ?? 0), 0);
-    const max = list.reduce((s, l) => s + (l.maxCapacity ?? 0), 0);
-    const percent = clampPercent(max ? (total / max) * 100 : 0);
+    const summary = computeOccupancySummary(list, {nowMs: nowTs});
+    const locationModels = list.map((location) => ({
+        location,
+        summary: computeOccupancySummary([location], {nowMs: nowTs}),
+    }));
+    const hasObservedOccupancy = (
+        (summary.status === "live" || summary.status === "partial")
+        && summary.count !== null
+        && summary.percent !== null
+    );
+    const percent = summary.percent === null ? 0 : clampPercent(summary.percent);
     const summaryThresholds = combineOccupancyThresholds(
         list.map((loc) => ({
             thresholds: locationOccupancyThresholds[loc.locationId],
-            weight: loc.maxCapacity ?? 0,
+            weight: typeof loc.maxCapacity === "number" && Number.isFinite(loc.maxCapacity)
+                ? Math.max(0, loc.maxCapacity)
+                : 0,
         }))
     ) ?? occupancyThresholds;
     const color = getOccupancyColor(percent, summaryThresholds);
-    const closedCount = list.filter((loc) => loc.isClosed === true).length;
-    const allClosed = list.length > 0 && closedCount === list.length;
+    const allClosed = summary.status === "closed";
     const titleVisual = getSectionVisual(title);
 
     return (
@@ -75,15 +87,26 @@ export default function SectionSummaryOther({
                 <Typography variant="h5" sx={{fontWeight: 900, color: "error.main", letterSpacing: 0.4}}>
                     CLOSED
                 </Typography>
+            ) : hasObservedOccupancy && summary.count !== null ? (
+                <Typography variant="h5">{summary.count} / {summary.observedCapacity}</Typography>
             ) : (
-                <Typography variant="h5">{total} / {max}</Typography>
+                <Typography variant="h6" color="text.secondary" sx={{fontWeight: 800}}>
+                    Live occupancy unavailable
+                </Typography>
             )}
 
-            {!allClosed && <Typography sx={{color, fontWeight: 600}}>{percent}% full</Typography>}
+            {hasObservedOccupancy && (
+                <Typography sx={{color, fontWeight: 600}}>{percent}% full</Typography>
+            )}
+            {summary.status === "partial" && (
+                <Typography variant="body2" color="text.secondary" sx={{fontWeight: 600}}>
+                    Coverage: {Math.round(summary.coverage * 100)}% of open capacity observed
+                </Typography>
+            )}
 
             <Stack spacing={1} sx={{mt: 1}}>
-                {list.map((loc) => {
-                    const isClosed = loc.isClosed === true;
+                {locationModels.map(({location: loc, summary: locationSummary}) => {
+                    const isClosed = locationSummary.status === "closed";
 
                     if (isClosed) {
                         return (
@@ -111,11 +134,9 @@ export default function SectionSummaryOther({
                         );
                     }
 
-                    const p = loc.maxCapacity
-                        ? clampPercent(
-                            ((loc.currentCapacity ?? 0) / loc.maxCapacity) * 100
-                        )
-                        : 0;
+                    const isObserved = locationSummary.status === "live"
+                        && locationSummary.count !== null
+                        && locationSummary.percent !== null;
                     const locationThresholds = locationOccupancyThresholds[loc.locationId] ?? occupancyThresholds;
 
                     return (
@@ -143,12 +164,20 @@ export default function SectionSummaryOther({
                                 alignItems={{xs: "flex-start", sm: "center"}}
                                 sx={{textAlign: {xs: "left", sm: "inherit"}}}
                             >
-                                <Typography variant="body2" fontWeight={600}>
-                                    {loc.currentCapacity ?? 0} / {loc.maxCapacity ?? 0}
-                                </Typography>
-                                <Typography variant="body2" sx={{color: getOccupancyColor(p, locationThresholds)}}>
-                                    ({p}%)
-                                </Typography>
+                                {isObserved && locationSummary.count !== null && locationSummary.percent !== null ? (
+                                    <>
+                                        <Typography variant="body2" fontWeight={600}>
+                                            {locationSummary.count} / {locationSummary.observedCapacity}
+                                        </Typography>
+                                        <Typography variant="body2" sx={{color: getOccupancyColor(locationSummary.percent, locationThresholds)}}>
+                                            ({Math.round(locationSummary.percent)}%)
+                                        </Typography>
+                                    </>
+                                ) : (
+                                    <Typography variant="body2" color="text.secondary" fontWeight={700}>
+                                        Live occupancy unavailable
+                                    </Typography>
+                                )}
                             </Stack>
                         </Box>
                     );

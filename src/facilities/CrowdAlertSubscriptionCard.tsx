@@ -21,13 +21,12 @@ import {
     upsertPushRule,
 } from "../lib/api/pushNotifications";
 import {FACILITY_SHORT_NAMES} from "../lib/config/facilitySections";
+import type {OccupancySummary} from "../shared/occupancy/computeOccupancySummary";
 
 export interface AlertSectionOption {
     key: string;
     label: string;
-    percent: number;
-    total: number;
-    max: number;
+    summary: OccupancySummary;
 }
 
 interface Props {
@@ -74,19 +73,28 @@ const writeStoredSubscriptions = (value: StoredSubscriptions): void => {
 
 const normalizePercentInt = (value: number): number => Math.max(0, Math.round(value));
 
+const hasUsableSummary = (section: AlertSectionOption): boolean => (
+    (section.summary.status === "live" || section.summary.status === "partial")
+    && section.summary.percent !== null
+    && Number.isFinite(section.summary.percent)
+);
+
 const getThresholdUpperBound = (section: AlertSectionOption | null): number => {
-    if (!section) return 99;
-    return Math.max(0, normalizePercentInt(section.percent) - 1);
+    if (!section || !hasUsableSummary(section) || section.summary.percent === null) return 0;
+    return Math.min(100, Math.max(0, normalizePercentInt(section.summary.percent) - 1));
 };
 
-const resolveInitialSectionKey = (
+// Exported here so the saved-selection contract is tested without rendering push UI.
+// eslint-disable-next-line react-refresh/only-export-components
+export const resolveInitialSectionKey = (
     facility: FacilityId,
     sections: AlertSectionOption[]
 ): string => {
     const stored = readStoredSubscriptions()[facility];
-    const fallbackSectionKey = sections[0]?.key ?? "";
+    const validSections = sections.filter(hasUsableSummary);
+    const fallbackSectionKey = validSections[0]?.key ?? "";
     return (
-        (stored?.sectionKey && sections.some((section) => section.key === stored.sectionKey))
+        (stored?.sectionKey && validSections.some((section) => section.key === stored.sectionKey))
             ? stored.sectionKey
             : fallbackSectionKey
     );
@@ -150,9 +158,23 @@ export default function CrowdAlertSubscriptionCard({
     const submitTimerRef = useRef<number | null>(null);
     const closeTimerRef = useRef<number | null>(null);
 
-    const sectionKey = sectionKeyByFacility[facility] ?? initialSectionKey;
+    const requestedSectionKey = sectionKeyByFacility[facility] ?? initialSectionKey;
+    const sectionKey = orderedSections.some(
+        (section) => section.key === requestedSectionKey && hasUsableSummary(section)
+    ) ? requestedSectionKey : initialSectionKey;
+
+    useEffect(() => {
+        setSectionKeyByFacility((previous) => (
+            previous[facility] === sectionKey
+                ? previous
+                : {...previous, [facility]: sectionKey}
+        ));
+    }, [facility, sectionKey]);
+
     const facilityName = FACILITY_SHORT_NAMES[facility];
-    const selectedSection = orderedSections.find((section) => section.key === sectionKey) ?? null;
+    const selectedSection = orderedSections.find(
+        (section) => section.key === sectionKey && hasUsableSummary(section)
+    ) ?? null;
     const thresholdContextKey = `${facility}:${sectionKey}`;
     const defaultThresholdInput = useMemo(
         () => resolveDefaultThresholdInput(facility, selectedSection),
@@ -160,7 +182,10 @@ export default function CrowdAlertSubscriptionCard({
     );
     const thresholdInput = thresholdOverrides[thresholdContextKey] ?? defaultThresholdInput;
     const parsedThreshold = Number(thresholdInput);
-    const currentOccupancyPercent = selectedSection ? normalizePercentInt(selectedSection.percent) : 100;
+    const currentOccupancyPercent = selectedSection?.summary.percent !== null
+        && selectedSection?.summary.percent !== undefined
+        ? normalizePercentInt(selectedSection.summary.percent)
+        : 0;
     const thresholdUpperBound = getThresholdUpperBound(selectedSection);
     const hasValidThresholdRange = thresholdUpperBound >= 1;
     const isThresholdValid = Number.isInteger(parsedThreshold) && parsedThreshold >= 1 && parsedThreshold <= thresholdUpperBound;
@@ -181,11 +206,17 @@ export default function CrowdAlertSubscriptionCard({
             return "Select a gym area to see current occupancy and set your alert range.";
         }
 
-        const base = `${facilityName}'s ${selectedSection.label} current occupancy is ${selectedSection.total} people (${currentOccupancyPercent}%).`;
+        const currentCount = selectedSection.summary.count;
+        const base = currentCount === null
+            ? `${facilityName}'s ${selectedSection.label} current occupancy is ${currentOccupancyPercent}% of observed capacity.`
+            : `${facilityName}'s ${selectedSection.label} current occupancy is ${currentCount} people (${currentOccupancyPercent}% of observed capacity).`;
+        const coverage = selectedSection.summary.status === "partial"
+            ? ` Coverage: ${Math.round(selectedSection.summary.coverage * 100)}% of open capacity observed.`
+            : "";
         if (!hasValidThresholdRange) {
-            return `${base}\nThere is no lower threshold available yet.`;
+            return `${base}${coverage}\nThere is no lower threshold available yet.`;
         }
-        return `${base}\nChoose a threshold between 1-${thresholdUpperBound}.`;
+        return `${base}${coverage}\nChoose a threshold between 1-${thresholdUpperBound}.`;
     }, [
         selectedSection,
         facilityName,
@@ -410,7 +441,9 @@ export default function CrowdAlertSubscriptionCard({
                     unlockSubscriptionState();
                     setPushErrorText(null);
                     const nextSectionKey = event.target.value;
-                    const nextSection = orderedSections.find((section) => section.key === nextSectionKey) ?? null;
+                    const nextSection = orderedSections.find(
+                        (section) => section.key === nextSectionKey && hasUsableSummary(section)
+                    ) ?? null;
                     const nextContextKey = `${facility}:${nextSectionKey}`;
                     const nextDefaultThreshold = resolveDefaultThresholdInput(facility, nextSection);
 
@@ -444,8 +477,11 @@ export default function CrowdAlertSubscriptionCard({
                 }}
             >
                 {orderedSections.map((section) => (
-                    <MenuItem key={section.key} value={section.key}>
+                    <MenuItem key={section.key} value={section.key} disabled={!hasUsableSummary(section)}>
                         {section.label}
+                        {section.summary.status === "partial"
+                            ? ` (Coverage: ${Math.round(section.summary.coverage * 100)}%)`
+                            : ""}
                     </MenuItem>
                 ))}
             </TextField>
@@ -490,11 +526,13 @@ export default function CrowdAlertSubscriptionCard({
                 inputProps={{min: 1, max: Math.max(1, thresholdUpperBound), step: 1, inputMode: "numeric"}}
                 size="small"
                 fullWidth
-                disabled={requireStandalonePwaForAlerts || !hasValidThresholdRange}
-                error={(thresholdInput.length > 0 && !isThresholdValid) || !hasValidThresholdRange}
+                disabled={requireStandalonePwaForAlerts || !selectedSection || !hasValidThresholdRange}
+                error={Boolean(selectedSection) && ((thresholdInput.length > 0 && !isThresholdValid) || !hasValidThresholdRange)}
                 helperText={
                     requireStandalonePwaForAlerts
                         ? "Install the PWA on mobile to enable alerts."
+                        : !selectedSection
+                        ? "Live occupancy unavailable for alert thresholds."
                         : !hasValidThresholdRange
                         ? `Current occupancy is ${currentOccupancyPercent}%, so there is no lower threshold to set yet.`
                         : (thresholdInput.length > 0 && !isThresholdValid
