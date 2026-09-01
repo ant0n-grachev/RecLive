@@ -18,8 +18,18 @@ from env_loader import load_project_dotenv
 try:
     from forecast_shared import normalize_section_key
     from facility_capacities import load_facility_capacities
+    from reclive.actual_hours import (
+        CHICAGO as ACTUAL_HOURS_CHICAGO_TZ,
+        ActualHourSummary,
+        HistoryState,
+        HourWindow,
+        IngestionHeartbeat,
+        build_chicago_hour_windows,
+        calculate_actual_hour,
+    )
     from reclive.ingestion import safe_close
     from reclive.occupancy_repository import (
+        ActualHourReadProtocol,
         RepositoryFactory,
         SnapshotReadProtocol,
         SnapshotRepository,
@@ -28,8 +38,18 @@ try:
 except ImportError:
     from server.forecast_shared import normalize_section_key
     from server.facility_capacities import load_facility_capacities
+    from server.reclive.actual_hours import (
+        CHICAGO as ACTUAL_HOURS_CHICAGO_TZ,
+        ActualHourSummary,
+        HistoryState,
+        HourWindow,
+        IngestionHeartbeat,
+        build_chicago_hour_windows,
+        calculate_actual_hour,
+    )
     from server.reclive.ingestion import safe_close
     from server.reclive.occupancy_repository import (
+        ActualHourReadProtocol,
         RepositoryFactory,
         SnapshotReadProtocol,
         SnapshotRepository,
@@ -570,12 +590,76 @@ def facility_forecast(
     }
 
 
+class OwnedActualHourRepository:
+    def load_actual_hour_inputs(
+        self,
+        location_ids: Sequence[int],
+        range_start: datetime,
+        range_end: datetime,
+    ) -> tuple[list[HistoryState], list[IngestionHeartbeat]]:
+        connection = None
+        try:
+            connection = open_db_connection(autocommit=False)
+            repository = SnapshotRepository(connection)
+            return repository.load_actual_hour_inputs(
+                location_ids,
+                range_start,
+                range_end,
+            )
+        finally:
+            safe_close(connection)
+
+
+def get_actual_hour_repository() -> ActualHourReadProtocol:
+    return OwnedActualHourRepository()
+
+
+def serialize_actual_hour(
+    window: HourWindow,
+    summary: ActualHourSummary,
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "hourStart": window.start.astimezone(
+            ACTUAL_HOURS_CHICAGO_TZ
+        ).isoformat(),
+        "observedCount": summary.observed_count,
+        "observedCapacity": summary.observed_capacity,
+        "expectedCapacity": summary.expected_capacity,
+        "actualCoverage": round(
+            min(1.0, max(0.0, summary.actual_coverage)), 4
+        ),
+        "temporalCoverage": round(
+            min(1.0, max(0.0, summary.temporal_coverage)), 4
+        ),
+        "coverageThreshold": round(summary.coverage_threshold, 4),
+        "actualCount": summary.actual_count,
+    }
+    if summary.actual_count is not None and summary.expected_capacity > 0:
+        payload["actualPct"] = round(
+            min(
+                1.0,
+                max(
+                    0.0,
+                    summary.actual_count / float(summary.expected_capacity),
+                ),
+            ),
+            4,
+        )
+    return payload
+
+
 @app.get("/api/forecast/facilities/{facility_id}/actual-hours")
 def facility_actual_hours(
     facility_id: int,
     date: str = Query(..., description="YYYY-MM-DD"),
+    repository: ActualHourReadProtocol = Depends(get_actual_hour_repository),
 ) -> Dict[str, Any]:
-    start_local, end_local = parse_chicago_date_key(date)
+    try:
+        hour_windows = build_chicago_hour_windows(date)
+    except (ValueError, OverflowError) as exc:
+        raise HTTPException(
+            status_code=400, detail="date must be in YYYY-MM-DD format"
+        ) from exc
 
     payload = load_forecast()
     facilities_data = payload.get("facilities", [])
@@ -593,23 +677,34 @@ def facility_actual_hours(
 
     section_map = SECTION_IDS.get(facility_id, {})
     overall_location_ids: List[int] = []
-    for raw_location_id in section_map.get("overall", []) if isinstance(section_map, dict) else []:
+    overall_seen: set[int] = set()
+    for raw_location_id in (
+        section_map.get("overall", []) if isinstance(section_map, dict) else []
+    ):
         try:
             location_id = int(raw_location_id)
         except (TypeError, ValueError):
             continue
-        if location_id > 0:
+        if location_id > 0 and location_id not in overall_seen:
+            overall_seen.add(location_id)
             overall_location_ids.append(location_id)
 
     category_specs: List[Dict[str, Any]] = []
     all_location_ids: List[int] = list(overall_location_ids)
     seen_location_ids = set(overall_location_ids)
-    total_hour_points: Dict[str, datetime] = {}
 
     for category in categories_raw:
         if not isinstance(category, dict):
             continue
-        location_ids = category_location_ids_for_forecast(facility_id, category)
+        location_ids: List[int] = []
+        category_seen: set[int] = set()
+        for location_id in category_location_ids_for_forecast(
+            facility_id, category
+        ):
+            if location_id <= 0 or location_id in category_seen:
+                continue
+            category_seen.add(location_id)
+            location_ids.append(location_id)
         if not location_ids:
             continue
 
@@ -619,29 +714,12 @@ def facility_actual_hours(
             seen_location_ids.add(location_id)
             all_location_ids.append(location_id)
 
-        hours_raw = category.get("hours", [])
-        hour_points: List[Tuple[datetime, str]] = []
-        for hour in hours_raw if isinstance(hours_raw, list) else []:
-            if not isinstance(hour, dict):
-                continue
-            hour_start = _str_or_none(hour.get("hourStart"))
-            if not hour_start:
-                continue
-            hour_dt = to_chicago_datetime(hour_start)
-            if hour_dt is None:
-                continue
-            hour_bucket = hour_dt.replace(minute=0, second=0, microsecond=0)
-            if not (start_local <= hour_bucket < end_local):
-                continue
-            hour_points.append((hour_bucket, hour_start))
-            total_hour_points[hour_start] = hour_bucket
-
-        if not hour_points:
-            continue
-
         category_max = _int_or_default(category.get("maxCapacity"), 0)
         if category_max <= 0:
-            category_max = sum(max(0, int(MAX_CAP.get(location_id, 0))) for location_id in location_ids)
+            category_max = sum(
+                max(0, int(MAX_CAP.get(location_id, 0)))
+                for location_id in location_ids
+            )
 
         category_specs.append(
             {
@@ -649,130 +727,48 @@ def facility_actual_hours(
                 "title": category.get("title"),
                 "locationIds": location_ids,
                 "maxCapacity": max(0, category_max),
-                "hours": hour_points,
             }
         )
 
-    if not category_specs or not all_location_ids:
+    if not all_location_ids:
         return {
             "facilityId": facility_id,
             "date": date,
-            "coverageThreshold": ACTUAL_HOUR_MIN_COVERAGE,
             "categories": [],
             "totalHours": [],
         }
 
-    placeholders = ",".join(["%s"] * len(all_location_ids))
-    start_db = start_local.astimezone(DB_TZ).replace(tzinfo=None) - timedelta(hours=2)
-    end_db = end_local.astimezone(DB_TZ).replace(tzinfo=None) + timedelta(hours=2)
-    sql = f"""
-    SELECT location_id, last_updated, fetched_at, current_capacity
-    FROM location_history
-    WHERE current_capacity IS NOT NULL
-      AND (is_closed = 0 OR is_closed IS NULL)
-      AND location_id IN ({placeholders})
-      AND (
-        (fetched_at IS NOT NULL AND fetched_at >= %s AND fetched_at < %s)
-        OR
-        (last_updated IS NOT NULL AND last_updated >= %s AND last_updated < %s)
-      )
-    """
-    params: Tuple[Any, ...] = (
-        *all_location_ids,
-        start_db,
-        end_db,
-        start_db,
-        end_db,
-    )
-
-    conn = None
+    range_start = hour_windows[0].start
+    range_end = hour_windows[-1].end
     try:
-        conn = open_db_connection()
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-            rows = cur.fetchall()
+        states, heartbeats = repository.load_actual_hour_inputs(
+            all_location_ids,
+            range_start,
+            range_end,
+        )
     except Exception as exc:
-        raise HTTPException(status_code=503, detail="Actual-hour DB query failed") from exc
-    finally:
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception:
-                pass
-
-    by_location_hour: Dict[Tuple[int, datetime], List[float]] = {}
-    for row in rows:
-        try:
-            location_id_raw, last_updated, fetched_at, current_capacity = row
-            location_id = int(location_id_raw)
-            count = float(current_capacity)
-        except Exception:
-            continue
-        if count < 0:
-            continue
-
-        observed_at = to_chicago_datetime(last_updated) or to_chicago_datetime(fetched_at)
-        if observed_at is None:
-            continue
-
-        hour_bucket = observed_at.replace(minute=0, second=0, microsecond=0)
-        if not (start_local <= hour_bucket < end_local):
-            continue
-
-        key = (location_id, hour_bucket)
-        by_location_hour.setdefault(key, []).append(count)
-
-    by_location_hour_summary: Dict[Tuple[int, datetime], Tuple[float, int]] = {}
-    for key, values in by_location_hour.items():
-        if not values:
-            continue
-        samples = len(values)
-        by_location_hour_summary[key] = (sum(values) / samples, samples)
+        raise HTTPException(
+            status_code=503, detail="Actual-hour DB query failed"
+        ) from exc
 
     categories_payload: List[Dict[str, Any]] = []
     for spec in category_specs:
         location_ids = spec["locationIds"]
         category_max = int(spec["maxCapacity"])
-        hours_payload: List[Dict[str, Any]] = []
-
-        for hour_bucket, hour_start in spec["hours"]:
-            observed_total = 0.0
-            observed_capacity = 0
-            observed_samples = 0
-
-            for location_id in location_ids:
-                entry = by_location_hour_summary.get((location_id, hour_bucket))
-                if entry is None:
-                    continue
-                mean_count, samples = entry
-                observed_total += max(0.0, float(mean_count))
-                observed_samples += int(samples)
-                observed_capacity += max(0, int(MAX_CAP.get(location_id, 0)))
-
-            if observed_capacity <= 0:
-                continue
-
-            actual_coverage: Optional[float] = None
-            adjusted_total = observed_total
-            if category_max > 0:
-                actual_coverage = max(0.0, min(observed_capacity / float(category_max), 1.0))
-                if observed_capacity < category_max:
-                    # Scale partial instrumentation up to the forecast category capacity so
-                    # past hours can still surface observed counts instead of dropping back
-                    # to predictions when only some linked locations reported.
-                    adjusted_total = adjusted_total * (category_max / float(observed_capacity))
-
-            actual_count = max(0, int(round(adjusted_total)))
-            actual_pct = round(min(actual_count / float(category_max), 1.0), 4) if category_max > 0 else None
-            hour_payload: Dict[str, Any] = {
-                "hourStart": hour_start,
-                "actualCount": actual_count,
-                "actualPct": actual_pct,
-                "actualSampleCount": observed_samples,
-            }
-            if actual_coverage is not None:
-                hour_payload["actualCoverage"] = round(actual_coverage, 4)
-            hours_payload.append(hour_payload)
+        hours_payload = [
+            serialize_actual_hour(
+                window,
+                calculate_actual_hour(
+                    location_ids,
+                    category_max,
+                    window,
+                    states,
+                    heartbeats,
+                    ACTUAL_HOUR_MIN_COVERAGE,
+                ),
+            )
+            for window in hour_windows
+        ]
 
         categories_payload.append(
             {
@@ -783,47 +779,28 @@ def facility_actual_hours(
         )
 
     total_hours_payload: List[Dict[str, Any]] = []
-    facility_max_capacity = sum(max(0, int(MAX_CAP.get(location_id, 0))) for location_id in all_location_ids)
-    for hour_start, hour_bucket in sorted(total_hour_points.items(), key=lambda item: item[1]):
-        observed_total = 0.0
-        observed_capacity = 0
-        observed_samples = 0
-
-        for location_id in all_location_ids:
-            entry = by_location_hour_summary.get((location_id, hour_bucket))
-            if entry is None:
-                continue
-            mean_count, samples = entry
-            observed_total += max(0.0, float(mean_count))
-            observed_samples += int(samples)
-            observed_capacity += max(0, int(MAX_CAP.get(location_id, 0)))
-
-        if observed_capacity <= 0:
-            continue
-
-        actual_coverage: Optional[float] = None
-        adjusted_total = observed_total
-        if facility_max_capacity > 0:
-            actual_coverage = max(0.0, min(observed_capacity / float(facility_max_capacity), 1.0))
-            if observed_capacity < facility_max_capacity:
-                adjusted_total = adjusted_total * (facility_max_capacity / float(observed_capacity))
-
-        actual_count = max(0, int(round(adjusted_total)))
-        actual_pct = round(min(actual_count / float(facility_max_capacity), 1.0), 4) if facility_max_capacity > 0 else None
-        hour_payload: Dict[str, Any] = {
-            "hourStart": hour_start,
-            "actualCount": actual_count,
-            "actualPct": actual_pct,
-            "actualSampleCount": observed_samples,
-        }
-        if actual_coverage is not None:
-            hour_payload["actualCoverage"] = round(actual_coverage, 4)
-        total_hours_payload.append(hour_payload)
+    facility_max_capacity = sum(
+        max(0, int(MAX_CAP.get(location_id, 0)))
+        for location_id in all_location_ids
+    )
+    for window in hour_windows:
+        total_hours_payload.append(
+            serialize_actual_hour(
+                window,
+                calculate_actual_hour(
+                    all_location_ids,
+                    facility_max_capacity,
+                    window,
+                    states,
+                    heartbeats,
+                    ACTUAL_HOUR_MIN_COVERAGE,
+                ),
+            )
+        )
 
     return {
         "facilityId": facility_id,
         "date": date,
-        "coverageThreshold": ACTUAL_HOUR_MIN_COVERAGE,
         "categories": categories_payload,
         "totalHours": total_hours_payload,
     }

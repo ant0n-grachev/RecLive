@@ -28,6 +28,11 @@ export interface ForecastHour {
     actualPct?: number | null;
     actualSampleCount?: number;
     actualCoverage?: number | null;
+    observedCount?: number | null;
+    observedCapacity?: number;
+    expectedCapacity?: number;
+    temporalCoverage?: number;
+    coverageThreshold?: number;
 }
 
 export interface ForecastCategoryDay {

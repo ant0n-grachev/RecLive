@@ -13,7 +13,10 @@ if str(ROOT) not in sys.path:
 
 from reclive.ingestion import validate_and_deduplicate_rows  # noqa: E402
 from tests.fixtures.live_counts import LIVE_ROWS  # noqa: E402
-from tests.fixtures.reclive_fakes import FakeConnection  # noqa: E402
+from tests.fixtures.reclive_fakes import (  # noqa: E402
+    FakeActualHourRepository,
+    FakeConnection,
+)
 
 
 def mysql_settings() -> dict[str, object]:
@@ -76,3 +79,87 @@ def fixed_utc_clock():
 @pytest.fixture()
 def normalized_live_rows():
     return validate_and_deduplicate_rows(LIVE_ROWS, {5761: 100}).rows
+
+
+@pytest.fixture()
+def actual_hour_repository() -> FakeActualHourRepository:
+    return FakeActualHourRepository()
+
+
+@pytest.fixture()
+def actual_hours_forecast_payload() -> dict[str, object]:
+    dates = ("2026-08-31", "2026-03-08", "2026-11-01")
+    return {
+        "facilities": [
+            {
+                "facilityId": 1186,
+                "facilityName": "Nicholas Recreation Center",
+                "weeklyForecast": [
+                    {
+                        "date": date_key,
+                        "categories": [
+                            {
+                                "key": "fitness floors",
+                                "title": "Fitness Floors",
+                                "maxCapacity": 200,
+                                "hours": [
+                                    {
+                                        "hourStart": (
+                                            f"{date_key}T12:00:00-05:00"
+                                        )
+                                    }
+                                ],
+                            }
+                        ],
+                        "totalHours": [],
+                    }
+                    for date_key in dates
+                ],
+            }
+        ]
+    }
+
+
+@pytest.fixture()
+def actual_hours_client(
+    monkeypatch: pytest.MonkeyPatch,
+    actual_hour_repository: FakeActualHourRepository,
+    actual_hours_forecast_payload: dict[str, object],
+):
+    from fastapi.testclient import TestClient
+
+    import forecast_api
+
+    monkeypatch.setattr(
+        forecast_api,
+        "load_forecast",
+        lambda: actual_hours_forecast_payload,
+    )
+    monkeypatch.setattr(
+        forecast_api,
+        "SECTION_IDS",
+        {
+            1186: {
+                "overall": [5761, 5762],
+                "fitness floors": [5761, 5762],
+            }
+        },
+    )
+    monkeypatch.setattr(forecast_api, "MAX_CAP", {5761: 100, 5762: 100})
+    monkeypatch.setattr(forecast_api, "ACTUAL_HOUR_MIN_COVERAGE", 0.75)
+
+    def reject_connection(**kwargs: object) -> object:
+        raise AssertionError(f"injected actual-hour route opened a database: {kwargs}")
+
+    monkeypatch.setattr(forecast_api, "open_db_connection", reject_connection)
+    dependency = getattr(forecast_api, "get_actual_hour_repository", None)
+    if dependency is not None:
+        forecast_api.app.dependency_overrides[dependency] = (
+            lambda: actual_hour_repository
+        )
+
+    try:
+        yield TestClient(forecast_api.app)
+    finally:
+        if dependency is not None:
+            forecast_api.app.dependency_overrides.pop(dependency, None)

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 
+from reclive.actual_hours import HistoryState, IngestionHeartbeat
 from reclive.ingestion import NormalizedLiveRow
 
 
@@ -33,6 +34,15 @@ class LiveSnapshotRead:
 
 class SnapshotReadProtocol(Protocol):
     def fetch_live_snapshot_rows(self) -> list[SnapshotRow]: ...
+
+
+class ActualHourReadProtocol(Protocol):
+    def load_actual_hour_inputs(
+        self,
+        location_ids: Sequence[int],
+        range_start: datetime,
+        range_end: datetime,
+    ) -> tuple[list[HistoryState], list[IngestionHeartbeat]]: ...
 
 
 RepositoryFactory = Callable[[Any], "SnapshotRepository"]
@@ -174,6 +184,70 @@ class SnapshotRepository:
             rows=rows,
         )
 
+    def load_actual_hour_inputs(
+        self,
+        location_ids: Sequence[int],
+        range_start: datetime,
+        range_end: datetime,
+    ) -> tuple[list[HistoryState], list[IngestionHeartbeat]]:
+        ids = validated_location_ids(location_ids)
+        if not ids:
+            return [], []
+
+        range_start_bind = as_mysql_utc(range_start)
+        range_end_bind = as_mysql_utc(range_end)
+        if range_end <= range_start:
+            raise ValueError("actual-hour range must end after it starts")
+
+        placeholders = ", ".join("%s" for _ in ids)
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT started_at FROM ingestion_runs "
+                "WHERE status='succeeded' ORDER BY started_at, id LIMIT 1"
+            )
+            first_success = cursor.fetchone()
+            if first_success is None:
+                return [], []
+
+            cutover_started_at = to_aware_utc(first_success[0])
+            cutover_bind = as_mysql_utc(cutover_started_at)
+            cursor.execute(
+                "SELECT h.location_id, h.is_closed, h.current_capacity, "
+                "h.max_capacity, h.fetched_at, h.id "
+                "FROM location_history AS h "
+                "INNER JOIN ("
+                "SELECT id, ROW_NUMBER() OVER ("
+                "PARTITION BY location_id ORDER BY fetched_at DESC, id DESC"
+                ") AS seed_rank FROM location_history "
+                f"WHERE location_id IN ({placeholders}) "
+                "AND fetched_at >= %s AND fetched_at < %s"
+                ") AS seed ON seed.id = h.id "
+                "WHERE seed.seed_rank = 1 ORDER BY h.location_id",
+                (*ids, cutover_bind, range_start_bind),
+            )
+            seed_rows = cursor.fetchall()
+            cursor.execute(
+                "SELECT location_id, is_closed, current_capacity, max_capacity, "
+                "fetched_at, id FROM location_history "
+                f"WHERE location_id IN ({placeholders}) "
+                "AND fetched_at >= GREATEST(%s, %s) AND fetched_at < %s "
+                "ORDER BY location_id, fetched_at, id",
+                (*ids, cutover_bind, range_start_bind, range_end_bind),
+            )
+            change_rows = cursor.fetchall()
+            cursor.execute(
+                "SELECT completed_at, observed_location_ids FROM ingestion_runs "
+                "WHERE status='succeeded' AND completed_at >= %s "
+                "AND completed_at <= %s ORDER BY completed_at, id",
+                (range_start_bind, range_end_bind),
+            )
+            heartbeat_rows = cursor.fetchall()
+
+        return (
+            parse_history_states((*seed_rows, *change_rows)),
+            parse_ingestion_heartbeats(heartbeat_rows),
+        )
+
     def lock_snapshots(self, location_ids: Sequence[int]) -> dict[int, SnapshotRow]:
         ids = validated_location_ids(location_ids)
         if not ids:
@@ -313,3 +387,89 @@ def validated_location_ids(location_ids: Sequence[int]) -> tuple[int, ...]:
     if any(type(location_id) is not int or location_id < 0 for location_id in ids):
         raise ValueError("location IDs must be non-negative integers")
     return ids
+
+
+def parse_history_states(rows: Sequence[Sequence[object]]) -> list[HistoryState]:
+    states: list[HistoryState] = []
+    for values in rows:
+        if len(values) != 6:
+            continue
+        (
+            location_id,
+            is_closed,
+            current_capacity,
+            max_capacity,
+            fetched_at,
+            event_id,
+        ) = values
+        if (
+            not _is_positive_integer(location_id)
+            or not _is_database_boolean(is_closed)
+            or not _is_non_negative_integer(current_capacity)
+            or not _is_non_negative_integer(max_capacity)
+            or not isinstance(fetched_at, datetime)
+            or fetched_at.tzinfo is not None
+            or not _is_positive_integer(event_id)
+        ):
+            continue
+        states.append(
+            HistoryState(
+                location_id=location_id,
+                is_closed=bool(is_closed),
+                count=current_capacity,
+                capacity=max_capacity,
+                fetched_at=to_aware_utc(fetched_at),
+                id=event_id,
+            )
+        )
+    return states
+
+
+def parse_ingestion_heartbeats(
+    rows: Sequence[Sequence[object]],
+) -> list[IngestionHeartbeat]:
+    heartbeats: list[IngestionHeartbeat] = []
+    for values in rows:
+        if len(values) != 2:
+            continue
+        completed_at, observed_location_ids = values
+        if not isinstance(completed_at, datetime) or completed_at.tzinfo is not None:
+            continue
+        heartbeats.append(
+            IngestionHeartbeat(
+                completed_at=to_aware_utc(completed_at),
+                observed_location_ids=parse_observed_location_ids(
+                    observed_location_ids
+                ),
+            )
+        )
+    return heartbeats
+
+
+def parse_observed_location_ids(value: object) -> frozenset[int]:
+    if isinstance(value, (str, bytes, bytearray)):
+        try:
+            decoded = json.loads(value)
+        except (TypeError, UnicodeDecodeError, json.JSONDecodeError):
+            return frozenset()
+    else:
+        decoded = value
+    if not isinstance(decoded, list):
+        return frozenset()
+    return frozenset(
+        location_id
+        for location_id in decoded
+        if _is_positive_integer(location_id)
+    )
+
+
+def _is_positive_integer(value: object) -> bool:
+    return type(value) is int and value > 0
+
+
+def _is_non_negative_integer(value: object) -> bool:
+    return type(value) is int and value >= 0
+
+
+def _is_database_boolean(value: object) -> bool:
+    return type(value) is bool or (type(value) is int and value in (0, 1))
