@@ -25,7 +25,8 @@
     "framer-motion": "^12.34.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^7.13.1"
+    "react-router-dom": "^7.13.1",
+    "zod": "4.1.12"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.10.2",

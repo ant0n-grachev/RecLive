@@ -38,7 +38,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from pywebpush import WebPushException, webpush
-from env_loader import load_project_dotenv
+from env_loader import load_project_dotenv, validate_production_environment
 
 try:
     from facility_schedule import official_facility_is_open
@@ -264,7 +264,12 @@ def validate_push_configuration() -> None:
         _validated_admin_token_bytes()
 
 
-MAX_CAP = load_facility_capacities()
+MAX_CAP: Dict[int, int] = {}
+FACILITY_NAMES: Dict[int, str] = {}
+SECTION_IDS: Dict[int, Dict[str, List[int]]] = {}
+_FACILITY_CONFIGURATION_LOADED = False
+_FACILITY_CONFIGURATION_LOCK = threading.Lock()
+
 
 def load_facility_sections() -> Tuple[Dict[int, str], Dict[int, Dict[str, List[int]]]]:
     try:
@@ -341,7 +346,28 @@ def load_facility_sections() -> Tuple[Dict[int, str], Dict[int, Dict[str, List[i
     return facility_names, section_ids
 
 
-FACILITY_NAMES, SECTION_IDS = load_facility_sections()
+def load_runtime_facility_configuration() -> None:
+    global FACILITY_NAMES, MAX_CAP, SECTION_IDS, _FACILITY_CONFIGURATION_LOADED
+
+    capacities = load_facility_capacities()
+    facility_names, section_ids = load_facility_sections()
+    MAX_CAP = capacities
+    FACILITY_NAMES = facility_names
+    SECTION_IDS = section_ids
+    _FACILITY_CONFIGURATION_LOADED = True
+
+
+def ensure_runtime_facility_configuration() -> None:
+    if _FACILITY_CONFIGURATION_LOADED:
+        return
+    with _FACILITY_CONFIGURATION_LOCK:
+        if _FACILITY_CONFIGURATION_LOADED:
+            return
+        load_runtime_facility_configuration()
+
+
+if app_environment() != "production":
+    ensure_runtime_facility_configuration()
 
 
 def parse_allowed_origins() -> List[str]:
@@ -604,6 +630,21 @@ def category_location_ids_for_forecast(
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     global EVALUATOR_TASK
     validate_push_configuration()
+    validate_production_environment(
+        os.environ,
+        required_names=(
+            "GYM_DB_HOST",
+            "GYM_DB_PORT",
+            "GYM_DB_USER",
+            "GYM_DB_PASSWORD",
+            "GYM_DB_NAME",
+            "FORECAST_JSON_PATH",
+            "FACILITY_HOURS_JSON_PATH",
+        ),
+        cors_name="FORECAST_API_ALLOW_ORIGINS",
+        admin_enabled=push_admin_routes_enabled(),
+    )
+    ensure_runtime_facility_configuration()
     started_task: Optional[asyncio.Task] = None
     if evaluator_enabled() and (EVALUATOR_TASK is None or EVALUATOR_TASK.done()):
         started_task = asyncio.create_task(evaluator_loop())

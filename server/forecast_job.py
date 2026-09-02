@@ -15,7 +15,11 @@ import pymysql
 import pytz
 import requests
 import xgboost as xgb
-from env_loader import load_project_dotenv
+from env_loader import (
+    EnvironmentConfigurationError,
+    load_project_dotenv,
+    validate_production_environment,
+)
 
 try:
     from forecast_shared import normalize_section_key
@@ -23,7 +27,13 @@ except ImportError:  # pragma: no cover - supports package-style imports.
     from server.forecast_shared import normalize_section_key
 
 SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
-load_project_dotenv()
+try:
+    load_project_dotenv()
+except EnvironmentConfigurationError as exc:
+    if __name__ == "__main__":
+        print(f"forecast_job: ERROR: {exc}")
+        raise SystemExit(1) from None
+    raise
 
 
 def require_env(name: str) -> str:
@@ -41,8 +51,8 @@ def require_int_env(name: str) -> int:
     raw = require_env(name)
     try:
         return int(raw)
-    except ValueError as exc:
-        raise RuntimeError(f"Invalid integer for env var {name}: {raw}") from exc
+    except ValueError:
+        raise RuntimeError(f"Invalid integer for env var: {name}") from None
 
 
 def require_float_env(name: str) -> float:
@@ -11462,6 +11472,21 @@ def write_forecast(payload: Dict[str, object]) -> None:
 def main() -> int:
     start = datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S")
     try:
+        validate_production_environment(
+            os.environ,
+            required_names=(
+                "GYM_DB_HOST",
+                "GYM_DB_PORT",
+                "GYM_DB_USER",
+                "GYM_DB_PASSWORD",
+                "GYM_DB_NAME",
+                "MODEL_ARTIFACT_DIR",
+                "MODEL_BASENAME",
+                "FORECAST_JSON_PATH",
+            ),
+            cors_name=None,
+            admin_enabled=False,
+        )
         payload = build_forecast()
         write_forecast(payload)
 
@@ -11485,9 +11510,11 @@ def main() -> int:
             f"{start} OK: facilities {facilities_count} | modelStatus {status}{metric_part}"
         )
         return 0
-    except Exception as exc:
-        print(start, "ERROR:", "{}: {}".format(type(exc).__name__, exc))
-        print(traceback.format_exc())
+    except EnvironmentConfigurationError as exc:
+        print(start, "ERROR:", str(exc))
+        return 1
+    except Exception:
+        print(start, "ERROR: Forecast generation failed")
         return 1
 
 

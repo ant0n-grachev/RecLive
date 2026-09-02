@@ -1,4 +1,8 @@
 import os
+import sys
+import threading
+from collections.abc import Mapping, Sequence
+from types import ModuleType
 
 from dotenv import load_dotenv
 
@@ -27,14 +31,92 @@ DEFAULT_ENV = {
     "FACILITY_HOURS_JSON_PATH": "facility_hours.json",
     "FACILITY_CAPACITIES_JSON_PATH": "shared/facility_capacities.json",
 }
+APP_ENVIRONMENTS = frozenset({"development", "test", "production"})
+_DOTENV_STATE_KEY = "_reclive_dotenv_state"
+_dotenv_state_candidate = ModuleType(_DOTENV_STATE_KEY)
+_dotenv_state_candidate.loaded = False
+_dotenv_state_candidate.lock = threading.Lock()
+_DOTENV_STATE = sys.modules.setdefault(_DOTENV_STATE_KEY, _dotenv_state_candidate)
+
+
+class EnvironmentConfigurationError(RuntimeError):
+    pass
+
+
+def _app_environment(values: Mapping[str, str]) -> str:
+    environment = str(values.get("APP_ENV", "development")).strip().lower()
+    if environment not in APP_ENVIRONMENTS:
+        raise EnvironmentConfigurationError(
+            "Unsafe environment configuration: APP_ENV"
+        )
+    return environment
+
+
+def _unsafe_production_configuration(name: str) -> EnvironmentConfigurationError:
+    return EnvironmentConfigurationError(f"Unsafe production configuration: {name}")
+
+
+def validate_production_environment(
+    values: Mapping[str, str],
+    *,
+    required_names: Sequence[str],
+    cors_name: str | None,
+    admin_enabled: bool,
+) -> None:
+    if _app_environment(values) != "production":
+        return
+
+    for name in required_names:
+        value = str(values.get(name, "")).strip()
+        if (
+            not value
+            or value == "change_me"
+            or "YOUR_ACCOUNT_API_KEY" in value
+        ):
+            raise _unsafe_production_configuration(name)
+        if name == "GYM_DB_PORT":
+            try:
+                port = int(value)
+            except ValueError:
+                raise _unsafe_production_configuration(name) from None
+            if not 1 <= port <= 65_535:
+                raise _unsafe_production_configuration(name)
+
+    if cors_name:
+        origins = [
+            item.strip()
+            for item in str(values.get(cors_name, "")).split(",")
+            if item.strip()
+        ]
+        if not origins or "*" in origins:
+            raise _unsafe_production_configuration(cors_name)
+
+    token = str(values.get("PUSH_ADMIN_TOKEN", ""))
+    if admin_enabled and len(token.encode("utf-8")) < 32:
+        raise _unsafe_production_configuration("PUSH_ADMIN_TOKEN")
 
 
 def load_project_dotenv() -> None:
-    for path in (
-        os.path.join(SCRIPT_DIR, ".env"),
-        os.path.join(PROJECT_ROOT, ".env"),
-    ):
-        if os.path.exists(path):
-            load_dotenv(path, override=False)
-    for key, value in DEFAULT_ENV.items():
-        os.environ.setdefault(key, value)
+    if _DOTENV_STATE.loaded:
+        return
+
+    with _DOTENV_STATE.lock:
+        if _DOTENV_STATE.loaded:
+            return
+
+        if "APP_ENV" in os.environ:
+            _app_environment(os.environ)
+
+        for path in (
+            os.path.join(SCRIPT_DIR, ".env"),
+            os.path.join(PROJECT_ROOT, ".env"),
+        ):
+            if os.path.exists(path):
+                load_dotenv(path, override=False)
+                break
+
+        if _app_environment(os.environ) != "production":
+            for key, value in DEFAULT_ENV.items():
+                os.environ.setdefault(key, value)
+
+        _DOTENV_STATE.loaded = True

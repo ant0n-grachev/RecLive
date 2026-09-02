@@ -1,16 +1,12 @@
-import axios from "axios";
 import type {FacilityId} from "../types/facility";
 import type {
-    FacilityForecastResponse,
     ForecastDay,
     ForecastHour,
     ForecastOccupancyThresholds,
 } from "../types/forecast";
-import {env} from "../config/env";
 import type {OccupancyThresholds} from "../../shared/utils/styles";
-
-const FORECAST_API_BASE_URL = env.forecastApiBaseUrl;
-const FORECAST_REQUEST_TIMEOUT_MS = 10_000;
+import {ApiError, requestJson} from "./client";
+import {actualHoursResponseSchema, forecastResponseSchema} from "./schemas";
 
 const CHICAGO_TIMEZONE = "America/Chicago";
 
@@ -250,19 +246,9 @@ const parseFacilityActualHoursResponse = (value: unknown): FacilityActualHoursRe
     };
 };
 
-const isQualifiedActualHour = (
-    hour: ActualHourPayload
-): hour is ActualHourPayload & {actualCount: number} => (
-    Number.isFinite(hour.actualCount)
-    && hour.actualCoverage >= hour.coverageThreshold
-    && hour.temporalCoverage >= hour.coverageThreshold
-);
-
-type QualifiedActualHour = ActualHourPayload & {actualCount: number};
-
 const indexUnambiguousActualHours = (
     hours: ActualHourPayload[]
-): Map<number, QualifiedActualHour> => {
+): Map<number, ActualHourPayload> => {
     const unambiguous = new Map<number, ActualHourPayload>();
     const ambiguousEpochs = new Set<number>();
     for (const hour of hours) {
@@ -277,18 +263,12 @@ const indexUnambiguousActualHours = (
         unambiguous.set(hour.hourEpoch, hour);
     }
 
-    const indexed = new Map<number, QualifiedActualHour>();
-    for (const [epoch, hour] of unambiguous) {
-        if (isQualifiedActualHour(hour)) {
-            indexed.set(epoch, hour);
-        }
-    }
-    return indexed;
+    return unambiguous;
 };
 
-const mergeQualifiedActualHour = (
+const mergeActualHour = (
     forecastHour: ForecastHour,
-    actualHour: QualifiedActualHour
+    actualHour: ActualHourPayload
 ): ForecastHour => ({
     ...forecastHour,
     actualCount: actualHour.actualCount,
@@ -305,12 +285,16 @@ export const mergeActualHoursIntoDays = (
     days: ForecastDay[],
     rawActualPayload: unknown
 ): ForecastDay[] => {
-    const actualPayload = parseFacilityActualHoursResponse(rawActualPayload);
+    const parsedActualPayload = actualHoursResponseSchema.safeParse(rawActualPayload);
+    if (!parsedActualPayload.success) {
+        return days;
+    }
+    const actualPayload = parseFacilityActualHoursResponse(parsedActualPayload.data);
     if (!actualPayload) {
         return days;
     }
 
-    const byCategory = new Map<string, Map<number, QualifiedActualHour>>();
+    const byCategory = new Map<string, Map<number, ActualHourPayload>>();
     const seenCategoryKeys = new Set<string>();
     const ambiguousCategoryKeys = new Set<string>();
     for (const category of actualPayload.categories) {
@@ -352,7 +336,7 @@ export const mergeActualHoursIntoDays = (
                     if (hourEpoch === null) return hour;
                     const actualHour = hoursByStart.get(hourEpoch);
                     if (!actualHour) return hour;
-                    return mergeQualifiedActualHour(hour, actualHour);
+                    return mergeActualHour(hour, actualHour);
                 });
                 return {...category, hours};
             })
@@ -365,7 +349,7 @@ export const mergeActualHoursIntoDays = (
                 if (hourEpoch === null) return hour;
                 const actualHour = totalHoursByStart.get(hourEpoch);
                 if (!actualHour) return hour;
-                return mergeQualifiedActualHour(hour, actualHour);
+                return mergeActualHour(hour, actualHour);
             });
         }
 
@@ -378,35 +362,30 @@ export async function fetchForecastDays(
     signal?: AbortSignal
 ): Promise<FacilityForecastPayload> {
     const today = getChicagoDateISO();
-    const url = `${FORECAST_API_BASE_URL}/api/forecast/facilities/${facilityId}`;
-    const actualUrl = `${url}/actual-hours`;
-
-    const forecastRequest = axios.get<FacilityForecastResponse>(url, {
-        signal,
-        timeout: FORECAST_REQUEST_TIMEOUT_MS,
-        params: {compact: 1},
-    });
-    const actualRequest = axios.get<unknown>(actualUrl, {
-        signal,
-        timeout: FORECAST_REQUEST_TIMEOUT_MS,
-        params: {date: today},
-    });
+    const path = `/api/forecast/facilities/${facilityId}`;
     const [forecastResult, actualResult] = await Promise.allSettled([
-        forecastRequest,
-        actualRequest,
+        requestJson(path, forecastResponseSchema, {
+            signal,
+            attempts: 3,
+            params: {compact: 1},
+        }),
+        requestJson(`${path}/actual-hours`, actualHoursResponseSchema, {
+            signal,
+            attempts: 3,
+            params: {date: today},
+        }),
     ]);
 
     if (signal?.aborted) {
-        throw new axios.CanceledError();
+        throw new ApiError("aborted", "Request aborted");
     }
     if (forecastResult.status === "rejected") {
         throw forecastResult.reason;
     }
 
-    const resp = forecastResult.value;
-    const weekly = resp.data?.weeklyForecast;
-    if (!Array.isArray(weekly)) {
-        throw new Error("Forecast weekly payload missing");
+    const forecast = forecastResult.value;
+    if (forecast.facilityId !== facilityId) {
+        throw new ApiError("schema", "API response did not match its contract");
     }
 
     const normalizeHour = (value: unknown): number | null => {
@@ -419,7 +398,7 @@ export async function fetchForecastDays(
         return value;
     };
 
-    let upcomingDays = weekly
+    let upcomingDays = forecast.weeklyForecast
         .filter((day) => day?.date >= today)
         .sort((a, b) => a.date.localeCompare(b.date));
 
@@ -427,23 +406,24 @@ export async function fetchForecastDays(
         throw new Error("No upcoming forecast days in payload");
     }
 
-    if (actualResult.status === "fulfilled") {
-        upcomingDays = mergeActualHoursIntoDays(upcomingDays, actualResult.value.data);
-    } else {
-        // Keep forecast UX resilient if the optional actual-hours endpoint is unavailable.
-        console.info("Actual-hours overlay unavailable; continuing with forecast-only payload.");
+    if (
+        actualResult.status === "fulfilled"
+        && actualResult.value.facilityId === facilityId
+        && actualResult.value.date === today
+    ) {
+        upcomingDays = mergeActualHoursIntoDays(upcomingDays, actualResult.value);
     }
 
     if (signal?.aborted) {
-        throw new axios.CanceledError();
+        throw new ApiError("aborted", "Request aborted");
     }
 
     return {
         days: upcomingDays,
-        forecastDayStartHour: normalizeHour(resp.data?.forecastDayStartHour),
-        forecastDayEndHour: normalizeHour(resp.data?.forecastDayEndHour),
-        occupancyThresholds: parseOccupancyThresholds(resp.data?.occupancyThresholds),
-        sectionOccupancyThresholds: parseSectionOccupancyThresholds(resp.data?.sectionOccupancyThresholds),
-        locationOccupancyThresholds: parseLocationOccupancyThresholds(resp.data?.locationOccupancyThresholds),
+        forecastDayStartHour: normalizeHour(forecast.forecastDayStartHour),
+        forecastDayEndHour: normalizeHour(forecast.forecastDayEndHour),
+        occupancyThresholds: parseOccupancyThresholds(forecast.occupancyThresholds),
+        sectionOccupancyThresholds: parseSectionOccupancyThresholds(forecast.sectionOccupancyThresholds),
+        locationOccupancyThresholds: parseLocationOccupancyThresholds(forecast.locationOccupancyThresholds),
     };
 }

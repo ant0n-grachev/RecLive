@@ -50,6 +50,7 @@ const endpoint = "https://push.reclive-notify.net/private-endpoint-token";
 const p256dh = "private-p256dh-token";
 const auth = "private-auth-token";
 const serverSentinel = "private-server-sentinel";
+const validVapidPublicKey = "BGsX0fLhLEJH-Lzm5WOkQPJ3A32BLeszoPShOUXYmMKWT-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU";
 
 const validSubscription: PushSubscriptionJSON = {
     endpoint,
@@ -105,6 +106,144 @@ const omitKey = (value: Record<string, unknown>, key: string): Record<string, un
 const expectFixedError = async (promise: Promise<unknown>, message: string): Promise<void> => {
     await expect(promise).rejects.toEqual(new Error(message));
 };
+
+const replaceProperty = (
+    target: object,
+    property: PropertyKey,
+    value: unknown
+): (() => void) => {
+    const previous = Object.getOwnPropertyDescriptor(target, property);
+    Object.defineProperty(target, property, {configurable: true, value});
+    return () => {
+        if (previous) {
+            Object.defineProperty(target, property, previous);
+        } else {
+            Reflect.deleteProperty(target, property);
+        }
+    };
+};
+
+const installPushSubscriptionRuntime = () => {
+    const createdSubscription = {endpoint} as PushSubscription;
+    const subscribe = vi.fn().mockResolvedValue(createdSubscription);
+    const registration = {
+        active: {},
+        pushManager: {
+            getSubscription: vi.fn().mockResolvedValue(null),
+            subscribe,
+        },
+    } as unknown as ServiceWorkerRegistration;
+    const serviceWorker = {
+        getRegistration: vi.fn().mockResolvedValue(registration),
+        register: vi.fn().mockResolvedValue(registration),
+        ready: Promise.resolve(registration),
+    };
+    const restore = [
+        replaceProperty(window, "isSecureContext", true),
+        replaceProperty(window, "PushManager", class PushManager {}),
+        replaceProperty(window, "Notification", {
+            requestPermission: vi.fn().mockResolvedValue("granted"),
+        }),
+        replaceProperty(navigator, "serviceWorker", serviceWorker),
+    ];
+
+    return {
+        createdSubscription,
+        subscribe,
+        restore: () => restore.reverse().forEach((callback) => callback()),
+    };
+};
+
+describe("shared request client ownership", () => {
+    it("retries the public-key GET up to three attempts and validates the key", async () => {
+        const runtime = installPushSubscriptionRuntime();
+        let requests = 0;
+        server.use(http.get("*/api/push/public-key", () => {
+            requests += 1;
+            return requests < 3
+                ? new HttpResponse(null, {status: 503, headers: {"Retry-After": "0"}})
+                : HttpResponse.json({publicKey: validVapidPublicKey});
+        }));
+
+        try {
+            await expect(pushNotifications.ensurePushSubscription())
+                .resolves.toBe(runtime.createdSubscription);
+            expect(requests).toBe(3);
+            expect(runtime.subscribe).toHaveBeenCalledWith({
+                userVisibleOnly: true,
+                applicationServerKey: expect.any(Uint8Array),
+            });
+        } finally {
+            runtime.restore();
+        }
+    });
+
+    it("rejects a schema-invalid public key before browser subscription", async () => {
+        const runtime = installPushSubscriptionRuntime();
+        server.use(http.get("*/api/push/public-key", () => HttpResponse.json({
+            publicKey: "not-a-valid-p256-key",
+        })));
+
+        try {
+            await expect(pushNotifications.ensurePushSubscription())
+                .rejects.toEqual(new Error("Push public key unavailable"));
+            expect(runtime.subscribe).not.toHaveBeenCalled();
+        } finally {
+            runtime.restore();
+        }
+    });
+
+    it("retries availability and list reads exactly three attempts", async () => {
+        let availabilityRequests = 0;
+        let listRequests = 0;
+        server.use(
+            http.get("*/api/push/availability", () => {
+                availabilityRequests += 1;
+                return availabilityRequests < 3
+                    ? new HttpResponse(null, {status: 503, headers: {"Retry-After": "0"}})
+                    : HttpResponse.json({
+                        apiAvailable: true,
+                        dbAvailable: true,
+                        alertsAvailable: true,
+                        reason: null,
+                        storeBackend: "db",
+                    });
+            }),
+            http.post("*/api/push/rules/list", () => {
+                listRequests += 1;
+                return listRequests < 3
+                    ? new HttpResponse(null, {status: 503, headers: {"Retry-After": "0"}})
+                    : HttpResponse.json({status: "ok", rules: []});
+            }),
+        );
+
+        await expect(api.getPushAvailability()).resolves.toMatchObject({alertsAvailable: true});
+        await expect(requireApi("listPushRules")(validSubscription)).resolves.toEqual([]);
+        expect(availabilityRequests).toBe(3);
+        expect(listRequests).toBe(3);
+    });
+
+    it.each([
+        ["subscribe", "*/api/push/subscribe"],
+        ["cancel one", "*/api/push/rules/7"],
+        ["cancel all", "*/api/push/rules/cancel-all"],
+    ])("does not retry the %s write", async (operation, path) => {
+        let requests = 0;
+        const response = () => {
+            requests += 1;
+            return new HttpResponse(null, {status: 503, headers: {"Retry-After": "0"}});
+        };
+        server.use(operation === "cancel one" ? http.delete(path, response) : http.post(path, response));
+
+        const promise = operation === "subscribe"
+            ? requireApi("subscribePushRule")(validPayload)
+            : operation === "cancel one"
+                ? requireApi("cancelPushRule")(7, validSubscription)
+                : requireApi("cancelAllPushRules")(validSubscription);
+        await expect(promise).rejects.toBeInstanceOf(Error);
+        expect(requests).toBe(1);
+    });
+});
 
 describe("server-backed push rule wire contract", () => {
     it("subscribes with the exact canonical JSON request and returns a created safe rule", async () => {
@@ -346,6 +485,24 @@ describe("strict push rule response parsing", () => {
         );
     });
 
+    it.each([
+        ["facility", {...validRule, facilityId: 1656}],
+        ["section", {...validRule, sectionKey: "fitness floors"}],
+        ["threshold", {...validRule, threshold: 41}],
+    ])("rejects a subscribe response whose %s does not match the request", async (
+        _name,
+        mismatchedRule,
+    ) => {
+        server.use(http.post("*/api/push/subscribe", () => HttpResponse.json(
+            subscribeEnvelope({rule: mismatchedRule})
+        )));
+
+        await expectFixedError(
+            requireApi("subscribePushRule")(validPayload),
+            "Could not save this alert right now."
+        );
+    });
+
     it("accepts a canonical section containing one legitimate space and explicit offsets", async () => {
         server.use(http.post("*/api/push/subscribe", () => HttpResponse.json({
             status: "ok",
@@ -444,6 +601,7 @@ describe("strict push rule response parsing", () => {
         ["fractional", 1.5],
         ["boolean", true],
         ["unsafe", Number.MAX_SAFE_INTEGER + 1],
+        ["above active limit", 11],
     ])("rejects cancel-all count %s", async (_name, cancelled) => {
         server.use(http.post("*/api/push/rules/cancel-all", () => HttpResponse.json({
             status: "ok",

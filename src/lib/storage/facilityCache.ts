@@ -1,27 +1,26 @@
 import type {FacilityId, FacilityPayload} from "../types/facility";
+import {facilityCacheSchema, type FacilityCache} from "../api/schemas";
 
 export const CACHE_KEY = "reclive:facilityCache";
 export const CACHE_VERSION = 3;
 export const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
-export type CacheEntry = {
-    version: number;
-    cachedAt: number;
-    payload: FacilityPayload;
-};
+export type CacheEntry = FacilityCache;
 
 type CacheMap = Record<string, CacheEntry>;
+type UntrustedCacheMap = Record<string, unknown>;
 
 const hasWindow = () => typeof window !== "undefined";
 
-const readCache = (): CacheMap => {
+const readCache = (): UntrustedCacheMap => {
     if (!hasWindow()) return {};
 
     try {
         const raw = window.localStorage.getItem(CACHE_KEY);
         if (!raw) return {};
-        const parsed = JSON.parse(raw) as CacheMap;
-        return parsed ?? {};
+        const parsed: unknown = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+        return parsed as UntrustedCacheMap;
     } catch {
         return {};
     }
@@ -36,20 +35,41 @@ const writeCache = (map: CacheMap) => {
     }
 };
 
-const isFreshEntry = (entry: CacheEntry | undefined, now = Date.now()): entry is CacheEntry => (
-    Boolean(entry)
-    && entry?.version === 3
-    && Number.isFinite(entry.cachedAt)
-    && entry.cachedAt <= now
-    && now - entry.cachedAt <= CACHE_MAX_AGE_MS
+const hasUpstreamProvenance = (entry: CacheEntry): boolean => (
+    entry.payload.liveDataSource === "facility_api"
+    || entry.payload.liveDataSource === "fallback_api"
 );
 
-const pruneStaleEntries = (map: CacheMap, now = Date.now()): {map: CacheMap; changed: boolean} => {
+const validatedEntry = (
+    key: string,
+    value: unknown,
+    now: number,
+): CacheEntry | null => {
+    const parsed = facilityCacheSchema.safeParse(value);
+    if (!parsed.success) return null;
+
+    const entry = parsed.data;
+    if (
+        key !== String(entry.payload.facilityId)
+        || !hasUpstreamProvenance(entry)
+        || entry.cachedAt > now
+        || now - entry.cachedAt > CACHE_MAX_AGE_MS
+    ) {
+        return null;
+    }
+    return entry;
+};
+
+const pruneStaleEntries = (
+    map: UntrustedCacheMap,
+    now = Date.now(),
+): {map: CacheMap; changed: boolean} => {
     let changed = false;
     const freshMap: CacheMap = {};
 
-    for (const [facilityId, entry] of Object.entries(map)) {
-        if (!isFreshEntry(entry, now)) {
+    for (const [facilityId, value] of Object.entries(map)) {
+        const entry = validatedEntry(facilityId, value, now);
+        if (!entry) {
             changed = true;
             continue;
         }
@@ -60,14 +80,13 @@ const pruneStaleEntries = (map: CacheMap, now = Date.now()): {map: CacheMap; cha
 };
 
 export const getFacilityCache = (facilityId: FacilityId): CacheEntry | null => {
-    const {map, changed} = pruneStaleEntries(readCache());
+    const now = Date.now();
+    const {map, changed} = pruneStaleEntries(readCache(), now);
     if (changed) {
         writeCache(map);
     }
 
-    const entry = map[String(facilityId)];
-    if (!isFreshEntry(entry)) return null;
-    return entry;
+    return map[String(facilityId)] ?? null;
 };
 
 export const setFacilityCache = (
@@ -75,12 +94,16 @@ export const setFacilityCache = (
     payload: FacilityPayload
 ): void => {
     if (!hasWindow()) return;
-    const map = readCache();
-    const {map: prunedMap} = pruneStaleEntries(map);
-    prunedMap[String(facilityId)] = {
+    const now = Date.now();
+    const key = String(facilityId);
+    const candidate = validatedEntry(key, {
         version: CACHE_VERSION,
-        cachedAt: Date.now(),
+        cachedAt: now,
         payload,
-    };
+    }, now);
+    if (!candidate) return;
+
+    const {map: prunedMap} = pruneStaleEntries(readCache(), now);
+    prunedMap[key] = candidate;
     writeCache(prunedMap);
 };

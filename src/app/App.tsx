@@ -5,6 +5,7 @@ import {
     useEffect,
     useLayoutEffect,
     useMemo,
+    useReducer,
     useState,
 } from "react";
 import {
@@ -55,6 +56,7 @@ import {useOnlineStatus} from "./hooks/useOnlineStatus";
 import {useLiveFacilityData} from "./hooks/useLiveFacilityData";
 import {useForecastData, type ForecastHourBounds} from "./hooks/useForecastData";
 import {useFacilityHours} from "./hooks/useFacilityHours";
+import {useVisibilityPolling} from "./hooks/useVisibilityPolling";
 import {resolveDashboardWarning} from "./warningStatus";
 import {
     getFacilityNextOpenTimestamp,
@@ -68,9 +70,9 @@ const FloorHeatMapCard = lazy(() => import("../facilities/FloorHeatMapCard"));
 const FACILITY_STORAGE_KEY = "reclive:selectedFacility";
 const CLOSURE_OVERRIDE_STORAGE_KEY = "reclive:closureOverride";
 const DEBUG_NOW_STORAGE_KEY = "reclive:debugNow";
-const AUTO_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
-const AUTO_REFRESH_RETRY_INTERVAL_MS = 2 * 60 * 1000;
-const AUTO_REFRESH_CHECK_INTERVAL_MS = 60 * 1000;
+const LIVE_REFRESH_INTERVAL_MS = 90 * 1000;
+const FORECAST_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
+const SCHEDULE_REFRESH_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const MANUAL_REFRESH_COOLDOWN_MS = 3000;
 const FORECAST_VISIBLE_SECTIONS = new Set(["fitness floors", "basketball courts"]);
 const CLOCK_TICK_MS = 30 * 1000;
@@ -470,7 +472,9 @@ export default function App({
     const isPhoneViewport = useMediaQuery(theme.breakpoints.down("sm"));
     const {isStandalonePwa, isTouchCapable} = useStandalonePwa();
     const [facility, setFacility] = useState<FacilityId>(() => initialFacility ?? getStoredFacility());
-    const [refreshKey, setRefreshKey] = useState(0);
+    const [liveRefreshKey, bumpLiveRefresh] = useReducer((value: number) => value + 1, 0);
+    const [forecastRefreshKey, bumpForecastRefresh] = useReducer((value: number) => value + 1, 0);
+    const [scheduleRefreshKey, bumpScheduleRefresh] = useReducer((value: number) => value + 1, 0);
     const isOffline = useOnlineStatus();
     const {
         data,
@@ -478,10 +482,9 @@ export default function App({
         error,
         liveDataSource,
         liveOutageState,
-        hasPendingLiveRetry,
         cacheTimestampMs,
         prepareRefresh,
-    } = useLiveFacilityData({facility, refreshKey, isOffline});
+    } = useLiveFacilityData({facility, refreshKey: liveRefreshKey, isOffline});
     const {
         forecastDays,
         forecastOccupancyThresholds,
@@ -490,15 +493,30 @@ export default function App({
         forecastHourBounds,
         forecastError,
         isForecastLoading,
-        hasPendingForecastRetry,
-    } = useForecastData({facility, refreshKey});
+    } = useForecastData({facility, refreshKey: forecastRefreshKey});
     const {
         activeSchedule,
         isFacilityHoursLoading,
         facilityHoursError,
-        hasPendingScheduleRetry,
-    } = useFacilityHours({facility, refreshKey});
-    const [lastAutoRefresh, setLastAutoRefresh] = useState(() => Date.now());
+    } = useFacilityHours({facility, refreshKey: scheduleRefreshKey});
+    useVisibilityPolling({
+        intervalMs: LIVE_REFRESH_INTERVAL_MS,
+        onRefresh: bumpLiveRefresh,
+        enabled: !isOffline,
+        refreshOnVisible: true,
+    });
+    useVisibilityPolling({
+        intervalMs: FORECAST_REFRESH_INTERVAL_MS,
+        onRefresh: bumpForecastRefresh,
+        enabled: !isOffline,
+        refreshOnVisible: false,
+    });
+    useVisibilityPolling({
+        intervalMs: SCHEDULE_REFRESH_INTERVAL_MS,
+        onRefresh: bumpScheduleRefresh,
+        enabled: !isOffline,
+        refreshOnVisible: false,
+    });
     const [lastManualRefresh, setLastManualRefresh] = useState(0);
     const [forecastDaySelection, setForecastDaySelection] = useState<{key: string | null; offset: number}>({
         key: null,
@@ -578,44 +596,13 @@ export default function App({
         }
     }, [facility]);
 
-    const triggerRefresh = useCallback((action: () => void) => {
-        prepareRefresh();
-        setLastAutoRefresh(Date.now());
-        action();
-    }, [prepareRefresh]);
-
-    const autoRefreshIntervalMs = (
-        hasPendingLiveRetry
-        || hasPendingForecastRetry
-        || hasPendingScheduleRetry
-        || liveOutageState !== "none"
-        || liveDataSource === "fallback_api"
-        || Boolean(forecastError)
-        || Boolean(facilityHoursError)
-    )
-        ? AUTO_REFRESH_RETRY_INTERVAL_MS
-        : AUTO_REFRESH_INTERVAL_MS;
-
-    useEffect(() => {
-        if (typeof window === "undefined") return;
-
-        const interval = window.setInterval(() => {
-            if (!isLoading && Date.now() - lastAutoRefresh >= autoRefreshIntervalMs) {
-                triggerRefresh(() => setRefreshKey((key) => key + 1));
-            }
-        }, AUTO_REFRESH_CHECK_INTERVAL_MS);
-
-        return () => {
-            window.clearInterval(interval);
-        };
-    }, [autoRefreshIntervalMs, isLoading, lastAutoRefresh, triggerRefresh]);
-
     const handleFacilitySelect = (next: FacilityId) => {
         if (next === facility) return;
         onFacilityRouteChange?.(next);
         setLastManualRefresh(0);
         setForecastDaySelection({key: null, offset: 0});
-        triggerRefresh(() => setFacility(next));
+        prepareRefresh();
+        setFacility(next);
     };
 
     const activeData = data?.facilityId === facility ? data : null;
@@ -828,7 +815,8 @@ export default function App({
         const now = Date.now();
         if (now - lastManualRefresh < MANUAL_REFRESH_COOLDOWN_MS) return;
         setLastManualRefresh(now);
-        triggerRefresh(() => setRefreshKey((key) => key + 1));
+        prepareRefresh();
+        bumpLiveRefresh();
     };
 
     const enablePullToRefresh = isPhoneViewport && isTouchCapable && isStandalonePwa;

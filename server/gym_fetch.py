@@ -8,6 +8,7 @@ from typing import Any
 import pymysql
 import requests
 
+import env_loader
 from env_loader import load_project_dotenv
 from facility_capacities import load_facility_capacities
 from reclive.ingestion import failed_result, finish_ingestion_result, run_ingestion
@@ -64,6 +65,19 @@ def fetch_live() -> object:
 def main() -> int:
     try:
         load_project_dotenv()
+        env_loader.validate_production_environment(
+            os.environ,
+            required_names=(
+                "LIVE_COUNTS_URL",
+                "GYM_DB_HOST",
+                "GYM_DB_PORT",
+                "GYM_DB_USER",
+                "GYM_DB_PASSWORD",
+                "GYM_DB_NAME",
+            ),
+            cors_name=None,
+            admin_enabled=False,
+        )
         capacities = load_facility_capacities()
     except Exception:
         finish_ingestion_result(

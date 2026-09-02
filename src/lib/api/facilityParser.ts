@@ -1,37 +1,11 @@
-import axios from "axios";
 import type {FacilityId, FacilityPayload, LiveDataSource, Location} from "../types/facility";
 import {nick} from "../data/nick";
 import {bakke} from "../data/bakke";
-import {env} from "../config/env";
 import {FACILITY_DISPLAY_NAMES} from "../config/facilitySections";
+import {requestJson, uniqueApiUrls} from "./client";
+import {liveCountsResponseSchema} from "./schemas";
 
-const FORECAST_API_BASE_URL = env.forecastApiBaseUrl;
-const LIVE_COUNTS_FACILITY_URL = env.liveCountsUrl;
-const LIVE_COUNTS_FALLBACK_URL = `${FORECAST_API_BASE_URL}/api/live-counts`;
-const LIVE_COUNTS_REQUEST_TIMEOUT_MS = 10_000;
-
-interface LiveLocationRow {
-    LocationId: number;
-    IsClosed: boolean | null;
-    LastCount: number | null;
-    LastUpdatedDateAndTime: string | null;
-    FetchedAt?: string | null;
-}
-
-interface LiveCountsPayloadEnvelope {
-    ingestion?: {
-        lastSuccessfulFetchAt: string | null;
-        ageSeconds: number | null;
-        status: "healthy" | "stale" | "unavailable";
-    };
-    rows?: LiveLocationRow[];
-    data?: LiveLocationRow[];
-}
-
-interface NormalizedLiveRows {
-    rows: LiveLocationRow[];
-    canonical: boolean;
-}
+const LIVE_COUNTS_PATHS = uniqueApiUrls(["/api/live-counts"]);
 
 const FACILITY_LAYOUTS: Record<FacilityId, Record<number, Location[]>> = {
     1186: nick,
@@ -55,54 +29,19 @@ const flatten = (floors: Record<number, Location[]>) => {
         );
 };
 
-const normalizeLiveRows = (payload: unknown): NormalizedLiveRows => {
-    if (Array.isArray(payload)) {
-        return {rows: payload as LiveLocationRow[], canonical: false};
-    }
-    if (!payload || typeof payload !== "object") {
-        throw new Error("Unexpected live counts payload");
-    }
-
-    const envelope = payload as LiveCountsPayloadEnvelope;
-    if (Array.isArray(envelope.rows)) return {rows: envelope.rows, canonical: true};
-    if (Array.isArray(envelope.data)) return {rows: envelope.data, canonical: false};
-    throw new Error("Unexpected live counts payload");
-};
-
-const ensureNonEmptyLiveRows = (rows: LiveLocationRow[]): LiveLocationRow[] => {
-    if (rows.length === 0) {
-        throw new Error("Live counts feed is empty");
-    }
-    return rows;
-};
-
 const fetchLiveRows = async (
     signal?: AbortSignal
-): Promise<{rows: LiveLocationRow[]; source: LiveDataSource; canonical: boolean}> => {
-    try {
-        const directResp = await axios.get<unknown>(LIVE_COUNTS_FACILITY_URL, {
-            signal,
-            timeout: LIVE_COUNTS_REQUEST_TIMEOUT_MS,
-        });
-        const normalized = normalizeLiveRows(directResp.data);
-        return {
-            rows: ensureNonEmptyLiveRows(normalized.rows),
-            source: "facility_api",
-            canonical: normalized.canonical,
-        };
-    } catch (directError) {
-        if (signal?.aborted) throw directError;
+): Promise<{rows: ReturnType<typeof liveCountsResponseSchema.parse>["rows"]; source: LiveDataSource}> => {
+    const path = LIVE_COUNTS_PATHS[0];
+    if (!path) {
+        throw new Error("Live counts endpoint is unavailable");
     }
-
-    const fallbackResp = await axios.get<unknown>(LIVE_COUNTS_FALLBACK_URL, {
+    const payload = await requestJson(path, liveCountsResponseSchema, {
         signal,
-        timeout: LIVE_COUNTS_REQUEST_TIMEOUT_MS,
     });
-    const normalized = normalizeLiveRows(fallbackResp.data);
     return {
-        rows: ensureNonEmptyLiveRows(normalized.rows),
-        source: "fallback_api",
-        canonical: normalized.canonical,
+        rows: payload.rows,
+        source: "facility_api",
     };
 };
 
@@ -111,7 +50,7 @@ export async function fetchFacility(
     signal?: AbortSignal
 ): Promise<FacilityPayload> {
     const layout = cloneLayout(FACILITY_LAYOUTS[facilityId]);
-    const {rows: live, source, canonical} = await fetchLiveRows(signal);
+    const {rows: live, source} = await fetchLiveRows(signal);
 
     const index: Record<number, Location> = {};
 
@@ -133,7 +72,7 @@ export async function fetchFacility(
         loc.isClosed = row.IsClosed;
         loc.currentCapacity = row.LastCount;
         loc.lastUpdated = row.LastUpdatedDateAndTime ?? null;
-        loc.fetchedAt = canonical ? (row.FetchedAt ?? null) : null;
+        loc.fetchedAt = row.FetchedAt;
     }
 
     return {

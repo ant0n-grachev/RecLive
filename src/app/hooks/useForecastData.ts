@@ -3,10 +3,6 @@ import {fetchForecastDays} from "../../lib/api/forecastParser";
 import type {FacilityId} from "../../lib/types/facility";
 import type {ForecastDay} from "../../lib/types/forecast";
 import type {OccupancyThresholds} from "../../shared/utils/styles";
-import {retryAsync} from "../../shared/utils/retry";
-
-const FETCH_RETRY_ATTEMPTS = 3;
-const FETCH_RETRY_DELAY_MS = 1200;
 
 export interface ForecastHourBounds {
     startHour: number | null;
@@ -75,6 +71,7 @@ export const useForecastData = ({
             setIsForecastLoading(true);
             setForecastError(null);
             if (!hasForecastForCurrentFacility) {
+                setHasPendingForecastRetry(false);
                 setForecastDataFacility(null);
                 setForecastDays([]);
                 setForecastOccupancyThresholds(null);
@@ -84,15 +81,7 @@ export const useForecastData = ({
             }
 
             try {
-                const forecastPayload = await retryAsync(
-                    () => fetchForecastDays(facility, controller.signal),
-                    {
-                        attempts: FETCH_RETRY_ATTEMPTS,
-                        initialDelayMs: FETCH_RETRY_DELAY_MS,
-                        backoffMultiplier: 1.5,
-                        signal: controller.signal,
-                    }
-                );
+                const forecastPayload = await fetchForecastDays(facility, controller.signal);
                 if (isCancelled || controller.signal.aborted) return;
                 setForecastDataFacility(facility);
                 setHasPendingForecastRetry(false);
@@ -104,9 +93,8 @@ export const useForecastData = ({
                     startHour: forecastPayload.forecastDayStartHour,
                     endHour: forecastPayload.forecastDayEndHour,
                 });
-            } catch (loadError) {
+            } catch {
                 if (isCancelled || controller.signal.aborted) return;
-                console.error("Failed to fetch forecast data", loadError);
                 if (hasForecastForCurrentFacility) {
                     setHasPendingForecastRetry(true);
                     setForecastError(null);

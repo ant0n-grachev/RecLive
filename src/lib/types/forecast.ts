@@ -21,6 +21,7 @@ export interface ForecastOccupancyThresholds {
 }
 
 export interface ForecastHour {
+    hour?: number;
     hourStart: string;
     expectedCount: number;
     expectedPct?: number | null;
@@ -33,6 +34,7 @@ export interface ForecastHour {
     expectedCapacity?: number;
     temporalCoverage?: number;
     coverageThreshold?: number;
+    spikeAdjusted?: boolean;
 }
 
 export interface ForecastCategoryDay {

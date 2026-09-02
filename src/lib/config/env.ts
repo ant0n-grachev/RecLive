@@ -1,29 +1,69 @@
-const trimEnvValue = (value: unknown): string => (
-    typeof value === "string" ? value.trim() : ""
+export interface PublicEnv {
+    apiBaseUrl: string;
+    siteUrl: string;
+    isDev: boolean;
+}
+
+const unsafePlaceholder = (value: string): boolean => (
+    value === "change_me" || value.includes("YOUR_ACCOUNT_API_KEY")
 );
 
-const readViteEnv = (name: string): string => trimEnvValue(import.meta.env[name as keyof ImportMetaEnv]);
+const normalizedPublicUrl = (
+    name: "VITE_API_BASE_URL" | "VITE_SITE_URL",
+    value: unknown,
+    required: boolean,
+): string => {
+    const text = typeof value === "string" ? value.trim() : "";
+    if (!text) {
+        if (required) {
+            throw new Error(`${name} is not configured safely`);
+        }
+        return "";
+    }
+    if (unsafePlaceholder(text)) {
+        throw new Error(`${name} is not configured safely`);
+    }
 
-const VITE_DEFAULTS = {
-    VITE_LIVE_COUNTS_URL: "/api/live-counts",
-    VITE_FORECAST_API_BASE_URL: "",
-    VITE_PUSH_API_BASE_URL: "",
-    VITE_SITE_URL: "",
-} as const;
-
-const viteEnvWithDefault = (name: keyof typeof VITE_DEFAULTS): string => {
-    const value = readViteEnv(name);
-    return value || VITE_DEFAULTS[name];
+    try {
+        const parsed = new URL(text);
+        if (
+            !["http:", "https:"].includes(parsed.protocol)
+            || parsed.username
+            || parsed.password
+            || parsed.search
+            || parsed.hash
+        ) {
+            throw new Error("unsafe public URL");
+        }
+        return parsed.toString().replace(/\/+$/, "");
+    } catch {
+        throw new Error(`${name} is not configured safely`);
+    }
 };
 
-const stripTrailingSlashes = (value: string): string => value.replace(/\/+$/, "");
+export const parsePublicEnv = (
+    values: Record<string, unknown>,
+    isProduction: boolean,
+): PublicEnv => {
+    const apiBaseUrl = normalizedPublicUrl(
+        "VITE_API_BASE_URL",
+        values.VITE_API_BASE_URL,
+        isProduction,
+    );
+    const siteUrl = normalizedPublicUrl(
+        "VITE_SITE_URL",
+        values.VITE_SITE_URL,
+        isProduction,
+    );
+    return {apiBaseUrl, siteUrl, isDev: !isProduction};
+};
 
-const siteUrl = viteEnvWithDefault("VITE_SITE_URL");
+const parsed = parsePublicEnv(
+    import.meta.env as Record<string, unknown>,
+    import.meta.env.PROD,
+);
 
 export const env = {
+    ...parsed,
     isDev: import.meta.env.DEV,
-    liveCountsUrl: viteEnvWithDefault("VITE_LIVE_COUNTS_URL"),
-    forecastApiBaseUrl: stripTrailingSlashes(viteEnvWithDefault("VITE_FORECAST_API_BASE_URL")),
-    pushApiBaseUrl: stripTrailingSlashes(viteEnvWithDefault("VITE_PUSH_API_BASE_URL")),
-    siteUrl: siteUrl ? stripTrailingSlashes(siteUrl) : "",
 };

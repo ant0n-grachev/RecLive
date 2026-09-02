@@ -2,11 +2,7 @@ import {useCallback, useEffect, useRef, useState} from "react";
 import {fetchFacility} from "../../lib/api/facilityParser";
 import {getFacilityCache, setFacilityCache} from "../../lib/storage/facilityCache";
 import type {FacilityId, FacilityPayload, LiveDataSource} from "../../lib/types/facility";
-import {retryAsync} from "../../shared/utils/retry";
 import type {LiveOutageState} from "../warningStatus";
-
-const FETCH_RETRY_ATTEMPTS = 3;
-const FETCH_RETRY_DELAY_MS = 1200;
 
 interface LatestLiveSnapshot {
     payload: FacilityPayload | null;
@@ -64,15 +60,14 @@ export const useLiveFacilityData = ({
         const cached = getFacilityCache(facility);
         const latestSnapshot = latestLiveSnapshotRef.current;
         const hasCurrentFacilityData = latestSnapshot.payload?.facilityId === facility;
-        const hasStableLiveSnapshot = hasCurrentFacilityData
-            && latestSnapshot.outage === "none"
-            && latestSnapshot.source !== null
-            && latestSnapshot.source !== "cache";
+        const hasVisibleCachedSnapshot = hasCurrentFacilityData
+            ? latestSnapshot.source === "cache"
+            : cached !== null;
 
         if (!hasCurrentFacilityData && cached) {
             setData(cached.payload);
             setLiveDataSource("cache");
-            setLiveOutageState("none");
+            setLiveOutageState("cache");
             setCacheTimestampMs(cached.cachedAt);
         } else if (!hasCurrentFacilityData) {
             setData(null);
@@ -84,11 +79,14 @@ export const useLiveFacilityData = ({
         const load = async () => {
             setIsLoading(true);
             setError(null);
-            setLiveOutageState("none");
+            setLiveOutageState(hasVisibleCachedSnapshot ? "cache" : "none");
 
             if (isOffline) {
                 setHasPendingLiveRetry(false);
-                if (cached) {
+                if (hasCurrentFacilityData) {
+                    setLiveOutageState("cache");
+                    setError(null);
+                } else if (cached) {
                     setData(cached.payload);
                     setLiveDataSource("cache");
                     setLiveOutageState("cache");
@@ -106,18 +104,7 @@ export const useLiveFacilityData = ({
             }
 
             try {
-                const payload = await retryAsync(
-                    () => fetchFacility(facility, controller.signal),
-                    {
-                        attempts: FETCH_RETRY_ATTEMPTS,
-                        initialDelayMs: FETCH_RETRY_DELAY_MS,
-                        backoffMultiplier: 1.5,
-                        signal: controller.signal,
-                        shouldRetryResult: (result) =>
-                            (hasStableLiveSnapshot || Boolean(cached))
-                            && result.liveDataSource === "fallback_api",
-                    }
-                );
+                const payload = await fetchFacility(facility, controller.signal);
                 if (isCancelled || controller.signal.aborted) return;
 
                 setData(payload);
@@ -127,18 +114,27 @@ export const useLiveFacilityData = ({
                 setHasPendingLiveRetry(false);
                 setCacheTimestampMs(null);
                 setFacilityCache(facility, payload);
-            } catch (loadError) {
+            } catch {
                 if (isCancelled || controller.signal.aborted) return;
 
-                console.error("Failed to fetch facility data", loadError);
                 const currentSnapshot = latestLiveSnapshotRef.current;
                 const canKeepVisibleLiveData = currentSnapshot.payload?.facilityId === facility
                     && currentSnapshot.outage === "none"
                     && currentSnapshot.source !== null
                     && currentSnapshot.source !== "cache";
+                const canKeepVisibleCachedData = currentSnapshot.payload?.facilityId === facility
+                    && currentSnapshot.outage === "cache"
+                    && currentSnapshot.source === "cache";
 
                 if (canKeepVisibleLiveData) {
                     setHasPendingLiveRetry(true);
+                    setError(null);
+                    return;
+                }
+
+                if (canKeepVisibleCachedData) {
+                    setLiveOutageState("cache");
+                    setHasPendingLiveRetry(false);
                     setError(null);
                     return;
                 }

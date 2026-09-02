@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import requests
 
 from bs4 import BeautifulSoup
+from env_loader import load_project_dotenv, validate_production_environment
 
 SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -446,6 +447,13 @@ def write_json(path: str, payload: Dict[str, Any]) -> None:
 
 
 def main() -> int:
+    load_project_dotenv()
+    validate_production_environment(
+        os.environ,
+        required_names=("FACILITY_HOURS_JSON_PATH",),
+        cors_name=None,
+        admin_enabled=False,
+    )
     parser = argparse.ArgumentParser(
         description="Fetch and parse official RecWell hours for Nick and Bakke."
     )

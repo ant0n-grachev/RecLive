@@ -1,4 +1,6 @@
-import axios, {AxiosHeaders, type AxiosResponse} from "axios";
+import {http, HttpResponse} from "msw";
+import {env} from "../config/env";
+import {server} from "../../test/msw/server";
 import * as forecastParser from "./forecastParser";
 import type {ForecastDay} from "../types/forecast";
 
@@ -26,7 +28,7 @@ const fallbackForecastDays = (): ForecastDay[] => [
 const actualHour = (overrides: Record<string, unknown> = {}) => ({
     hourStart: "2026-11-01T01:00:00-06:00",
     observedCount: 40,
-    observedCapacity: 100,
+    observedCapacity: 200,
     expectedCapacity: 200,
     actualCoverage: 1,
     temporalCoverage: 1,
@@ -44,15 +46,7 @@ const actualPayload = (overrides: Record<string, unknown> = {}) => ({
     ...overrides,
 });
 
-const axiosResponse = <T,>(data: T): AxiosResponse<T> => ({
-    data,
-    status: 200,
-    statusText: "OK",
-    headers: {},
-    config: {headers: new AxiosHeaders()},
-});
-
-const futureForecastResponse = () => axiosResponse({
+const futureForecastResponse = () => ({
     facilityId: 1186,
     facilityName: "Nick",
     forecastDayStartHour: 6,
@@ -64,17 +58,56 @@ const futureForecastResponse = () => axiosResponse({
         {
             dayName: "Thursday",
             date: "2999-01-01",
-            totalHours: [{hourStart: "2999-01-01T09:00:00-06:00", expectedCount: 50}],
+            totalHours: [{
+                hour: 9,
+                hourStart: "2999-01-01T09:00:00-06:00",
+                expectedCount: 50,
+                spikeAdjusted: true,
+            }],
         },
     ],
 });
 
-const futureActualResponse = () => axiosResponse({
+const futureActualResponse = () => ({
     facilityId: 1186,
     date: "2999-01-01",
     categories: [],
     totalHours: [],
 });
+
+const chicagoDateToday = (): string => {
+    const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/Chicago",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).formatToParts(new Date());
+    const year = parts.find((part) => part.type === "year")?.value;
+    const month = parts.find((part) => part.type === "month")?.value;
+    const day = parts.find((part) => part.type === "day")?.value;
+    if (!year || !month || !day) throw new Error("Chicago date unavailable in test runtime");
+    return `${year}-${month}-${day}`;
+};
+
+const validActualHourAt = (hourStart: string) => ({
+    hourStart,
+    observedCount: 40,
+    observedCapacity: 200,
+    expectedCapacity: 200,
+    actualCoverage: 1,
+    temporalCoverage: 1,
+    coverageThreshold: 0.75,
+    actualCount: 40,
+    actualPct: 0.2,
+});
+
+const apiUrl = (path: string): string => env.apiBaseUrl
+    ? `${env.apiBaseUrl}${path}`
+    : `${window.location.origin}${path}`;
+
+const FORECAST_PATH = "/api/forecast/facilities/1186";
+const FORECAST_URL = apiUrl(FORECAST_PATH);
+const ACTUAL_URL = apiUrl(`${FORECAST_PATH}/actual-hours`);
 
 const deferred = <T,>() => {
     let resolve!: (value: T) => void;
@@ -88,18 +121,77 @@ const deferred = <T,>() => {
 
 describe("mergeActualHoursIntoDays", () => {
     it.each([
-        ["a null actual count", {actualCount: null}],
-        ["low location coverage", {actualCoverage: 0.5}],
-        ["low temporal coverage", {temporalCoverage: 0.5}],
-    ])("retains forecast for %s", (_label, overrides) => {
+        ["low coverage with a non-null actual", {
+            hourStart: "2026-11-01T01:00:00-06:00",
+            observedCount: 40,
+            observedCapacity: 100,
+            expectedCapacity: 200,
+            actualCoverage: 0.5,
+            temporalCoverage: 1,
+            coverageThreshold: 0.75,
+            actualCount: 40,
+            actualPct: 0.2,
+        }],
+        ["negative counts", {
+            hourStart: "2026-11-01T01:00:00-06:00",
+            observedCount: -1,
+            observedCapacity: 200,
+            expectedCapacity: 200,
+            actualCoverage: 1,
+            temporalCoverage: 1,
+            coverageThreshold: 0.75,
+            actualCount: -1,
+            actualPct: 0,
+        }],
+        ["coverage inconsistent with capacity", {
+            hourStart: "2026-11-01T01:00:00-06:00",
+            observedCount: 40,
+            observedCapacity: 100,
+            expectedCapacity: 200,
+            actualCoverage: 1,
+            temporalCoverage: 1,
+            coverageThreshold: 0.75,
+            actualCount: 40,
+            actualPct: 0.2,
+        }],
+    ])("fails closed for %s", (_label, invalidHour) => {
+        const days = fallbackForecastDays();
+
+        expect(forecastParser.mergeActualHoursIntoDays(
+            days,
+            actualPayload({totalHours: [invalidHour]}),
+        )).toBe(days);
+    });
+
+    it.each([
+        ["a missing observation", {
+            observedCount: null,
+            observedCapacity: 0,
+            actualCoverage: 0,
+            actualCount: null,
+            actualPct: null,
+        }],
+        ["low location coverage", {
+            observedCapacity: 100,
+            actualCoverage: 0.5,
+            actualCount: null,
+            actualPct: null,
+        }],
+        ["low temporal coverage", {
+            temporalCoverage: 0.5,
+            actualCount: null,
+            actualPct: null,
+        }],
+    ])("retains explicit null actual occupancy for %s", (_label, overrides) => {
         const merged = forecastParser.mergeActualHoursIntoDays(
             fallbackForecastDays(),
             actualPayload({totalHours: [actualHour(overrides)]}),
         );
 
-        expect(merged[0].totalHours?.[1]).toEqual({
+        expect(merged[0].totalHours?.[1]).toMatchObject({
             hourStart: "2026-11-01T01:00:00-06:00",
             expectedCount: 60,
+            actualCount: null,
         });
     });
 
@@ -157,9 +249,9 @@ describe("mergeActualHoursIntoDays", () => {
             days,
             actualPayload({
                 totalHours: [
-                    actualHour({hourStart: "2026-11-01T01:00:00-06:00", actualCount: 41}),
-                    actualHour({hourStart: "2026-11-01T07:00:00Z", actualCount: 42}),
-                    actualHour({hourStart: "2026-11-01T08:00:00Z", actualCount: 43}),
+                    actualHour({hourStart: "2026-11-01T01:00:00-06:00", observedCount: 41, actualCount: 41}),
+                    actualHour({hourStart: "2026-11-01T07:00:00Z", observedCount: 42, actualCount: 42}),
+                    actualHour({hourStart: "2026-11-01T08:00:00Z", observedCount: 43, actualCount: 43}),
                 ],
             }),
         );
@@ -179,10 +271,11 @@ describe("mergeActualHoursIntoDays", () => {
                 categories: [
                     {
                         key: "fitness_floors",
+                        title: "Fitness Floors",
                         hours: [
-                            actualHour({hourStart: "2026-11-01T06:00:00Z", actualCount: 31}),
-                            actualHour({hourStart: "2026-11-01T01:00:00-06:00", actualCount: 41}),
-                            actualHour({hourStart: "2026-11-01T07:00:00Z", actualCount: 42}),
+                            actualHour({hourStart: "2026-11-01T06:00:00Z", observedCount: 31, actualCount: 31}),
+                            actualHour({hourStart: "2026-11-01T01:00:00-06:00", observedCount: 41, actualCount: 41}),
+                            actualHour({hourStart: "2026-11-01T07:00:00Z", observedCount: 42, actualCount: 42}),
                         ],
                     },
                 ],
@@ -207,17 +300,15 @@ describe("mergeActualHoursIntoDays", () => {
             days,
             actualPayload({
                 totalHours: [
-                    actualHour({hourStart: "2026-11-01T01:00:00-06:00", actualCount: 41}),
+                    actualHour({hourStart: "2026-11-01T01:00:00-06:00", observedCount: 41, actualCount: 41}),
                     actualHour({
                         hourStart: "2026-11-01T07:00:00Z",
-                        actualCount: 42,
+                        observedCapacity: 100,
                         actualCoverage: 0.5,
+                        actualCount: null,
+                        actualPct: null,
                     }),
-                    actualHour({hourStart: "2026-11-01T08:00:00Z", actualCount: 43}),
-                    actualHour({
-                        hourStart: "2026-11-01T08:00:00Z",
-                        observedCapacity: "malformed",
-                    }),
+                    actualHour({hourStart: "2026-11-01T08:00:00Z", observedCount: 43, actualCount: 43}),
                 ],
             }),
         );
@@ -237,10 +328,17 @@ describe("mergeActualHoursIntoDays", () => {
                 categories: [
                     {
                         key: "fitness_floors",
+                        title: "Fitness Floors",
                         hours: [
-                            actualHour({hourStart: "2026-11-01T06:00:00Z", actualCount: 31}),
-                            actualHour({hourStart: "2026-11-01T01:00:00-06:00", actualCount: 41}),
-                            actualHour({hourStart: "2026-11-01T07:00:00Z", actualCount: null}),
+                            actualHour({hourStart: "2026-11-01T06:00:00Z", observedCount: 31, actualCount: 31}),
+                            actualHour({hourStart: "2026-11-01T01:00:00-06:00", observedCount: 41, actualCount: 41}),
+                            actualHour({
+                                hourStart: "2026-11-01T07:00:00Z",
+                                observedCapacity: 100,
+                                actualCoverage: 0.5,
+                                actualCount: null,
+                                actualPct: null,
+                            }),
                         ],
                     },
                 ],
@@ -272,15 +370,18 @@ describe("mergeActualHoursIntoDays", () => {
                 categories: [
                     {
                         key: "Fitness Floors",
-                        hours: [actualHour({hourStart: "2026-11-01T06:00:00Z", actualCount: 31})],
+                        title: "Fitness Floors",
+                        hours: [actualHour({hourStart: "2026-11-01T06:00:00Z", observedCount: 31, actualCount: 31})],
                     },
                     {
                         key: "fitness_floors",
-                        hours: [actualHour({hourStart: "2026-11-01T07:00:00Z", actualCount: 41})],
+                        title: "Fitness Floors",
+                        hours: [actualHour({hourStart: "2026-11-01T07:00:00Z", observedCount: 41, actualCount: 41})],
                     },
                     {
                         key: "pool",
-                        hours: [actualHour({hourStart: "2026-11-01T07:00:00Z", actualCount: 18})],
+                        title: "Pool",
+                        hours: [actualHour({hourStart: "2026-11-01T07:00:00Z", observedCount: 18, actualCount: 18})],
                     },
                 ],
             }),
@@ -298,6 +399,7 @@ describe("mergeActualHoursIntoDays", () => {
             observedCount: 32,
             observedCapacity: 80,
             expectedCapacity: 100,
+            actualCoverage: 0.8,
             actualCount: 32,
             actualPct: 0.32,
         });
@@ -319,7 +421,7 @@ describe("mergeActualHoursIntoDays", () => {
             actualCount: 40,
             actualPct: 0.2,
             observedCount: 40,
-            observedCapacity: 100,
+            observedCapacity: 200,
             expectedCapacity: 200,
             actualCoverage: 1,
             temporalCoverage: 1,
@@ -369,70 +471,177 @@ describe("mergeActualHoursIntoDays", () => {
 
 describe("fetchForecastDays", () => {
     it("starts forecast and actual-hour requests concurrently", async () => {
-        const forecast = deferred<AxiosResponse>();
-        const get = vi.spyOn(axios, "get").mockImplementation((url) => {
-            if (url.endsWith("/actual-hours")) {
-                return Promise.resolve(futureActualResponse());
-            }
-            return forecast.promise;
-        });
+        const releaseForecast = deferred<void>();
+        let forecastStarted = false;
+        let actualStarted = false;
+        server.use(
+            http.get(FORECAST_URL, async ({request}) => {
+                forecastStarted = true;
+                expect(new URL(request.url).searchParams.get("compact")).toBe("1");
+                await releaseForecast.promise;
+                return HttpResponse.json(futureForecastResponse());
+            }),
+            http.get(ACTUAL_URL, ({request}) => {
+                actualStarted = true;
+                expect(new URL(request.url).searchParams.get("date")).toMatch(/^\d{4}-\d{2}-\d{2}$/u);
+                return HttpResponse.json(futureActualResponse());
+            }),
+        );
         const request = forecastParser.fetchForecastDays(1186);
 
         try {
-            await Promise.resolve();
-            expect(get.mock.calls.map(([url]) => new URL(url, window.location.origin).pathname)).toEqual([
-                "/api/forecast/facilities/1186",
-                "/api/forecast/facilities/1186/actual-hours",
-            ]);
+            await vi.waitFor(() => {
+                expect(forecastStarted).toBe(true);
+                expect(actualStarted).toBe(true);
+            });
         } finally {
-            forecast.resolve(futureForecastResponse());
+            releaseForecast.resolve();
             await request;
         }
     });
 
-    it.each(["already", "during"] as const)(
-        "rejects with CanceledError when the signal is %s aborted despite fulfilled responses",
-        async (timing) => {
-            const controller = new AbortController();
-            if (timing === "already") {
-                controller.abort();
-            }
-            vi.spyOn(axios, "get")
-                .mockResolvedValueOnce(futureForecastResponse())
-                .mockResolvedValueOnce(futureActualResponse());
+    it("normalizes a pre-aborted request through the shared client", async () => {
+        const controller = new AbortController();
+        controller.abort();
 
-            const request = forecastParser.fetchForecastDays(1186, controller.signal);
-            if (timing === "during") {
-                controller.abort();
-            }
-
-            await expect(request).rejects.toMatchObject({name: "CanceledError"});
-        },
-    );
-
-    it("retains a valid forecast when the optional actual-hour request fails", async () => {
-        vi.spyOn(console, "info").mockImplementation(() => undefined);
-        vi.spyOn(axios, "get").mockImplementation((url) => {
-            if (url.endsWith("/actual-hours")) {
-                return Promise.reject(new Error("optional endpoint unavailable"));
-            }
-            return Promise.resolve(futureForecastResponse());
+        await expect(forecastParser.fetchForecastDays(1186, controller.signal)).rejects.toMatchObject({
+            kind: "aborted",
+            message: "Request aborted",
         });
+    });
+
+    it("retains compact hour and spike-adjustment fields", async () => {
+        server.use(
+            http.get(FORECAST_URL, () => HttpResponse.json(futureForecastResponse())),
+            http.get(ACTUAL_URL, () => HttpResponse.json(futureActualResponse())),
+        );
+
+        const payload = await forecastParser.fetchForecastDays(1186);
+        const hour = payload.days[0]?.totalHours?.[0];
+
+        expect(hour?.hour).toBe(9);
+        expect(hour?.spikeAdjusted).toBe(true);
+    });
+
+    it("rejects a forecast envelope for a different requested facility", async () => {
+        server.use(
+            http.get(FORECAST_URL, () => HttpResponse.json({
+                ...futureForecastResponse(),
+                facilityId: 1656,
+            })),
+            http.get(ACTUAL_URL, () => HttpResponse.json(futureActualResponse())),
+        );
+
+        await expect(forecastParser.fetchForecastDays(1186)).rejects.toMatchObject({
+            kind: "schema",
+            message: "API response did not match its contract",
+        });
+    });
+
+    it("ignores optional actual hours for a different facility", async () => {
+        const today = chicagoDateToday();
+        const hourStart = `${today}T15:00:00Z`;
+        const forecast = {
+            ...futureForecastResponse(),
+            weeklyForecast: [{
+                dayName: "Tuesday",
+                date: today,
+                totalHours: [{hourStart, expectedCount: 50}],
+            }],
+        };
+        server.use(
+            http.get(FORECAST_URL, () => HttpResponse.json(forecast)),
+            http.get(ACTUAL_URL, () => HttpResponse.json({
+                facilityId: 1656,
+                date: today,
+                categories: [],
+                totalHours: [validActualHourAt(hourStart)],
+            })),
+        );
+
+        const payload = await forecastParser.fetchForecastDays(1186);
+
+        expect(payload.days[0]?.totalHours?.[0]).not.toHaveProperty("actualCount");
+    });
+
+    it("ignores optional actual hours for a date other than the requested date", async () => {
+        const hourStart = "2999-01-01T09:00:00-06:00";
+        server.use(
+            http.get(FORECAST_URL, () => HttpResponse.json(futureForecastResponse())),
+            http.get(ACTUAL_URL, () => HttpResponse.json({
+                facilityId: 1186,
+                date: "2999-01-01",
+                categories: [],
+                totalHours: [validActualHourAt(hourStart)],
+            })),
+        );
+
+        const payload = await forecastParser.fetchForecastDays(1186);
+
+        expect(payload.days[0]?.totalHours?.[0]).not.toHaveProperty("actualCount");
+    });
+
+    it("retains a valid forecast when actual-hours schema validation fails", async () => {
+        server.use(
+            http.get(FORECAST_URL, () => HttpResponse.json(futureForecastResponse())),
+            http.get(ACTUAL_URL, () => HttpResponse.json({
+                facilityId: 1186,
+                date: "2999-01-01",
+                categories: [],
+                totalHours: [{
+                    hourStart: "2999-01-01T09:00:00-06:00",
+                    observedCount: 40,
+                    observedCapacity: 100,
+                    expectedCapacity: 200,
+                    actualCoverage: 1,
+                    temporalCoverage: 1,
+                    coverageThreshold: 0.75,
+                    actualCount: 40,
+                    actualPct: 0.2,
+                }],
+            })),
+        );
+
+        const payload = await forecastParser.fetchForecastDays(1186);
+
+        expect(payload.days[0]).toMatchObject({
+            date: "2999-01-01",
+            totalHours: [{expectedCount: 50}],
+        });
+        expect(payload.days[0]?.totalHours?.[0]).not.toHaveProperty("actualCount");
+    });
+
+    it("rejects a schema-invalid forecast even when actual hours fulfill", async () => {
+        server.use(
+            http.get(FORECAST_URL, () => HttpResponse.json({
+                ...futureForecastResponse(),
+                facilityId: "1186",
+            })),
+            http.get(ACTUAL_URL, () => HttpResponse.json(futureActualResponse())),
+        );
+
+        await expect(forecastParser.fetchForecastDays(1186)).rejects.toMatchObject({kind: "schema"});
+    });
+
+    it("uses the shared client's bounded three-attempt GET policy", async () => {
+        let forecastRequests = 0;
+        server.use(
+            http.get(FORECAST_URL, () => {
+                forecastRequests += 1;
+                if (forecastRequests < 3) {
+                    return new HttpResponse(null, {
+                        status: 503,
+                        headers: {"Retry-After": "0"},
+                    });
+                }
+                return HttpResponse.json(futureForecastResponse());
+            }),
+            http.get(ACTUAL_URL, () => HttpResponse.json(futureActualResponse())),
+        );
 
         await expect(forecastParser.fetchForecastDays(1186)).resolves.toMatchObject({
             days: [{date: "2999-01-01"}],
         });
-    });
-
-    it("rejects a forecast failure even when actual hours fulfill", async () => {
-        const forecastError = new Error("forecast unavailable");
-        vi.spyOn(axios, "get").mockImplementation((url) => {
-            if (url.endsWith("/actual-hours")) {
-                return Promise.resolve(futureActualResponse());
-            }
-            return Promise.reject(forecastError);
-        });
-
-        await expect(forecastParser.fetchForecastDays(1186)).rejects.toBe(forecastError);
+        expect(forecastRequests).toBe(3);
     });
 });
