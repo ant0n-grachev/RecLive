@@ -56,14 +56,24 @@ class EvaluatorSnapshotReader:
         return list(self.rows)
 
     def fetch_live_snapshot(self, now: datetime) -> SimpleNamespace:
-        del now
         self.public_envelope_read_count += 1
-        return SimpleNamespace(last_successful_fetch_at=None, rows=list(self.rows))
+        return SimpleNamespace(
+            last_successful_fetch_at=now - timedelta(minutes=1),
+            rows=list(self.rows),
+        )
 
 
 class EvaluatorConnection:
     def __init__(self) -> None:
         self.close_count = 0
+        self.commit_count = 0
+        self.rollback_count = 0
+
+    def commit(self) -> None:
+        self.commit_count += 1
+
+    def rollback(self) -> None:
+        self.rollback_count += 1
 
     def close(self) -> None:
         self.close_count += 1
@@ -107,28 +117,62 @@ def configure_evaluator_rule(
     facility_id: int = 1186,
     section_key: str = "fitness floors",
     threshold: int = 1,
-) -> None:
+) -> EvaluatorConnection:
+    lock = EvaluatorConnection()
+    rule = forecast_api.PushRuleRecord(
+        id=1,
+        endpoint_hash=b"h" * 32,
+        subscription_json=json.dumps(
+            {
+                "endpoint": "https://push.reclive-notify.net/evaluator-test",
+                "keys": {
+                    "p256dh": (
+                        "BGsX0fLhLEJH-Lzm5WOkQPJ3A32BLeszoPShOUXYmMKWT-NC4v4af5uO5-"
+                        "tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+                    ),
+                    "auth": "A" * 22,
+                },
+            }
+        ),
+        facility_id=facility_id,
+        section_key=section_key,
+        threshold=threshold,
+        created_at=datetime(2026, 8, 31, 11, 0, tzinfo=timezone.utc),
+        expires_at=datetime(2026, 9, 2, 12, 0, tzinfo=timezone.utc),
+        status="pending",
+        active_identity=1,
+    )
     monkeypatch.setattr(
         forecast_api,
-        "load_store_from_db",
-        lambda: {
-            "rules": [
-                {
-                    "_id": 0,
-                    "facilityId": facility_id,
-                    "sectionKey": section_key,
-                    "threshold": threshold,
-                    "subscription": {},
-                }
-            ]
-        },
+        "load_evaluator_candidates",
+        lambda connection, now: [rule],
     )
-    lock = object()
     monkeypatch.setattr(forecast_api, "db_acquire_evaluator_lock", lambda: lock)
     monkeypatch.setattr(
-        forecast_api, "db_release_evaluator_lock", lambda connection: None
+        forecast_api, "db_release_evaluator_lock", lambda connection: connection.close()
     )
-    monkeypatch.setattr(forecast_api, "db_rules_count", lambda: 1)
+    monkeypatch.setattr(forecast_api, "load_facility_hours", lambda: {})
+    monkeypatch.setattr(
+        forecast_api,
+        "official_facility_is_open",
+        lambda payload, candidate_facility_id, at: True,
+    )
+    monkeypatch.setattr(
+        forecast_api,
+        "facility_notification_url",
+        lambda candidate_facility_id: "/fixture",
+    )
+    monkeypatch.setattr(
+        forecast_api,
+        "claim_pending_rule",
+        lambda connection, rule_id, now: True,
+    )
+    monkeypatch.setattr(
+        forecast_api,
+        "finalize_claimed_rule",
+        lambda connection, rule_id, now, status, failure_code=None: True,
+    )
+    return lock
 
 
 def utc_datetime(value: str) -> datetime:
@@ -289,8 +333,8 @@ def test_evaluator_skips_untrusted_or_above_threshold_shared_cases(
     notifications: list[dict[str, Any]] = []
     monkeypatch.setattr(
         forecast_api,
-        "send_notification",
-        lambda **notification: notifications.append(notification),
+        "send_notification_pinned",
+        lambda *args, **notification: notifications.append(notification),
     )
 
     result = forecast_api.evaluate_rules_once(
@@ -321,8 +365,8 @@ def test_evaluator_never_sends_for_partial_summary_even_below_threshold(
     notifications: list[dict[str, Any]] = []
     monkeypatch.setattr(
         forecast_api,
-        "send_notification",
-        lambda **notification: notifications.append(notification),
+        "send_notification_pinned",
+        lambda *args, **notification: notifications.append(notification),
     )
 
     result = forecast_api.evaluate_rules_once(
@@ -354,8 +398,8 @@ def test_evaluator_can_send_for_live_summary_at_coverage_boundary(
     notifications: list[dict[str, Any]] = []
     monkeypatch.setattr(
         forecast_api,
-        "send_notification",
-        lambda **notification: notifications.append(notification),
+        "send_notification_pinned",
+        lambda *args, **notification: notifications.append(notification),
     )
 
     result = forecast_api.evaluate_rules_once(
@@ -383,8 +427,8 @@ def test_evaluator_rounds_half_percent_up_for_comparison_and_copy(
     notifications: list[dict[str, Any]] = []
     monkeypatch.setattr(
         forecast_api,
-        "send_notification",
-        lambda **notification: notifications.append(notification),
+        "send_notification_pinned",
+        lambda *args, **notification: notifications.append(notification),
     )
 
     configure_evaluator_rule(
@@ -417,7 +461,7 @@ def test_evaluator_rounds_half_percent_up_for_comparison_and_copy(
     assert "13% full" in notifications[0]["body"]
 
 
-def test_evaluator_samples_one_aware_utc_now_for_metrics_and_notification(
+def test_evaluator_resamples_aware_utc_for_claim_metrics_and_terminal_audit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class CountingDateTime(datetime):
@@ -427,7 +471,15 @@ def test_evaluator_samples_one_aware_utc_now_for_metrics_and_notification(
         def now(cls, tz: timezone | None = None) -> "CountingDateTime":
             assert tz is timezone.utc
             cls.calls += 1
-            return cls(2026, 8, 31, 12, 0, tzinfo=timezone.utc)
+            return cls(
+                2026,
+                8,
+                31,
+                12,
+                0,
+                cls.calls - 1,
+                tzinfo=timezone.utc,
+            )
 
     monkeypatch.setattr(forecast_api, "datetime", CountingDateTime)
     monkeypatch.setattr(
@@ -443,16 +495,31 @@ def test_evaluator_samples_one_aware_utc_now_for_metrics_and_notification(
         threshold=85,
     )
     payloads: list[dict[str, Any]] = []
-    monkeypatch.setattr(forecast_api, "get_vapid_private_key", lambda: "private")
+    schedule_times: list[datetime] = []
+    claim_times: list[datetime] = []
+    terminal_times: list[datetime] = []
     monkeypatch.setattr(
         forecast_api,
-        "get_vapid_claims",
-        lambda: {"sub": "mailto:test@example.com"},
+        "official_facility_is_open",
+        lambda payload, candidate_facility_id, at: schedule_times.append(at) or True,
     )
     monkeypatch.setattr(
         forecast_api,
-        "webpush",
-        lambda **kwargs: payloads.append(json.loads(kwargs["data"])),
+        "claim_pending_rule",
+        lambda connection, rule_id, now: claim_times.append(now) or True,
+    )
+    monkeypatch.setattr(
+        forecast_api,
+        "finalize_claimed_rule",
+        lambda connection, rule_id, now, status, failure_code=None: terminal_times.append(
+            now
+        )
+        or True,
+    )
+    monkeypatch.setattr(
+        forecast_api,
+        "send_notification_pinned",
+        lambda *args, **kwargs: payloads.append(kwargs),
     )
     row = SnapshotRow(
         location_id=91001,
@@ -475,8 +542,17 @@ def test_evaluator_samples_one_aware_utc_now_for_metrics_and_notification(
     )
 
     assert result["sent"] == 1
-    assert CountingDateTime.calls == 1
-    assert payloads[0]["sentAt"] == "2026-08-31T12:00:00+00:00"
+    assert CountingDateTime.calls == 4
+    assert result["evaluatedAt"] == "2026-08-31T12:00:00+00:00"
+    assert schedule_times == [
+        CountingDateTime(2026, 8, 31, 12, 0, 1, tzinfo=timezone.utc),
+        CountingDateTime(2026, 8, 31, 12, 0, 2, tzinfo=timezone.utc),
+    ]
+    assert claim_times == schedule_times[-1:]
+    assert payloads[0]["sent_at"] == "2026-08-31T12:00:02+00:00"
+    assert terminal_times == [
+        CountingDateTime(2026, 8, 31, 12, 0, 3, tzinfo=timezone.utc)
+    ]
 
 
 @freeze_time("2026-08-31 12:05:00")
@@ -650,8 +726,8 @@ def test_evaluator_uses_internal_snapshot_rows_without_opening_a_connection(
     result = forecast_api.evaluate_rules_once(snapshot_reader=reader)
 
     assert result["skippedThreshold"] == 1
-    assert reader.internal_row_read_count == 1
-    assert reader.public_envelope_read_count == 0
+    assert reader.internal_row_read_count == 0
+    assert reader.public_envelope_read_count == 1
 
 
 @freeze_time("2026-08-31 12:05:00")
@@ -663,20 +739,25 @@ def test_evaluator_factory_path_closes_its_connection_exactly_once(
     reader = EvaluatorSnapshotReader([snapshot_row(location_id=5763)])
     factory_connections: list[object] = []
 
-    def open_connection(*, autocommit: bool = True) -> EvaluatorConnection:
-        assert autocommit is False
-        return connection
-
     def repository_factory(candidate: object) -> EvaluatorSnapshotReader:
         factory_connections.append(candidate)
         return reader
 
-    monkeypatch.setattr(forecast_api, "open_db_connection", open_connection)
+    monkeypatch.setattr(
+        forecast_api,
+        "db_acquire_evaluator_lock",
+        lambda: connection,
+    )
+    monkeypatch.setattr(
+        forecast_api,
+        "db_release_evaluator_lock",
+        lambda candidate: candidate.close(),
+    )
 
     result = forecast_api.evaluate_rules_once(repository_factory=repository_factory)
 
     assert result["skippedThreshold"] == 1
     assert factory_connections == [connection]
-    assert reader.internal_row_read_count == 1
-    assert reader.public_envelope_read_count == 0
+    assert reader.internal_row_read_count == 0
+    assert reader.public_envelope_read_count == 1
     assert connection.close_count == 1

@@ -82,6 +82,45 @@ column is removed and the final contract validates does the migration atomically
 restore `push_rules`. The temporary cutover table must then be absent, and stale
 endpoint-based statements fail structurally against the final schema.
 
+## Push alert limits, lifecycle, and maintenance
+
+Push rules default to 24 hours (`PUSH_RULE_DEFAULT_TTL_SECONDS=86400`) and
+cannot exceed seven days (`PUSH_RULE_MAX_TTL_SECONDS=604800`). The API permits
+ten active rules per push endpoint (`PUSH_MAX_ACTIVE_RULES_PER_ENDPOINT=10`)
+and twenty write attempts per ten-minute window (`PUSH_WRITE_RATE_LIMIT=20`,
+`PUSH_WRITE_RATE_WINDOW_SECONDS=600`). Rule management uses server-backed list
+and cancel operations.
+
+The write limit is per hashed subject: a usable normalized subscription
+endpoint is the subject, and only requests without one fall back to the hashed
+immediate client address. Different usable endpoints therefore have independent
+counters. This is not a global traffic ceiling, and the rate-limit table stores
+no raw endpoint or client address.
+
+Pending rows can become expired or cancelled without being claimed. Normal
+claimed sends terminalize as sent, failed, or invalid subscription. A crash or
+ambiguous post-claim failure can intentionally leave the row permanently
+claimed and never retried. The claim is committed before provider I/O; this
+preserves at-most-once provider attempts but does not guarantee terminal state
+or delivery. Provider acceptance and device display remain outside RecLive's
+control.
+
+Raw push endpoints, subscription keys, client subjects, and provider response
+bodies are never returned or logged. Operational output is count-only. Never
+dump the environment or include private database settings in logs or support
+artifacts.
+
+Prune rate-limit rows older than two 600-second windows with:
+
+```bash
+python server/prune_push_rate_limits.py
+```
+
+The command reads the same private `GYM_DB_HOST`, `GYM_DB_PORT`, `GYM_DB_USER`,
+`GYM_DB_PASSWORD`, and `GYM_DB_NAME` settings as the application. On success it
+prints only `pruned_push_rate_limit_windows=<count>`; failures return a fixed,
+non-sensitive error without settings, SQL, exceptions, or tracebacks.
+
 ## Built by
 
 Built by Anton and [Alex](https://github.com/alexgabrichidze).

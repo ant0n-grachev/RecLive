@@ -4,11 +4,19 @@ import AxeBuilder from "@axe-core/playwright";
 const liveRows = [{LocationId: 1, IsClosed: false, LastCount: 2, LastUpdatedDateAndTime: "2026-08-31T12:00:00Z"}];
 const emptyForecast = {generatedAt: "2026-08-31T12:00:00Z", facilities: []};
 const emptySchedule = {generatedAt: "2026-08-31T12:00:00Z", facilities: []};
+const pushAvailability = {
+    apiAvailable: true,
+    dbAvailable: true,
+    alertsAvailable: true,
+    reason: null,
+    storeBackend: "db",
+};
 
 test.beforeEach(async ({page}) => {
     await page.route("**/api/live-counts", (route) => route.fulfill({json: liveRows}));
     await page.route("**/api/forecast/**", (route) => route.fulfill({json: emptyForecast}));
     await page.route("**/api/facility-hours/**", (route) => route.fulfill({json: emptySchedule}));
+    await page.route("**/api/push/availability", (route) => route.fulfill({json: pushAvailability}));
 });
 
 for (const routePath of ["/nick", "/bakke"]) {
@@ -21,5 +29,10 @@ for (const routePath of ["/nick", "/bakke"]) {
         const violations = (await new AxeBuilder({page}).withTags(["wcag2a", "wcag2aa"]).analyze()).violations
             .filter((violation) => violation.impact === "critical");
         expect(violations).toEqual([]);
+
+        await page.getByRole("button", {name: "Alerts"}).click();
+        const manageAlerts = page.getByRole("region", {name: "Manage alerts"});
+        await expect(manageAlerts).toBeVisible();
+        await expect(manageAlerts.getByRole("heading", {name: "Manage alerts"})).toBeVisible();
     });
 }
