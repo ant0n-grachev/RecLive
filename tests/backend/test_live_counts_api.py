@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from fastapi.testclient import TestClient
 from freezegun import freeze_time
@@ -152,10 +152,21 @@ def configure_evaluator_rule(
         forecast_api, "db_release_evaluator_lock", lambda connection: connection.close()
     )
     monkeypatch.setattr(forecast_api, "load_facility_hours", lambda: {})
+
+    def schedule_is_open(
+        payload: Mapping[str, Any],
+        candidate_facility_id: int,
+        at: datetime,
+        *,
+        stale_after_seconds: int,
+    ) -> bool:
+        assert stale_after_seconds == forecast_api.SCHEDULE_STALE_AFTER_SECONDS
+        return True
+
     monkeypatch.setattr(
         forecast_api,
         "official_facility_is_open",
-        lambda payload, candidate_facility_id, at: True,
+        schedule_is_open,
     )
     monkeypatch.setattr(
         forecast_api,
@@ -498,10 +509,22 @@ def test_evaluator_resamples_aware_utc_for_claim_metrics_and_terminal_audit(
     schedule_times: list[datetime] = []
     claim_times: list[datetime] = []
     terminal_times: list[datetime] = []
+
+    def schedule_is_open(
+        payload: Mapping[str, Any],
+        candidate_facility_id: int,
+        at: datetime,
+        *,
+        stale_after_seconds: int,
+    ) -> bool:
+        assert stale_after_seconds == forecast_api.SCHEDULE_STALE_AFTER_SECONDS
+        schedule_times.append(at)
+        return True
+
     monkeypatch.setattr(
         forecast_api,
         "official_facility_is_open",
-        lambda payload, candidate_facility_id, at: schedule_times.append(at) or True,
+        schedule_is_open,
     )
     monkeypatch.setattr(
         forecast_api,

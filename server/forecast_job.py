@@ -26,6 +26,21 @@ try:
 except ImportError:  # pragma: no cover - supports package-style imports.
     from server.forecast_shared import normalize_section_key
 
+try:
+    from facility_schedule import (
+        MINUTES_PER_DAY as SHARED_SCHEDULE_MINUTES_PER_DAY,
+        parse_schedule_date_range,
+        parse_schedule_hours_window,
+        parse_schedule_weekday_set,
+    )
+except ImportError:  # pragma: no cover - supports package-style imports.
+    from server.facility_schedule import (
+        MINUTES_PER_DAY as SHARED_SCHEDULE_MINUTES_PER_DAY,
+        parse_schedule_date_range,
+        parse_schedule_hours_window,
+        parse_schedule_weekday_set,
+    )
+
 SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
 try:
     load_project_dotenv()
@@ -698,248 +713,11 @@ def should_train_category(category_key: str) -> bool:
     return str(category_key) in FORECAST_CATEGORY_KEYS
 
 
-SCHEDULE_MINUTES_PER_DAY = 24 * 60
-SCHEDULE_DAY_TOKEN_PATTERN = (
-    r"mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:r|rs|rsday)?|"
-    r"fri(?:day)?|sat(?:urday)?|sun(?:day)?"
-)
-SCHEDULE_DAY_TOKEN_RE = re.compile(rf"\b({SCHEDULE_DAY_TOKEN_PATTERN})\b", re.IGNORECASE)
-SCHEDULE_DAY_RANGE_RE = re.compile(
-    rf"\b({SCHEDULE_DAY_TOKEN_PATTERN})\s*-\s*({SCHEDULE_DAY_TOKEN_PATTERN})\b",
-    re.IGNORECASE,
-)
-SCHEDULE_DATE_LIKE_RE = re.compile(
-    r"(\d{4}-\d{2}-\d{2})|(\d{1,2}/\d{1,2}(?:/\d{2,4})?)|([a-z]{3,9}\s+\d{1,2})",
-    re.IGNORECASE,
-)
-SCHEDULE_MONTH_BY_NAME = {
-    "jan": 1,
-    "january": 1,
-    "feb": 2,
-    "february": 2,
-    "mar": 3,
-    "march": 3,
-    "apr": 4,
-    "april": 4,
-    "may": 5,
-    "jun": 6,
-    "june": 6,
-    "jul": 7,
-    "july": 7,
-    "aug": 8,
-    "august": 8,
-    "sep": 9,
-    "sept": 9,
-    "september": 9,
-    "oct": 10,
-    "october": 10,
-    "nov": 11,
-    "november": 11,
-    "dec": 12,
-    "december": 12,
-}
+SCHEDULE_MINUTES_PER_DAY = SHARED_SCHEDULE_MINUTES_PER_DAY
 
 
 def normalize_schedule_text(value: str) -> str:
     return re.sub(r"\s+", " ", str(value).lower().replace("–", "-").replace("—", "-")).strip()
-
-
-def schedule_day_token_to_index(token: str) -> Optional[int]:
-    text = normalize_schedule_text(token)
-    if text.startswith("mon"):
-        return 0
-    if text.startswith("tue"):
-        return 1
-    if text.startswith("wed"):
-        return 2
-    if text.startswith("thu"):
-        return 3
-    if text.startswith("fri"):
-        return 4
-    if text.startswith("sat"):
-        return 5
-    if text.startswith("sun"):
-        return 6
-    return None
-
-
-def safe_build_date(year: int, month: int, day: int) -> Optional[date]:
-    try:
-        return date(int(year), int(month), int(day))
-    except Exception:
-        return None
-
-
-def parse_schedule_token_date(
-    token: str,
-    fallback_year: int,
-    fallback_month: Optional[int] = None,
-) -> Optional[date]:
-    normalized = normalize_schedule_text(token)
-    if not normalized:
-        return None
-
-    iso_match = re.match(r"^(\d{4})-(\d{2})-(\d{2})$", normalized)
-    if iso_match:
-        return safe_build_date(int(iso_match.group(1)), int(iso_match.group(2)), int(iso_match.group(3)))
-
-    slash_match = re.match(r"^(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?$", normalized)
-    if slash_match:
-        month = int(slash_match.group(1))
-        day = int(slash_match.group(2))
-        year_raw = slash_match.group(3)
-        year = int(fallback_year)
-        if year_raw:
-            parsed_year = int(year_raw)
-            if parsed_year < 100:
-                parsed_year += 2000
-            year = parsed_year
-        return safe_build_date(year, month, day)
-
-    month_day_match = re.match(r"^([a-z]+)\s+(\d{1,2})(?:,\s*(\d{4}))?$", normalized)
-    if month_day_match:
-        month = SCHEDULE_MONTH_BY_NAME.get(month_day_match.group(1))
-        if month is None:
-            return None
-        day = int(month_day_match.group(2))
-        year = int(month_day_match.group(3)) if month_day_match.group(3) else int(fallback_year)
-        return safe_build_date(year, month, day)
-
-    day_only_match = re.match(r"^(\d{1,2})$", normalized)
-    if day_only_match and fallback_month is not None:
-        return safe_build_date(int(fallback_year), int(fallback_month), int(day_only_match.group(1)))
-
-    return None
-
-
-def parse_schedule_date_range(value: str, fallback_year: int) -> Optional[Tuple[date, date, int]]:
-    normalized = normalize_schedule_text(value)
-    if not normalized:
-        return None
-    if not SCHEDULE_DATE_LIKE_RE.search(normalized):
-        return None
-
-    parts = [part.strip() for part in re.split(r"\s+-\s+", normalized) if part.strip()]
-    if not parts:
-        return None
-
-    start = parse_schedule_token_date(parts[0], fallback_year)
-    if start is None:
-        return None
-
-    end_token = parts[-1]
-    end = parse_schedule_token_date(end_token, start.year, start.month)
-    if end is None:
-        end = parse_schedule_token_date(end_token, fallback_year)
-    if end is None:
-        return None
-
-    if end < start:
-        shifted_end = parse_schedule_token_date(end_token, start.year + 1, start.month)
-        if shifted_end is None or shifted_end < start:
-            return None
-        end = shifted_end
-
-    span_days = (end - start).days + 1
-    if span_days <= 0:
-        return None
-    return start, end, span_days
-
-
-def parse_schedule_weekday_set(label: str) -> Optional[Set[int]]:
-    normalized = normalize_schedule_text(label)
-    if not normalized:
-        return None
-
-    if "daily" in normalized:
-        return set(range(7))
-    if "weekdays" in normalized:
-        return {0, 1, 2, 3, 4}
-    if "weekends" in normalized:
-        return {5, 6}
-
-    range_match = SCHEDULE_DAY_RANGE_RE.search(normalized)
-    if range_match:
-        start = schedule_day_token_to_index(range_match.group(1))
-        end = schedule_day_token_to_index(range_match.group(2))
-        if start is not None and end is not None:
-            output: Set[int] = set()
-            if start <= end:
-                for idx in range(start, end + 1):
-                    output.add(idx)
-            else:
-                for idx in range(start, 7):
-                    output.add(idx)
-                for idx in range(0, end + 1):
-                    output.add(idx)
-            return output
-
-    output: Set[int] = set()
-    for match in SCHEDULE_DAY_TOKEN_RE.finditer(normalized):
-        idx = schedule_day_token_to_index(match.group(1))
-        if idx is not None:
-            output.add(idx)
-    return output if output else None
-
-
-def parse_schedule_clock_token(token: str, is_end: bool) -> Optional[int]:
-    normalized = normalize_schedule_text(token).replace(".", "")
-    if not normalized:
-        return None
-    if normalized == "midnight":
-        return SCHEDULE_MINUTES_PER_DAY if is_end else 0
-    if normalized == "noon":
-        return 12 * 60
-
-    match = re.match(r"^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$", normalized)
-    if not match:
-        return None
-
-    hour = int(match.group(1))
-    minute = int(match.group(2) or "0")
-    suffix = match.group(3) or ""
-
-    if minute < 0 or minute > 59:
-        return None
-
-    if suffix == "am":
-        if hour == 12:
-            hour = 0
-    elif suffix == "pm":
-        if hour < 12:
-            hour += 12
-
-    if hour < 0 or hour > 24:
-        return None
-    if hour == 24 and minute > 0:
-        return None
-    return hour * 60 + minute
-
-
-def parse_schedule_hours_window(value: str) -> Optional[Tuple[int, int, bool]]:
-    normalized = normalize_schedule_text(value)
-    if not normalized:
-        return None
-
-    if "closed" in normalized:
-        return 0, 0, True
-    if "24 hours" in normalized:
-        return 0, SCHEDULE_MINUTES_PER_DAY, False
-
-    parts = [part for part in re.split(r"\s*-\s*", normalized) if part]
-    if len(parts) != 2 and " to " in normalized:
-        parts = [part.strip() for part in normalized.split(" to ", 1) if part.strip()]
-    if len(parts) != 2:
-        return None
-
-    start_minutes = parse_schedule_clock_token(parts[0], is_end=False)
-    end_minutes = parse_schedule_clock_token(parts[1], is_end=True)
-    if start_minutes is None or end_minutes is None:
-        return None
-
-    if end_minutes <= start_minutes:
-        end_minutes += SCHEDULE_MINUTES_PER_DAY
-    return int(start_minutes), int(end_minutes), False
 
 
 def is_schedule_facility_wide_section(section_title: str) -> bool:

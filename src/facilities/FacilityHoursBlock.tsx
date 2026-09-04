@@ -100,6 +100,12 @@ export default function FacilityHoursBlock({
 
                         {schedule && (
                             <Stack spacing={2}>
+                                {schedule.stale ? (
+                                    <Typography variant="body2" color="warning.main">
+                                        Official hours may be out of date. Showing the last verified schedule.
+                                    </Typography>
+                                ) : null}
+
                                 {schedule.sections.length === 0 && (
                                     <Typography variant="body2" color="text.secondary">
                                         No schedule rows are available for this facility yet.

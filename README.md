@@ -82,6 +82,27 @@ column is removed and the final contract validates does the migration atomically
 restore `push_rules`. The temporary cutover table must then be absent, and stale
 endpoint-based statements fail structurally against the final schema.
 
+## Official facility hours
+
+Refresh the saved Nick and Bakke schedules with:
+
+```bash
+python server/facility_hours_fetch.py --output server/facility_hours.json
+```
+
+The command validates the complete two-facility artifact before replacing the
+existing file atomically. If one facility cannot be refreshed, only an earlier
+valid schedule for that facility may be retained; it is marked stale, the other
+valid fresh facility is still published, and the command exits nonzero. Without
+a valid earlier schedule, the failed facility is published without invented
+hours and the command also exits nonzero.
+
+`SCHEDULE_STALE_AFTER_SECONDS=21600` is the canonical six-hour freshness
+setting. At runtime, the legacy `SCHEDULE_MAX_AGE_SECONDS` value is used only
+when the canonical setting is absent. Fetch and publication errors use fixed,
+sanitized categories and never expose upstream request data, response content,
+paths, or credentials.
+
 ## Push alert limits, lifecycle, and maintenance
 
 Push rules default to 24 hours (`PUSH_RULE_DEFAULT_TTL_SECONDS=86400`) and

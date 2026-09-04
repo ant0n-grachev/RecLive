@@ -41,7 +41,8 @@ from pywebpush import WebPushException, webpush
 from env_loader import load_project_dotenv, validate_production_environment
 
 try:
-    from facility_schedule import official_facility_is_open
+    from facility_hours_fetch import validate_schedule_payload
+    from facility_schedule import official_facility_is_open, parse_utc_timestamp
     from forecast_shared import normalize_section_key
     from facility_capacities import load_facility_capacities
     from reclive.actual_hours import (
@@ -66,7 +67,8 @@ try:
         rate_limit_subject_hash,  # noqa: F401 - consumed by Phase 5 routes
     )
 except ImportError:
-    from server.facility_schedule import official_facility_is_open
+    from server.facility_hours_fetch import validate_schedule_payload
+    from server.facility_schedule import official_facility_is_open, parse_utc_timestamp
     from server.forecast_shared import normalize_section_key
     from server.facility_capacities import load_facility_capacities
     from server.reclive.actual_hours import (
@@ -130,6 +132,32 @@ def int_with_default(name: str, default: int, aliases: Sequence[str] = ()) -> in
         raise RuntimeError(f"Invalid integer for env var {name}: {raw}") from exc
 
 
+def positive_int_with_legacy_alias(
+    name: str,
+    legacy_name: str,
+    default: int,
+) -> int:
+    selected_name = name
+    raw = _read_env(name)
+    if raw is None:
+        selected_name = legacy_name
+        raw = _read_env(legacy_name)
+    if raw is None:
+        value = default
+    else:
+        try:
+            value = int(raw)
+        except ValueError:
+            raise RuntimeError(
+                f"Invalid positive integer for env var {selected_name}"
+            ) from None
+    if value <= 0:
+        raise RuntimeError(
+            f"Invalid positive integer for env var {selected_name}"
+        )
+    return value
+
+
 def bool_with_default(name: str, default: bool, aliases: Sequence[str] = ()) -> bool:
     raw = _read_env(name, aliases=aliases)
     if raw is None:
@@ -178,6 +206,11 @@ FACILITY_SECTION_CONFIG_PATH = path_with_default(
 FACILITY_HOURS_JSON_PATH = path_with_default(
     "FACILITY_HOURS_JSON_PATH",
     os.path.join(SCRIPT_DIR, "facility_hours.json"),
+)
+SCHEDULE_STALE_AFTER_SECONDS = positive_int_with_legacy_alias(
+    "SCHEDULE_STALE_AFTER_SECONDS",
+    "SCHEDULE_MAX_AGE_SECONDS",
+    21_600,
 )
 PUSH_RULES_TABLE = env_with_default("PUSH_RULES_TABLE", "push_rules")
 PUSH_BODY_MAX_BYTES = 16 * 1024
@@ -392,25 +425,55 @@ def load_forecast() -> Dict[str, Any]:
 
 
 def load_facility_hours() -> Dict[str, Any]:
-    if not os.path.exists(FACILITY_HOURS_JSON_PATH):
-        raise HTTPException(status_code=503, detail="Facility hours not generated yet")
-
     try:
         with open(FACILITY_HOURS_JSON_PATH, "r", encoding="utf-8") as handle:
             payload = json.load(handle)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=500, detail="Facility hours file corrupted") from exc
-    except OSError as exc:
-        raise HTTPException(status_code=500, detail="Failed to read facility hours file") from exc
+        return validate_schedule_payload(payload, now=now_utc())
+    except (OSError, json.JSONDecodeError, ValueError, TypeError):
+        raise HTTPException(
+            status_code=503, detail="schedule_unavailable"
+        ) from None
 
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=500, detail="Facility hours payload shape is invalid")
 
-    facilities = payload.get("facilities", [])
-    if not isinstance(facilities, list):
-        raise HTTPException(status_code=500, detail="Facility hours payload facilities shape is invalid")
-
-    return payload
+def schedule_health(
+    payload: Mapping[str, Any],
+    now: datetime,
+) -> Dict[str, Any]:
+    generated_at = parse_utc_timestamp(payload.get("generatedAt"))
+    raw_age_seconds = (
+        None
+        if generated_at is None
+        else max(
+            0.0,
+            (now.astimezone(timezone.utc) - generated_at).total_seconds(),
+        )
+    )
+    age_seconds = None if raw_age_seconds is None else int(raw_age_seconds)
+    facilities = payload.get("facilities")
+    statuses = (
+        {
+            str(row["facilityId"]): str(row["status"])
+            for row in facilities
+            if isinstance(row, Mapping)
+            and "facilityId" in row
+            and "status" in row
+        }
+        if isinstance(facilities, list)
+        else {}
+    )
+    if age_seconds is None or (
+        statuses and all(status == "error" for status in statuses.values())
+    ):
+        state = "unavailable"
+    elif (
+        raw_age_seconds <= SCHEDULE_STALE_AFTER_SECONDS
+        and statuses
+        and all(status == "ok" for status in statuses.values())
+    ):
+        state = "healthy"
+    else:
+        state = "stale"
+    return {"state": state, "ageSeconds": age_seconds, "facilities": statuses}
 
 
 def _parse_facility_id(value: Any) -> Optional[int]:
@@ -674,12 +737,17 @@ app.add_middleware(
 @app.get("/health")
 def health() -> Dict[str, Any]:
     payload = load_forecast()
+    try:
+        schedule = schedule_health(load_facility_hours(), now_utc())
+    except HTTPException:
+        schedule = {"state": "unavailable", "ageSeconds": None, "facilities": {}}
     return {
         "status": "ok",
         "generatedAt": payload.get("generatedAt"),
         "generatedAgeSeconds": generated_age_seconds(payload),
         "facilities": len(payload.get("facilities", [])),
         "modelStatus": payload.get("modelInfo", {}).get("status"),
+        "schedule": schedule,
     }
 
 
@@ -2760,6 +2828,7 @@ def _rule_schedule_gate(
             schedule_payload,
             rule.facility_id,
             at,
+            stale_after_seconds=SCHEDULE_STALE_AFTER_SECONDS,
         )
     )
 

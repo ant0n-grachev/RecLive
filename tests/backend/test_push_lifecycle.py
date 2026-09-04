@@ -2141,6 +2141,11 @@ def test_duplicate_key_recovery_reselects_and_returns_existing_pending_rule(
     valid_subscription: dict[str, object],
 ) -> None:
     monkeypatch.setenv("PUSH_ENDPOINT_HASH_KEY", VALID_HASH_KEY)
+    monkeypatch.setattr(
+        api,
+        "now_utc",
+        lambda: datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc),
+    )
     digest = api.endpoint_hash(str(valid_subscription["endpoint"]))
     connection = DuplicateRecoveryConnection(valid_subscription, digest)
     monkeypatch.setattr(api, "open_db_connection", lambda **_kwargs: connection)
@@ -3592,7 +3597,10 @@ def configure_task4_evaluator(
     monkeypatch.setattr(
         api,
         "official_facility_is_open",
-        lambda payload, facility_id, at: schedule_open,
+        lambda payload, facility_id, at, *, stale_after_seconds: (
+            schedule_open
+            and stale_after_seconds == api.SCHEDULE_STALE_AFTER_SECONDS
+        ),
         raising=False,
     )
     monkeypatch.setattr(
@@ -3849,7 +3857,11 @@ def test_evaluator_commits_before_each_candidate_snapshot_without_releasing_lock
         lambda candidate_conn, at: events.append("rules") or rules,
     )
     monkeypatch.setattr(api, "load_facility_hours", lambda: events.append("schedule") or {})
-    monkeypatch.setattr(api, "official_facility_is_open", lambda *args: True)
+    monkeypatch.setattr(
+        api,
+        "official_facility_is_open",
+        lambda *args, **kwargs: True,
+    )
     monkeypatch.setattr(api, "index_live_rows", lambda rows: rows[0])
     monkeypatch.setattr(
         api,
@@ -3959,7 +3971,14 @@ def test_evaluator_resamples_all_claim_gates_after_first_send(
         ),
     )
 
-    def schedule_open(payload: object, facility_id: int, at: datetime) -> bool:
+    def schedule_open(
+        payload: object,
+        facility_id: int,
+        at: datetime,
+        *,
+        stale_after_seconds: int,
+    ) -> bool:
+        assert stale_after_seconds == api.SCHEDULE_STALE_AFTER_SECONDS
         schedule_times.append(at)
         return boundary != "schedule" or at < advanced_now
 
@@ -4083,7 +4102,14 @@ def test_evaluator_resamples_all_claim_gates_after_snapshot_read(
     )
     monkeypatch.setattr(api, "load_facility_hours", lambda: {})
 
-    def schedule_open(payload: object, facility_id: int, at: datetime) -> bool:
+    def schedule_open(
+        payload: object,
+        facility_id: int,
+        at: datetime,
+        *,
+        stale_after_seconds: int,
+    ) -> bool:
+        assert stale_after_seconds == api.SCHEDULE_STALE_AFTER_SECONDS
         schedule_times.append(at)
         return boundary != "schedule" or at < advanced_now
 
@@ -4177,7 +4203,9 @@ def test_evaluator_rereads_snapshot_before_each_claim_gate(
     monkeypatch.setattr(
         api,
         "official_facility_is_open",
-        lambda payload, facility_id, at: True,
+        lambda payload, facility_id, at, *, stale_after_seconds: (
+            stale_after_seconds == api.SCHEDULE_STALE_AFTER_SECONDS
+        ),
     )
     monkeypatch.setattr(api, "index_live_rows", lambda rows: rows[0])
     monkeypatch.setattr(

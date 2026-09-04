@@ -317,29 +317,29 @@ describe("facilityScheduleSchema", () => {
             rows: [{label: "Mon-Fri", hours: "6:00 am - 10:00 pm"}],
             note: null,
         }],
+        sourceFetchedAt: "2026-08-31T12:00:00Z",
+        lastSuccessfulAt: "2026-08-31T12:00:00Z",
+        stale: false,
         error: null,
+        errorCategory: null,
         updatedAt: "2026-08-31T12:00:00Z",
     };
 
-    it("accepts current WP metadata while allowing resolvedUrl to be absent", () => {
+    it("accepts a fresh schedule while allowing resolvedUrl to be absent", () => {
         expect(facilityScheduleSchema.parse(currentSchedule)).toEqual(currentSchedule);
     });
 
-    it("accepts the known Phase 7 metadata without accepting unknown fields", () => {
+    it("accepts resolvedUrl without accepting unknown fields", () => {
         const futureSchedule = {
             ...currentSchedule,
             resolvedUrl: "https://recwell.wisc.edu/nick/",
-            sourceFetchedAt: "2026-08-31T12:00:00Z",
-            lastSuccessfulAt: "2026-08-31T12:00:00Z",
-            stale: false,
-            errorCategory: null,
         };
 
         expect(facilityScheduleSchema.parse(futureSchedule)).toEqual(futureSchedule);
         expect(() => facilityScheduleSchema.parse({...futureSchedule, privateDebug: "no"})).toThrow();
     });
 
-    it("rejects malformed optional provenance metadata", () => {
+    it("rejects malformed provenance metadata", () => {
         expect(() => facilityScheduleSchema.parse({
             ...currentSchedule,
             stale: "false",

@@ -338,17 +338,70 @@ export const facilityScheduleSchema = z.object({
     slug: z.string().trim().min(1).max(80),
     url: scheduleUrlSchema,
     resolvedUrl: scheduleUrlSchema.nullable().optional(),
-    status: z.enum(["ok", "stale", "error"]),
-    source: z.enum(["direct_html", "wp_json"]).nullable(),
+    status: z.enum(["ok", "stale"]),
+    source: z.enum(["direct_html", "wp_json"]),
     sourceModifiedGmt: localIsoDateTimeSchema.nullable().optional(),
     sections: z.array(scheduleSectionSchema),
-    sourceFetchedAt: nullableIsoDateTimeSchema.optional(),
-    lastSuccessfulAt: nullableIsoDateTimeSchema.optional(),
-    stale: z.boolean().optional(),
+    sourceFetchedAt: nullableIsoDateTimeSchema,
+    lastSuccessfulAt: nullableIsoDateTimeSchema,
+    stale: z.boolean(),
     error: z.string().trim().max(240).nullable(),
-    errorCategory: scheduleErrorCategorySchema.nullable().optional(),
+    errorCategory: scheduleErrorCategorySchema.nullable(),
     updatedAt: nullableIsoDateTimeSchema,
-}).strict();
+}).strict().superRefine((schedule, context) => {
+    if (schedule.sections.length === 0) {
+        context.addIssue({
+            code: "custom",
+            path: ["sections"],
+            message: "successful schedules must include at least one section",
+        });
+    }
+    if (schedule.sourceFetchedAt === null) {
+        context.addIssue({
+            code: "custom",
+            path: ["sourceFetchedAt"],
+            message: "successful schedules must include a source fetch timestamp",
+        });
+    }
+    if (schedule.lastSuccessfulAt === null) {
+        context.addIssue({
+            code: "custom",
+            path: ["lastSuccessfulAt"],
+            message: "successful schedules must include a last-successful timestamp",
+        });
+    }
+    if (schedule.status === "ok") {
+        if (schedule.stale) {
+            context.addIssue({
+                code: "custom",
+                path: ["stale"],
+                message: "a current schedule cannot be marked stale",
+            });
+        }
+        if (schedule.errorCategory !== null) {
+            context.addIssue({
+                code: "custom",
+                path: ["errorCategory"],
+                message: "a current schedule cannot include an error category",
+            });
+        }
+        return;
+    }
+    if (!schedule.stale) {
+        context.addIssue({
+            code: "custom",
+            path: ["stale"],
+            message: "a retained schedule must be marked stale",
+        });
+    }
+    if (schedule.errorCategory === null) {
+        context.addIssue({
+            code: "custom",
+            path: ["errorCategory"],
+            message: "a retained schedule must include an error category",
+        });
+    }
+});
 
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 const VAPID_PUBLIC_KEY_BYTES = 65;

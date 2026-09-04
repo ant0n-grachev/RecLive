@@ -24,7 +24,7 @@ const validSchedule = {
     sourceFetchedAt: "2026-09-01T12:00:00Z",
     lastSuccessfulAt: "2026-09-01T11:55:00Z",
     stale: true,
-    error: "Upstream refresh failed",
+    error: "Official hours could not be refreshed.",
     errorCategory: "upstream_timeout",
     updatedAt: "2026-09-01T12:00:00Z",
 } as const;
@@ -41,6 +41,51 @@ describe("fetchFacilityHours", () => {
             ...validSchedule,
             facilityId: "1186",
         })));
+
+        await expect(fetchFacilityHours(1186)).rejects.toMatchObject({kind: "schema"});
+    });
+
+    it.each([
+        ["missing required freshness metadata", {
+            ...validSchedule,
+            sourceFetchedAt: undefined,
+        }],
+        ["a fresh schedule marked stale", {
+            ...validSchedule,
+            status: "ok",
+            stale: true,
+            error: null,
+            errorCategory: null,
+        }],
+        ["a stale schedule without retained rows", {
+            ...validSchedule,
+            sections: [],
+        }],
+        ["a stale schedule without an error category", {
+            ...validSchedule,
+            errorCategory: null,
+        }],
+        ["an error-only facility record", {
+            ...validSchedule,
+            status: "error",
+            source: null,
+            sourceModifiedGmt: null,
+            resolvedUrl: null,
+            sections: [],
+            sourceFetchedAt: null,
+            lastSuccessfulAt: null,
+            stale: false,
+        }],
+        ["a malformed schedule section", {
+            ...validSchedule,
+            sections: [{
+                title: "Building Hours",
+                rows: [{label: "Mon-Fri", hours: 12}],
+                note: null,
+            }],
+        }],
+    ])("rejects %s", async (_caseName, payload) => {
+        server.use(http.get(scheduleEndpoint, () => HttpResponse.json(payload)));
 
         await expect(fetchFacilityHours(1186)).rejects.toMatchObject({kind: "schema"});
     });

@@ -510,7 +510,7 @@ def get_facility_schedule_open_state(
     return None
 
 
-def _parse_aware_timestamp(value: object) -> datetime | None:
+def parse_utc_timestamp(value: object) -> datetime | None:
     if not isinstance(value, str) or not value.strip():
         return None
     normalized = value.strip()
@@ -571,7 +571,7 @@ def official_facility_is_open(
         payload.get("generatedAt"),
         facility.get("lastSuccessfulAt"),
     ):
-        observed = _parse_aware_timestamp(raw_timestamp)
+        observed = parse_utc_timestamp(raw_timestamp)
         if observed is None:
             return False
         age = (now - observed).total_seconds()
