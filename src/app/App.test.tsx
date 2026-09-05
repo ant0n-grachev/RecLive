@@ -161,6 +161,7 @@ const canonicalPayload = (fetchedAt: string): FacilityPayload => {
 
 const appTree = (props: {
     initialFacility: 1186;
+    onFacilityRouteChange?: (facility: 1186 | 1656) => void;
     themeMode: "light";
     onThemeModeChange: () => void;
 }) => (
@@ -213,6 +214,25 @@ beforeEach(() => {
 });
 
 describe("App occupancy clock", () => {
+    it("ticks the live clock and removes its timer and debug handlers on unmount", async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime("2026-08-31T12:00:00Z");
+        const setInterval = vi.spyOn(window, "setInterval");
+        const clearInterval = vi.spyOn(window, "clearInterval");
+        liveHookState.data = canonicalPayload("2026-08-31T11:59:00Z");
+        const {unmount} = render(appTree({initialFacility: 1186, themeMode: "light", onThemeModeChange: vi.fn()}));
+        await act(async () => { await Promise.resolve(); });
+        act(() => vi.advanceTimersByTime(30_000));
+        expect(screen.getByTestId("occupancy-hero")).toHaveAttribute("data-now-ts", String(Date.parse("2026-08-31T12:00:30Z")));
+        const clockIntervalIndex = setInterval.mock.calls.findIndex(([, delay]) => delay === 30_000);
+        expect(clockIntervalIndex).toBeGreaterThanOrEqual(0);
+        const clockInterval = setInterval.mock.results[clockIntervalIndex].value;
+        unmount();
+        expect(clearInterval).toHaveBeenCalledWith(clockInterval);
+        expect(window.recliveSetDebugNow).toBeUndefined();
+        expect(window.recliveDebugDashboardState).toBeUndefined();
+    });
+
     it("ignores persisted debug state and removes debug globals in normal production", () => {
         vi.stubEnv("DEV", false);
         vi.stubEnv("MODE", "production");
@@ -296,6 +316,34 @@ describe("App occupancy clock", () => {
 });
 
 describe("App refresh coordination", () => {
+    it("enforces manual-refresh cooldown and clears it when selecting another facility", () => {
+        vi.useFakeTimers();
+        vi.setSystemTime("2026-08-31T12:00:00Z");
+        const onFacilityRouteChange = vi.fn();
+        render(appTree({initialFacility: 1186, onFacilityRouteChange, themeMode: "light", onThemeModeChange: vi.fn()}));
+        const refresh = () => {
+            const pull = appHookHarness.pullToRefreshArgs;
+            if (!pull) throw new Error("Missing pull refresh action");
+            act(() => pull.onRefresh());
+        };
+        refresh();
+        refresh();
+        expect(appHookHarness.liveArgs?.refreshKey).toBe(1);
+        act(() => vi.advanceTimersByTime(2999));
+        refresh();
+        expect(appHookHarness.liveArgs?.refreshKey).toBe(1);
+        act(() => vi.advanceTimersByTime(1));
+        refresh();
+        expect(appHookHarness.liveArgs?.refreshKey).toBe(2);
+        fireEvent.click(screen.getByRole("button", {name: "Bakke"}));
+        expect(onFacilityRouteChange).toHaveBeenCalledExactlyOnceWith(1656);
+        expect(window.localStorage.getItem("reclive:selectedFacility")).toBe("1656");
+        refresh();
+        expect(appHookHarness.liveArgs).toMatchObject({facility: 1656, refreshKey: 3});
+        expect(appHookHarness.forecastArgs?.refreshKey).toBe(0);
+        expect(appHookHarness.scheduleArgs?.refreshKey).toBe(0);
+    });
+
     it("does not announce the initial live query completing", () => {
         liveHookState.isLoading = true;
         const props = {
