@@ -1,0 +1,249 @@
+{
+  "forecastDayStartHour": 6,
+  "forecastDayEndHour": 23,
+  "facilities": [
+    {
+      "facilityId": 1186,
+      "facilityName": "Nicholas Recreation Center",
+      "occupancyThresholds": {
+        "lowMax": 34,
+        "peakMin": 70
+      },
+      "sectionOccupancyThresholds": {
+        "fitness floors": {
+          "lowMax": 30,
+          "peakMin": 68
+        }
+      },
+      "locationOccupancyThresholds": {
+        "5761": {
+          "lowMax": 28,
+          "peakMin": 65
+        }
+      },
+      "weeklyForecast": [
+        {
+          "dayName": "Monday",
+          "date": "2026-08-31",
+          "categories": [
+            {
+              "key": "fitness floors",
+              "title": "Fitness Floors",
+              "maxCapacity": 200,
+              "hours": [
+                {
+                  "hour": 9,
+                  "hourStart": "2026-08-31T09:00:00-05:00",
+                  "expectedCount": 60,
+                  "expectedPct": 0.3,
+                  "expectedCountP10": 48,
+                  "expectedCountP90": 74,
+                  "expectedPctP10": 0.24,
+                  "expectedPctP90": 0.37,
+                  "sampleCount": 42,
+                  "actualCount": 58,
+                  "actualPct": 0.29,
+                  "actualSampleCount": 12,
+                  "actualCoverage": 1.0,
+                  "spikeAdjusted": false
+                },
+                {
+                  "hour": 10,
+                  "hourStart": "2026-08-31T10:00:00-05:00",
+                  "expectedCount": 72,
+                  "expectedPct": 0.36,
+                  "expectedCountP10": 59,
+                  "expectedCountP90": 87,
+                  "expectedPctP10": 0.295,
+                  "expectedPctP90": 0.435,
+                  "sampleCount": 40,
+                  "actualCount": 70,
+                  "actualPct": 0.35,
+                  "actualSampleCount": 11,
+                  "actualCoverage": 0.92,
+                  "spikeAdjusted": true
+                }
+              ]
+            }
+          ],
+          "totalHours": [
+            {
+              "hour": 9,
+              "hourStart": "2026-08-31T09:00:00-05:00",
+              "expectedCount": 210,
+              "expectedPct": 0.42,
+              "expectedCountP10": 180,
+              "expectedCountP90": 242,
+              "expectedPctP10": 0.36,
+              "expectedPctP90": 0.484,
+              "sampleCount": 85,
+              "actualCount": 205,
+              "actualPct": 0.41,
+              "actualSampleCount": 24,
+              "actualCoverage": 1.0
+            },
+            {
+              "hour": 10,
+              "hourStart": "2026-08-31T10:00:00-05:00",
+              "expectedCount": 240,
+              "expectedPct": 0.48,
+              "expectedCountP10": 205,
+              "expectedCountP90": 278,
+              "expectedPctP10": 0.41,
+              "expectedPctP90": 0.556,
+              "sampleCount": 82,
+              "actualCount": 232,
+              "actualPct": 0.464,
+              "actualSampleCount": 22,
+              "actualCoverage": 0.91
+            }
+          ],
+          "avoidWindows": [],
+          "bestWindows": [
+            {
+              "start": "2026-08-31T09:00:00-05:00",
+              "end": "2026-08-31T10:00:00-05:00",
+              "startHour": 9,
+              "endHour": 10,
+              "windowHours": 1,
+              "expectedTotal": 210,
+              "expectedAvg": 210,
+              "sampleCountMin": 85
+            }
+          ],
+          "crowdBands": [
+            {
+              "start": "2026-08-31T09:00:00-05:00",
+              "end": "2026-08-31T11:00:00-05:00",
+              "level": "medium"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "facilityId": 1656,
+      "facilityName": "Bakke Recreation & Wellbeing Center",
+      "occupancyThresholds": {
+        "lowMax": 32,
+        "peakMin": 68
+      },
+      "sectionOccupancyThresholds": {
+        "fitness floors": {
+          "lowMax": 29,
+          "peakMin": 66
+        }
+      },
+      "locationOccupancyThresholds": {
+        "8717": {
+          "lowMax": 27,
+          "peakMin": 64
+        }
+      },
+      "weeklyForecast": [
+        {
+          "dayName": "Monday",
+          "date": "2026-08-31",
+          "categories": [
+            {
+              "key": "fitness floors",
+              "title": "Fitness Floors",
+              "maxCapacity": 240,
+              "hours": [
+                {
+                  "hour": 9,
+                  "hourStart": "2026-08-31T09:00:00-05:00",
+                  "expectedCount": 66,
+                  "expectedPct": 0.275,
+                  "expectedCountP10": 51,
+                  "expectedCountP90": 82,
+                  "expectedPctP10": 0.2125,
+                  "expectedPctP90": 0.3417,
+                  "sampleCount": 39,
+                  "actualCount": 64,
+                  "actualPct": 0.2667,
+                  "actualSampleCount": 10,
+                  "actualCoverage": 1.0,
+                  "spikeAdjusted": false
+                },
+                {
+                  "hour": 10,
+                  "hourStart": "2026-08-31T10:00:00-05:00",
+                  "expectedCount": 78,
+                  "expectedPct": 0.325,
+                  "expectedCountP10": 62,
+                  "expectedCountP90": 96,
+                  "expectedPctP10": 0.2583,
+                  "expectedPctP90": 0.4,
+                  "sampleCount": 37,
+                  "actualCount": 75,
+                  "actualPct": 0.3125,
+                  "actualSampleCount": 9,
+                  "actualCoverage": 0.9,
+                  "spikeAdjusted": true
+                }
+              ]
+            }
+          ],
+          "totalHours": [
+            {
+              "hour": 9,
+              "hourStart": "2026-08-31T09:00:00-05:00",
+              "expectedCount": 260,
+              "expectedPct": 0.4,
+              "expectedCountP10": 221,
+              "expectedCountP90": 302,
+              "expectedPctP10": 0.34,
+              "expectedPctP90": 0.4646,
+              "sampleCount": 79,
+              "actualCount": 252,
+              "actualPct": 0.3877,
+              "actualSampleCount": 21,
+              "actualCoverage": 1.0
+            },
+            {
+              "hour": 10,
+              "hourStart": "2026-08-31T10:00:00-05:00",
+              "expectedCount": 292,
+              "expectedPct": 0.4492,
+              "expectedCountP10": 249,
+              "expectedCountP90": 337,
+              "expectedPctP10": 0.3831,
+              "expectedPctP90": 0.5185,
+              "sampleCount": 77,
+              "actualCount": 286,
+              "actualPct": 0.44,
+              "actualSampleCount": 19,
+              "actualCoverage": 0.9
+            }
+          ],
+          "avoidWindows": [
+            {
+              "start": "2026-08-31T10:00:00-05:00",
+              "end": "2026-08-31T11:00:00-05:00",
+              "startHour": 10,
+              "endHour": 11,
+              "windowHours": 1,
+              "expectedTotal": 292,
+              "expectedAvg": 292,
+              "sampleCountMin": 77
+            }
+          ],
+          "bestWindows": [],
+          "crowdBands": [
+            {
+              "start": "2026-08-31T09:00:00-05:00",
+              "end": "2026-08-31T10:00:00-05:00",
+              "level": "medium"
+            },
+            {
+              "start": "2026-08-31T10:00:00-05:00",
+              "end": "2026-08-31T11:00:00-05:00",
+              "level": "peak"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

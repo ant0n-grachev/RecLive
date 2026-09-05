@@ -12,6 +12,8 @@ for (const routePath of ["/nick", "/bakke"]) {
         await page.goto(routePath);
         await expect(page.locator("main")).not.toBeEmpty();
         await expect(page).toHaveURL(new RegExp(`${routePath}$`));
+        await expect(page.getByText("Live Occupancy", {exact: true})).toBeVisible();
+        await expect(page.getByRole("button", {name: "Alerts", exact: true})).toBeVisible();
         await expect(page.getByText("Train smarter. Skip the crowd.").first()).toBeVisible();
         await expect(page.getByRole("progressbar", {name: "Current occupancy percentage"})).toBeVisible();
 
