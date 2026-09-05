@@ -1,4 +1,9 @@
 from __future__ import annotations
+from server.reclive.api import lifespan_compat as _seam_api_lifespan_compat
+from server.reclive import runtime as _seam_runtime
+from server.reclive import sections as _seam_sections
+from server.reclive import settings as _seam_settings
+
 
 import asyncio
 import importlib
@@ -648,7 +653,7 @@ def test_forecast_api_validates_runtime_before_starting_evaluator(
     monkeypatch.setenv("PUSH_ADMIN_ROUTES_ENABLED", "false")
     monkeypatch.delenv("GYM_DB_HOST", raising=False)
     monkeypatch.setattr(
-        forecast_api,
+        _seam_settings,
         "evaluator_enabled",
         lambda: (_ for _ in ()).throw(
             AssertionError("evaluator-started-before-runtime-validation")
@@ -694,13 +699,14 @@ def test_forecast_api_production_import_defers_config_reads_until_validation() -
 
         import forecast_api as api
 
-        api.load_facility_capacities = capacity_read
+        from server.reclive import sections
+        sections.load_facility_capacities = capacity_read
 
         def section_read():
             reads.append("sections")
             raise AssertionError("section-read-before-validation")
 
-        api.load_facility_sections = section_read
+        sections.load_facility_sections = section_read
 
         async def run():
             async with api.lifespan(api.app):
@@ -830,27 +836,27 @@ def test_concurrent_production_lifespans_load_facility_configuration_once(
         return {1186: "Nick"}, {1186: {"overall": [1]}}
 
     def evaluator_enabled() -> bool:
-        assert forecast_api._FACILITY_CONFIGURATION_LOADED is True
+        assert _seam_runtime.current_runtime().configuration_loaded is True
         with state_guard:
             evaluator_checks.append(threading.current_thread().name)
         return False
 
-    monkeypatch.setattr(forecast_api, "validate_push_configuration", validate_push)
+    monkeypatch.setattr(_seam_settings, "validate_push_configuration", validate_push)
     monkeypatch.setattr(
-        forecast_api,
+        _seam_api_lifespan_compat,
         "validate_production_environment",
         validate_generic,
     )
-    monkeypatch.setattr(forecast_api, "load_facility_capacities", load_capacities)
-    monkeypatch.setattr(forecast_api, "load_facility_sections", load_sections)
-    monkeypatch.setattr(forecast_api, "evaluator_enabled", evaluator_enabled)
-    monkeypatch.setattr(forecast_api, "_FACILITY_CONFIGURATION_LOADED", False)
-    monkeypatch.setattr(forecast_api, "MAX_CAP", {})
-    monkeypatch.setattr(forecast_api, "FACILITY_NAMES", {})
-    monkeypatch.setattr(forecast_api, "SECTION_IDS", {})
+    monkeypatch.setattr(_seam_sections, "load_facility_capacities", load_capacities)
+    monkeypatch.setattr(_seam_sections, "load_facility_sections", load_sections)
+    monkeypatch.setattr(_seam_settings, "evaluator_enabled", evaluator_enabled)
+    monkeypatch.setattr(_seam_runtime.current_runtime(), 'configuration_loaded', False)
+    monkeypatch.setattr(_seam_runtime.current_runtime(), 'capacities', {})
+    monkeypatch.setattr(_seam_runtime.current_runtime(), 'facility_names', {})
+    monkeypatch.setattr(_seam_runtime.current_runtime(), 'section_ids', {})
     monkeypatch.setattr(
-        forecast_api,
-        "_FACILITY_CONFIGURATION_LOCK",
+        _seam_runtime.current_runtime(),
+        'configuration_lock',
         CoordinatedLock(),
         raising=False,
     )
@@ -880,7 +886,76 @@ def test_concurrent_production_lifespans_load_facility_configuration_once(
     assert duplicate_loader_entered.is_set() is False
     assert capacity_calls == 1
     assert section_calls == 1
-    assert forecast_api.MAX_CAP == {1186: 100}
-    assert forecast_api.FACILITY_NAMES == {1186: "Nick"}
-    assert forecast_api.SECTION_IDS == {1186: {"overall": [1]}}
+    assert _seam_runtime.current_runtime().capacities == {1186: 100}
+    assert _seam_runtime.current_runtime().facility_names == {1186: "Nick"}
+    assert _seam_runtime.current_runtime().section_ids == {1186: {"overall": [1]}}
     assert sorted(evaluator_checks) == ["startup-0", "startup-1"]
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["FORECAST_API_PORT", "PUSH_ADMIN_ROUTES_ENABLED", "ACTUAL_HOUR_MIN_COVERAGE"],
+)
+@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize("malformed_kind", ["text", "mixed-number"])
+def test_api_configuration_errors_hide_rejected_input_and_conversion_chain(
+    name, legacy, malformed_kind, monkeypatch
+):
+    rejected = (
+        "private-" + "configuration-probe"
+        if malformed_kind == "text"
+        else "12.5-invalid"
+    )
+    if legacy:
+        monkeypatch.setenv(name, rejected)
+        runtime = _seam_runtime.Runtime(_seam_settings.Settings.for_test(), legacy=True)
+        action = {
+            "FORECAST_API_PORT": lambda: _seam_settings.int_with_default(name, 8000),
+            "PUSH_ADMIN_ROUTES_ENABLED": lambda: _seam_settings.bool_with_default(
+                name, False
+            ),
+            "ACTUAL_HOUR_MIN_COVERAGE": lambda: _seam_settings.build_settings_from_environment(
+                {name: rejected}, legacy=True
+            ),
+        }[name]
+    else:
+        runtime = _seam_runtime.Runtime(_seam_settings.Settings.for_test())
+
+        def action():
+            return _seam_settings.build_settings_from_environment({name: rejected})
+
+    with _seam_runtime.runtime_scope(runtime):
+        try:
+            action()
+        except Exception as error:
+            safe = (
+                isinstance(error, RuntimeError)
+                and name in str(error)
+                and rejected not in str(error)
+                and rejected not in "".join(traceback.format_exception(error))
+                and error.__cause__ is None
+            )
+        else:
+            safe = False
+    assert safe, "configuration failure must identify only the field/category"
+
+
+def test_api_configuration_valid_parsing_controls(monkeypatch):
+    values = {
+        "FORECAST_API_PORT": " 8123 ",
+        "PUSH_ADMIN_ROUTES_ENABLED": " YES ",
+        "ACTUAL_HOUR_MIN_COVERAGE": "0.8",
+    }
+    settings = _seam_settings.build_settings_from_environment(values)
+    assert (
+        settings.port,
+        settings.push.admin_routes_enabled,
+        settings.actual_hour_min_coverage,
+    ) == (8123, True, 0.8)
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+    with _seam_runtime.runtime_scope(_seam_runtime.Runtime(settings, legacy=True)):
+        assert _seam_settings.int_with_default("FORECAST_API_PORT", 8000) == 8123
+        assert (
+            _seam_settings.bool_with_default("PUSH_ADMIN_ROUTES_ENABLED", False) is True
+        )

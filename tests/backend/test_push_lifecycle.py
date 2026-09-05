@@ -1,3 +1,13 @@
+from server.reclive import facility_schedule as _seam_facility_schedule
+
+from server.reclive import db as _seam_db
+from server.reclive import push as _seam_push
+from dataclasses import replace as _settings_replace
+from server.reclive.repositories import push_rules as _seam_repositories_push_rules
+from server.reclive import runtime as _seam_runtime
+from server.reclive import sections as _seam_sections
+from server.reclive import settings as _seam_settings
+
 import asyncio
 import copy
 import importlib
@@ -43,6 +53,66 @@ VALID_TEST_P256DH = (
     "eFivOM1drMV7Oy7ZAaDe_UfU"
 )
 VALID_TEST_AUTH = "A" * 22
+
+
+def test_sql_identifier_configuration_failure_does_not_echo_rejected_value():
+    rejected = "private_" + "table;value"
+    try:
+        _seam_db.safe_sql_identifier(rejected, "PUSH_RULES_TABLE")
+    except RuntimeError as error:
+        safe = "PUSH_RULES_TABLE" in str(error) and rejected not in str(error)
+    else:
+        safe = False
+    assert safe, "SQL identifier failure must identify only the field/category"
+    assert (
+        _seam_db.safe_sql_identifier(" push_rules_2 ", "PUSH_RULES_TABLE")
+        == "push_rules_2"
+    )
+
+
+@pytest.mark.parametrize("malformed_kind", ["text", "missing", "infinite"])
+def test_db_port_configuration_failure_hides_raw_conversion(
+    monkeypatch, malformed_kind
+):
+    marker = "private-" + "port-value"
+    rejected = {"text": marker, "missing": None, "infinite": float("inf")}[
+        malformed_kind
+    ]
+    from traceback import format_exception
+
+    def forbidden(**kwargs):
+        pytest.fail("invalid port must fail before opening a connection")
+
+    monkeypatch.setattr(_seam_db.pymysql, "connect", forbidden)
+    try:
+        _seam_db.open_db_connection(_seam_settings.DatabaseSettings(port=rejected))
+    except Exception as error:
+        safe = (
+            isinstance(error, RuntimeError)
+            and "GYM_DB_PORT" in str(error)
+            and marker not in "".join(format_exception(error))
+            and error.__cause__ is None
+        )
+    else:
+        safe = False
+    assert safe, "DB port failure must identify only the field/category"
+
+
+@pytest.mark.parametrize("port", [3306, "3306"])
+def test_db_port_configuration_accepts_integer_and_string(port, monkeypatch):
+    observed = {}
+    connection = object()
+
+    def connect(**kwargs):
+        observed.update(kwargs)
+        return connection
+
+    monkeypatch.setattr(_seam_db.pymysql, "connect", connect)
+    assert (
+        _seam_db.open_db_connection(_seam_settings.DatabaseSettings(port=port))
+        is connection
+    )
+    assert observed["port"] == 3306
 
 
 def subscribe_payload(
@@ -128,7 +198,7 @@ def test_production_rejects_missing_or_short_endpoint_hash_key_before_evaluator_
     def unexpected_evaluator_check() -> bool:
         raise AssertionError("evaluator was checked before configuration validation")
 
-    monkeypatch.setattr(api, "evaluator_enabled", unexpected_evaluator_check)
+    monkeypatch.setattr(_seam_settings, "evaluator_enabled", unexpected_evaluator_check)
 
     with pytest.raises(RuntimeError, match="PUSH_ENDPOINT_HASH_KEY") as exc_info:
         run_lifespan_once()
@@ -178,13 +248,21 @@ def test_invalid_numeric_configuration_fails_in_development_before_evaluator_sta
     message: str,
 ) -> None:
     monkeypatch.setenv("APP_ENV", "development")
+    fields = {
+        "PUSH_DEFAULT_RULE_TTL_SECONDS": "default_rule_ttl_seconds",
+        "PUSH_MAX_RULE_TTL_SECONDS": "max_rule_ttl_seconds",
+        "PUSH_MAX_ACTIVE_RULES_PER_ENDPOINT": "max_active_rules_per_endpoint",
+        "PUSH_WRITE_RATE_LIMIT": "write_rate_limit",
+        "PUSH_WRITE_RATE_WINDOW_SECONDS": "write_rate_window_seconds",
+    }
     for name, value in overrides.items():
-        monkeypatch.setattr(api, name, value)
+        runtime = _seam_runtime.current_runtime()
+        monkeypatch.setattr(runtime, "settings", _settings_replace(runtime.settings, push=_settings_replace(runtime.settings.push, **{fields[name]: value})))
 
     def unexpected_evaluator_check() -> bool:
         raise AssertionError("evaluator was checked before configuration validation")
 
-    monkeypatch.setattr(api, "evaluator_enabled", unexpected_evaluator_check)
+    monkeypatch.setattr(_seam_settings, "evaluator_enabled", unexpected_evaluator_check)
 
     with pytest.raises(RuntimeError, match=message):
         run_lifespan_once()
@@ -200,7 +278,7 @@ def test_enabled_admin_token_requires_thirty_two_ascii_bytes_in_every_environmen
     monkeypatch.setenv("APP_ENV", app_env)
     monkeypatch.setenv("PUSH_ENDPOINT_HASH_KEY", VALID_HASH_KEY)
     monkeypatch.setenv("PUSH_ADMIN_ROUTES_ENABLED", "true")
-    monkeypatch.setattr(api, "PUSH_ADMIN_TOKEN", admin_token)
+    monkeypatch.setattr(_seam_runtime.current_runtime(), "settings", _settings_replace(_seam_runtime.current_runtime().settings, push=_settings_replace(_seam_runtime.current_runtime().settings.push, admin_token=admin_token)))
 
     with pytest.raises(RuntimeError, match="PUSH_ADMIN_TOKEN") as exc_info:
         api.validate_push_configuration()
@@ -223,7 +301,7 @@ def test_enabled_admin_token_rejects_non_ascii_and_oversized_values_at_startup(
 ) -> None:
     monkeypatch.setenv("APP_ENV", "development")
     monkeypatch.setenv("PUSH_ADMIN_ROUTES_ENABLED", "true")
-    monkeypatch.setattr(api, "PUSH_ADMIN_TOKEN", admin_token)
+    monkeypatch.setattr(_seam_runtime.current_runtime(), "settings", _settings_replace(_seam_runtime.current_runtime().settings, push=_settings_replace(_seam_runtime.current_runtime().settings.push, admin_token=admin_token)))
 
     with pytest.raises(RuntimeError, match=message) as exc_info:
         api.validate_push_configuration()
@@ -269,7 +347,7 @@ def test_disabled_admin_routes_fail_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("PUSH_ADMIN_ROUTES_ENABLED", "false")
-    monkeypatch.setattr(api, "PUSH_ADMIN_TOKEN", "configured-admin-token")
+    monkeypatch.setattr(_seam_runtime.current_runtime(), "settings", _settings_replace(_seam_runtime.current_runtime().settings, push=_settings_replace(_seam_runtime.current_runtime().settings.push, admin_token="configured-admin-token")))
 
     with pytest.raises(HTTPException) as exc_info:
         api.require_admin_token("configured-admin-token")
@@ -289,8 +367,8 @@ def test_enabled_admin_route_compares_transport_safe_ascii_bytes_with_fixed_erro
         return supplied == expected
 
     monkeypatch.setenv("PUSH_ADMIN_ROUTES_ENABLED", "true")
-    monkeypatch.setattr(api, "PUSH_ADMIN_TOKEN", VALID_ADMIN_TOKEN)
-    monkeypatch.setattr(api, "db_rules_count", lambda: 0)
+    monkeypatch.setattr(_seam_runtime.current_runtime(), "settings", _settings_replace(_seam_runtime.current_runtime().settings, push=_settings_replace(_seam_runtime.current_runtime().settings.push, admin_token=VALID_ADMIN_TOKEN)))
+    monkeypatch.setattr(_seam_repositories_push_rules, "db_rules_count", lambda: 0)
     monkeypatch.setattr(api.hmac, "compare_digest", compare_digest)
 
     accepted = push_test_client.get(
@@ -319,7 +397,7 @@ def test_enabled_route_with_empty_configured_token_and_absent_header_is_fixed_50
     push_test_client: Any,
 ) -> None:
     monkeypatch.setenv("PUSH_ADMIN_ROUTES_ENABLED", "true")
-    monkeypatch.setattr(api, "PUSH_ADMIN_TOKEN", "")
+    monkeypatch.setattr(_seam_runtime.current_runtime(), "settings", _settings_replace(_seam_runtime.current_runtime().settings, push=_settings_replace(_seam_runtime.current_runtime().settings.push, admin_token="")))
 
     def unexpected_compare(*args: object) -> bool:
         raise AssertionError(f"compare_digest called for invalid configuration: {args}")
@@ -351,14 +429,14 @@ def test_dispatch_admin_gate_runs_before_bounded_body_parser(
     async def unexpected_parse(_request: Request) -> object:
         raise AssertionError("dispatch body parsed before its admin gate")
 
-    monkeypatch.setattr(api, "_read_limited_push_json", unexpected_parse)
+    monkeypatch.setattr(_seam_push, "_read_limited_push_json", unexpected_parse)
 
     disabled = push_test_client.post(
         "/api/push/dispatch",
         content=b"x" * (16 * 1024 + 1),
     )
     monkeypatch.setenv("PUSH_ADMIN_ROUTES_ENABLED", "true")
-    monkeypatch.setattr(api, "PUSH_ADMIN_TOKEN", VALID_ADMIN_TOKEN)
+    monkeypatch.setattr(_seam_runtime.current_runtime(), "settings", _settings_replace(_seam_runtime.current_runtime().settings, push=_settings_replace(_seam_runtime.current_runtime().settings.push, admin_token=VALID_ADMIN_TOKEN)))
     unauthenticated = push_test_client.post(
         "/api/push/dispatch",
         content=b"x" * (16 * 1024 + 1),
@@ -385,9 +463,9 @@ def test_authenticated_dispatch_uses_fixed_bounded_body_errors(
     detail: str,
 ) -> None:
     monkeypatch.setenv("PUSH_ADMIN_ROUTES_ENABLED", "true")
-    monkeypatch.setattr(api, "PUSH_ADMIN_TOKEN", VALID_ADMIN_TOKEN)
+    monkeypatch.setattr(_seam_runtime.current_runtime(), "settings", _settings_replace(_seam_runtime.current_runtime().settings, push=_settings_replace(_seam_runtime.current_runtime().settings.push, admin_token=VALID_ADMIN_TOKEN)))
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "evaluate_rules_once",
         lambda **_kwargs: (_ for _ in ()).throw(
             AssertionError("invalid dispatch reached evaluator")
@@ -415,8 +493,8 @@ def test_authenticated_dispatch_preserves_strict_facility_filter_behavior(
         return {"status": "ok", "rules": 0}
 
     monkeypatch.setenv("PUSH_ADMIN_ROUTES_ENABLED", "true")
-    monkeypatch.setattr(api, "PUSH_ADMIN_TOKEN", VALID_ADMIN_TOKEN)
-    monkeypatch.setattr(api, "evaluate_rules_once", capture_evaluation)
+    monkeypatch.setattr(_seam_runtime.current_runtime(), "settings", _settings_replace(_seam_runtime.current_runtime().settings, push=_settings_replace(_seam_runtime.current_runtime().settings.push, admin_token=VALID_ADMIN_TOKEN)))
+    monkeypatch.setattr(_seam_push, "evaluate_rules_once", capture_evaluation)
 
     response = push_test_client.post(
         "/api/push/dispatch",
@@ -435,8 +513,8 @@ def test_push_availability_requires_endpoint_hash_key_readiness(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("PUSH_ENDPOINT_HASH_KEY", raising=False)
-    monkeypatch.setattr(api, "push_db_available", lambda: True)
-    monkeypatch.setattr(api, "push_vapid_configured", lambda: True)
+    monkeypatch.setattr(_seam_repositories_push_rules, "push_db_available", lambda: True)
+    monkeypatch.setattr(_seam_settings, "push_vapid_configured", lambda: True)
 
     response = api.push_availability()
 
@@ -450,8 +528,8 @@ def test_push_availability_accepts_ready_endpoint_hash_key_without_exposing_it(
 ) -> None:
     unique_hash_key = "a" * 42
     monkeypatch.setenv("PUSH_ENDPOINT_HASH_KEY", unique_hash_key)
-    monkeypatch.setattr(api, "push_db_available", lambda: True)
-    monkeypatch.setattr(api, "push_vapid_configured", lambda: True)
+    monkeypatch.setattr(_seam_repositories_push_rules, "push_db_available", lambda: True)
+    monkeypatch.setattr(_seam_settings, "push_vapid_configured", lambda: True)
 
     response = api.push_availability()
 
@@ -496,16 +574,16 @@ def test_lifespan_validates_before_start_and_cancels_its_evaluator_task(
         coroutine.close()
         return fake_task
 
-    monkeypatch.setattr(api, "validate_push_configuration", validate)
-    monkeypatch.setattr(api, "evaluator_enabled", enabled)
-    monkeypatch.setattr(api, "evaluator_loop", evaluator)
+    monkeypatch.setattr(_seam_settings, "validate_push_configuration", validate)
+    monkeypatch.setattr(_seam_settings, "evaluator_enabled", enabled)
+    monkeypatch.setattr(_seam_push, "evaluator_loop", evaluator)
     monkeypatch.setattr(api.asyncio, "create_task", create_task)
-    monkeypatch.setattr(api, "EVALUATOR_TASK", None)
+    monkeypatch.setattr(_seam_runtime.current_runtime(), 'task', None)
 
     run_lifespan_once()
 
     assert events == ["validate", "enabled", "create", "cancel", "await"]
-    assert api.EVALUATOR_TASK is None
+    assert _seam_runtime.current_runtime().task is None
 
 
 def test_lifespan_does_not_cancel_a_task_it_did_not_start(
@@ -521,14 +599,14 @@ def test_lifespan_does_not_cancel_a_task_it_did_not_start(
             events.append("cancel")
 
     existing_task = ExistingTask()
-    monkeypatch.setattr(api, "validate_push_configuration", lambda: None)
-    monkeypatch.setattr(api, "evaluator_enabled", lambda: True)
-    monkeypatch.setattr(api, "EVALUATOR_TASK", existing_task)
+    monkeypatch.setattr(_seam_settings, "validate_push_configuration", lambda: None)
+    monkeypatch.setattr(_seam_settings, "evaluator_enabled", lambda: True)
+    monkeypatch.setattr(_seam_runtime.current_runtime(), 'task', existing_task)
 
     run_lifespan_once()
 
     assert events == []
-    assert api.EVALUATOR_TASK is existing_task
+    assert _seam_runtime.current_runtime().task is existing_task
 
 
 def test_lifespan_cancels_and_awaits_owned_task_when_body_raises(
@@ -556,11 +634,11 @@ def test_lifespan_cancels_and_awaits_owned_task_when_body_raises(
         coroutine.close()
         return fake_task
 
-    monkeypatch.setattr(api, "validate_push_configuration", lambda: None)
-    monkeypatch.setattr(api, "evaluator_enabled", lambda: True)
-    monkeypatch.setattr(api, "evaluator_loop", evaluator)
+    monkeypatch.setattr(_seam_settings, "validate_push_configuration", lambda: None)
+    monkeypatch.setattr(_seam_settings, "evaluator_enabled", lambda: True)
+    monkeypatch.setattr(_seam_push, "evaluator_loop", evaluator)
     monkeypatch.setattr(api.asyncio, "create_task", create_task)
-    monkeypatch.setattr(api, "EVALUATOR_TASK", None)
+    monkeypatch.setattr(_seam_runtime.current_runtime(), 'task', None)
 
     async def run() -> None:
         async with api.lifespan(api.app):
@@ -571,7 +649,7 @@ def test_lifespan_cancels_and_awaits_owned_task_when_body_raises(
         asyncio.run(run())
 
     assert events == ["body", "cancel", "await"]
-    assert api.EVALUATOR_TASK is None
+    assert _seam_runtime.current_runtime().task is None
 
 
 def test_lifespan_preserves_replacement_while_cleaning_up_owned_task(
@@ -604,20 +682,20 @@ def test_lifespan_preserves_replacement_while_cleaning_up_owned_task(
         coroutine.close()
         return owned_task
 
-    monkeypatch.setattr(api, "validate_push_configuration", lambda: None)
-    monkeypatch.setattr(api, "evaluator_enabled", lambda: True)
-    monkeypatch.setattr(api, "evaluator_loop", evaluator)
+    monkeypatch.setattr(_seam_settings, "validate_push_configuration", lambda: None)
+    monkeypatch.setattr(_seam_settings, "evaluator_enabled", lambda: True)
+    monkeypatch.setattr(_seam_push, "evaluator_loop", evaluator)
     monkeypatch.setattr(api.asyncio, "create_task", create_task)
-    monkeypatch.setattr(api, "EVALUATOR_TASK", None)
+    monkeypatch.setattr(_seam_runtime.current_runtime(), 'task', None)
 
     async def run() -> None:
         async with api.lifespan(api.app):
-            api.EVALUATOR_TASK = replacement_task  # type: ignore[assignment]
+            _seam_runtime.current_runtime().task = replacement_task  # type: ignore[assignment]
 
     asyncio.run(run())
 
     assert events == ["owned-cancel", "owned-await"]
-    assert api.EVALUATOR_TASK is replacement_task
+    assert _seam_runtime.current_runtime().task is replacement_task
 
 
 @pytest.mark.parametrize(
@@ -692,7 +770,7 @@ def test_subscribe_strictly_rejects_invalid_subscription_keys_without_echo(
     invalid = copy.deepcopy(valid_subscription)
     invalid["keys"] = {"p256dh": p256dh, "auth": auth}
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "subscribe_owned_push_rule",
         lambda **kwargs: (_ for _ in ()).throw(
             AssertionError(f"invalid subscription reached storage: {kwargs}")
@@ -736,7 +814,7 @@ def test_valid_subscription_accepts_key_padding_and_discards_expiration_time(
         return captured_subscribe_response()
 
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "subscribe_owned_push_rule",
         capture_rule,
         raising=False,
@@ -856,7 +934,7 @@ def test_subscribe_accepts_configured_canonical_section_with_single_space(
         return captured_subscribe_response()
 
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "subscribe_owned_push_rule",
         capture_rule,
         raising=False,
@@ -1081,7 +1159,7 @@ def test_valid_rule_list_delegates_without_consuming_write_counter(
     valid_subscription: dict[str, object],
 ) -> None:
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "list_owned_push_rules",
         lambda subscription: {"status": "ok", "rules": []},
     )
@@ -1142,7 +1220,7 @@ def test_cancel_one_rejects_noncanonical_unsigned_bigint_after_one_rate_incremen
     def unexpected_cancel(*_args: object, **_kwargs: object) -> dict[str, object]:
         raise AssertionError("invalid rule ID reached cancellation")
 
-    monkeypatch.setattr(api, "cancel_owned_push_rule", unexpected_cancel)
+    monkeypatch.setattr(_seam_push, "cancel_owned_push_rule", unexpected_cancel)
 
     response = push_test_client.request(
         "DELETE",
@@ -1172,7 +1250,7 @@ def test_cancel_one_accepts_maximum_unsigned_bigint_after_one_rate_increment(
         captured.append(rule_id)
         return {"status": "ok", "cancelled": 1}
 
-    monkeypatch.setattr(api, "cancel_owned_push_rule", capture_cancel)
+    monkeypatch.setattr(_seam_push, "cancel_owned_push_rule", capture_cancel)
 
     response = push_test_client.request(
         "DELETE",
@@ -1244,7 +1322,7 @@ def test_twenty_writes_are_allowed_and_twenty_first_is_committed_then_limited(
     valid_subscription: dict[str, object],
 ) -> None:
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "cancel_all_owned_push_rules",
         lambda subscription: {"status": "ok", "cancelled": 0},
     )
@@ -1307,7 +1385,7 @@ def test_huge_finite_integer_expiration_time_is_accepted_then_discarded(
         return captured_subscribe_response()
 
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "subscribe_owned_push_rule",
         capture_rule,
         raising=False,
@@ -1380,7 +1458,7 @@ def test_management_write_uses_the_same_hashed_endpoint_subject(
     valid_subscription: dict[str, object],
 ) -> None:
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "cancel_all_owned_push_rules",
         lambda subscription: {"status": "ok", "cancelled": 0},
     )
@@ -1405,7 +1483,7 @@ def test_rate_limit_floors_aware_utc_time_to_configured_window(
     push_repository: Any,
 ) -> None:
     monkeypatch.setattr(
-        api,
+        _seam_runtime,
         "now_utc",
         lambda: datetime(2026, 9, 1, 12, 7, 59, tzinfo=timezone.utc),
     )
@@ -1443,7 +1521,7 @@ def test_rate_limit_clock_failure_is_sanitized_before_database_access(
     def broken_clock() -> datetime:
         raise RuntimeError("clock-secret-sentinel")
 
-    monkeypatch.setattr(api, "now_utc", broken_clock)
+    monkeypatch.setattr(_seam_runtime, "now_utc", broken_clock)
 
     response = push_test_client.post("/api/push/subscribe", content=b"{")
 
@@ -1586,7 +1664,7 @@ def test_duplicate_subscribe_returns_same_safe_rule_without_extending_expiry(
 
     first = mysql_push_test_client.post("/api/push/subscribe", json=payload)
     monkeypatch.setattr(
-        api,
+        _seam_runtime,
         "now_utc",
         lambda: datetime(2026, 9, 1, 12, 30, tzinfo=timezone.utc),
     )
@@ -1696,7 +1774,7 @@ def test_forced_endpoint_hash_collision_never_grants_ownership(
     valid_subscription: dict[str, object],
     other_subscription: dict[str, object],
 ) -> None:
-    monkeypatch.setattr(api, "endpoint_hash", lambda _endpoint: b"x" * 32)
+    monkeypatch.setattr(_seam_repositories_push_rules, "endpoint_hash", lambda _endpoint: b"x" * 32)
     created = mysql_push_test_client.post(
         "/api/push/subscribe",
         json=subscribe_payload(valid_subscription),
@@ -1908,7 +1986,7 @@ def test_failed_cancel_rolls_back_expiry_cleanup_but_keeps_one_rate_increment(
         tracked.append(wrapped)
         return wrapped
 
-    monkeypatch.setattr(api, "open_db_connection", open_tracked_connection)
+    monkeypatch.setattr(_seam_db, "open_db_connection", open_tracked_connection)
 
     response = mysql_push_test_client.request(
         "DELETE",
@@ -2113,7 +2191,7 @@ def test_endpoint_lock_contention_and_database_failure_are_distinct_and_private(
 ) -> None:
     connection = EndpointLockConnection(failure=failure)
     monkeypatch.setenv("PUSH_ENDPOINT_HASH_KEY", VALID_HASH_KEY)
-    monkeypatch.setattr(api, "open_db_connection", lambda **_kwargs: connection)
+    monkeypatch.setattr(_seam_db, "open_db_connection", lambda **_kwargs: connection)
     subscription = api.validate_push_subscription(valid_subscription)
 
     with pytest.raises(HTTPException) as exc_info:
@@ -2142,13 +2220,13 @@ def test_duplicate_key_recovery_reselects_and_returns_existing_pending_rule(
 ) -> None:
     monkeypatch.setenv("PUSH_ENDPOINT_HASH_KEY", VALID_HASH_KEY)
     monkeypatch.setattr(
-        api,
+        _seam_runtime,
         "now_utc",
         lambda: datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc),
     )
     digest = api.endpoint_hash(str(valid_subscription["endpoint"]))
     connection = DuplicateRecoveryConnection(valid_subscription, digest)
-    monkeypatch.setattr(api, "open_db_connection", lambda **_kwargs: connection)
+    monkeypatch.setattr(_seam_db, "open_db_connection", lambda **_kwargs: connection)
     subscription = api.validate_push_subscription(valid_subscription)
 
     created, record = api.db_subscribe_rule(
@@ -2214,7 +2292,7 @@ def test_concurrent_tenth_and_eleventh_rules_leave_exactly_ten_and_release_lock(
         actual_acquire_endpoint_lock(cursor, lock_name)
 
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "_acquire_endpoint_lock",
         coordinated_acquire_endpoint_lock,
     )
@@ -2943,7 +3021,7 @@ def test_push_dns_rejects_empty_mixed_and_unsafe_answer_sets(
         calls.append((host, port))
         return answers
 
-    monkeypatch.setattr(api, "resolve_endpoint_host", resolve, raising=False)
+    monkeypatch.setattr(_seam_push, "resolve_endpoint_host", resolve, raising=False)
     with pytest.raises(api.SafePushDispatchError):
         api.resolve_public_push_addresses(
             "https://push.reclive-notify.net/subscription-a"
@@ -2955,7 +3033,7 @@ def test_push_dns_deduplicates_and_sorts_ipv6_before_ipv4(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "resolve_endpoint_host",
         lambda host, port: [
             "8.8.8.8",
@@ -2977,7 +3055,7 @@ def test_pinned_target_preserves_hostname_authority_port_path_and_query(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "resolve_endpoint_host",
         lambda host, port: ["8.8.8.8"],
         raising=False,
@@ -2997,7 +3075,7 @@ def test_pinned_target_formats_ipv6_literal_host_without_resolution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "resolve_endpoint_host",
         lambda *_: pytest.fail("literal address must not be resolved"),
         raising=False,
@@ -3016,7 +3094,7 @@ def test_send_notification_uses_public_webpush_session_seam_once(
 ) -> None:
     calls: list[dict[str, object]] = []
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "build_pinned_push_target",
         lambda endpoint, **kwargs: api.PinnedPushTarget(
             endpoint=endpoint,
@@ -3028,9 +3106,9 @@ def test_send_notification_uses_public_webpush_session_seam_once(
         ),
         raising=False,
     )
-    monkeypatch.setattr(api, "get_vapid_private_key", lambda: "private")
+    monkeypatch.setattr(_seam_settings, "get_vapid_private_key", lambda: "private")
     monkeypatch.setattr(
-        api,
+        _seam_settings,
         "get_vapid_claims",
         lambda: {"sub": "mailto:test@reclive.app"},
     )
@@ -3041,7 +3119,7 @@ def test_send_notification_uses_public_webpush_session_seam_once(
         assert isinstance(session, api.PinnedPushSession)
         return SimpleNamespace(status_code=201, reason="", text="")
 
-    monkeypatch.setattr(api, "webpush", fake_webpush)
+    monkeypatch.setattr(_seam_push, "webpush", fake_webpush)
     api.send_notification_pinned(
         valid_subscription,
         title="RecLive Alert",
@@ -3076,17 +3154,17 @@ def test_real_pywebpush_prepares_encrypted_payload_through_public_session_only(
             return api.SafePushResponse(status_code=201)
 
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "build_pinned_push_target",
         lambda endpoint, **kwargs: target,
     )
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "PinnedPushSession",
         lambda candidate, attempt=None: RecordingSession(),
     )
-    monkeypatch.setattr(api, "get_vapid_private_key", lambda: "")
-    monkeypatch.setattr(api, "get_vapid_claims", lambda: {})
+    monkeypatch.setattr(_seam_settings, "get_vapid_private_key", lambda: "")
+    monkeypatch.setattr(_seam_settings, "get_vapid_claims", lambda: {})
 
     api.send_notification_pinned(
         valid_subscription,
@@ -3263,7 +3341,7 @@ def test_evaluator_deadline_releases_lock_and_never_sends_after_slow_dns(
     state = {"status": "pending"}
     rule = task4_rule(valid_subscription)
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "load_evaluator_candidates",
         lambda connection, now: [rule] if state["status"] == "pending" else [],
     )
@@ -3288,10 +3366,10 @@ def test_evaluator_deadline_releases_lock_and_never_sends_after_slow_dns(
         state["status"] = status
         return True
 
-    monkeypatch.setattr(api, "claim_pending_rule", claim)
-    monkeypatch.setattr(api, "finalize_claimed_rule", finalize)
+    monkeypatch.setattr(_seam_repositories_push_rules, "claim_pending_rule", claim)
+    monkeypatch.setattr(_seam_repositories_push_rules, "finalize_claimed_rule", finalize)
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "PUSH_TRANSPORT_DEADLINE_SECONDS",
         0.04,
         raising=False,
@@ -3303,16 +3381,16 @@ def test_evaluator_deadline_releases_lock_and_never_sends_after_slow_dns(
         resolver_finished.set()
         return ["8.8.8.8"]
 
-    monkeypatch.setattr(api, "resolve_endpoint_host", delayed_resolver)
+    monkeypatch.setattr(_seam_push, "resolve_endpoint_host", delayed_resolver)
     webpush_calls: list[int] = []
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "webpush",
         lambda **kwargs: webpush_calls.append(1)
         or api.SafePushResponse(status_code=201),
     )
-    monkeypatch.setattr(api, "get_vapid_private_key", lambda: "")
-    monkeypatch.setattr(api, "get_vapid_claims", lambda: {})
+    monkeypatch.setattr(_seam_settings, "get_vapid_private_key", lambda: "")
+    monkeypatch.setattr(_seam_settings, "get_vapid_claims", lambda: {})
 
     started = time.monotonic()
     first = api.evaluate_rules_once(now=TASK4_NOW, snapshot_reader=reader)
@@ -3334,7 +3412,7 @@ def test_repeated_stuck_dns_attempts_use_only_bounded_daemon_workers(
     valid_subscription: dict[str, object],
 ) -> None:
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "PUSH_TRANSPORT_DEADLINE_SECONDS",
         0.02,
         raising=False,
@@ -3348,18 +3426,18 @@ def test_repeated_stuck_dns_attempts_use_only_bounded_daemon_workers(
         release_resolver.wait()
         return ["8.8.8.8"]
 
-    monkeypatch.setattr(api, "resolve_endpoint_host", stuck_resolver)
+    monkeypatch.setattr(_seam_push, "resolve_endpoint_host", stuck_resolver)
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "webpush",
         lambda **kwargs: webpush_calls.append(1)
         or api.SafePushResponse(status_code=201),
     )
-    monkeypatch.setattr(api, "get_vapid_private_key", lambda: "")
-    monkeypatch.setattr(api, "get_vapid_claims", lambda: {})
+    monkeypatch.setattr(_seam_settings, "get_vapid_private_key", lambda: "")
+    monkeypatch.setattr(_seam_settings, "get_vapid_claims", lambda: {})
     baseline_threads = set(threading.enumerate())
     executor = api._BoundedPushExecutor(worker_count=2, queue_capacity=2)
-    monkeypatch.setattr(api, "_push_executor", executor)
+    monkeypatch.setattr(_seam_runtime.current_runtime(), 'executor', executor)
 
     started = time.monotonic()
     try:
@@ -3400,7 +3478,7 @@ def test_send_deadline_aborts_and_closes_slow_provider_response(
     valid_subscription: dict[str, object],
 ) -> None:
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "PUSH_TRANSPORT_DEADLINE_SECONDS",
         0.04,
         raising=False,
@@ -3414,7 +3492,7 @@ def test_send_deadline_aborts_and_closes_slow_provider_response(
         request_target="/subscription-a",
     )
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "build_pinned_push_target",
         lambda endpoint, **kwargs: target,
     )
@@ -3460,8 +3538,8 @@ def test_send_deadline_aborts_and_closes_slow_provider_response(
     monkeypatch.setattr(api.socket, "create_connection", lambda *_args, **_kwargs: raw)
     monkeypatch.setattr(api.ssl, "create_default_context", lambda: FakeContext())
     monkeypatch.setattr(api.http.client, "HTTPResponse", SlowHTTPResponse)
-    monkeypatch.setattr(api, "get_vapid_private_key", lambda: "")
-    monkeypatch.setattr(api, "get_vapid_claims", lambda: {})
+    monkeypatch.setattr(_seam_settings, "get_vapid_private_key", lambda: "")
+    monkeypatch.setattr(_seam_settings, "get_vapid_claims", lambda: {})
 
     started = time.monotonic()
     with pytest.raises(api.SafePushDispatchError):
@@ -3574,12 +3652,12 @@ def configure_task4_evaluator(
     rule = task4_rule(valid_subscription)
 
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "db_acquire_evaluator_lock",
         lambda: events.append("lock") or conn,
     )
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "load_evaluator_candidates",
         lambda candidate_conn, now: (
             events.append("rules") or [rule]
@@ -3587,7 +3665,7 @@ def configure_task4_evaluator(
         raising=False,
     )
     monkeypatch.setattr(
-        api,
+        _seam_facility_schedule,
         "load_facility_hours",
         lambda: events.append("schedule")
         or task4_schedule_payload(
@@ -3595,16 +3673,16 @@ def configure_task4_evaluator(
         ),
     )
     monkeypatch.setattr(
-        api,
+        _seam_facility_schedule,
         "official_facility_is_open",
         lambda payload, facility_id, at, *, stale_after_seconds: (
             schedule_open
-            and stale_after_seconds == api.SCHEDULE_STALE_AFTER_SECONDS
+            and stale_after_seconds == _seam_runtime.current_runtime().settings.schedule_stale_after_seconds
         ),
         raising=False,
     )
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "compute_fresh_section_metrics",
         lambda facility_id, section_key, snapshots, now: metrics
         if metrics is not None
@@ -3616,13 +3694,13 @@ def configure_task4_evaluator(
         raising=False,
     )
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "claim_pending_rule",
         lambda candidate_conn, rule_id, now: events.append("claim") or claim,
         raising=False,
     )
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "finalize_claimed_rule",
         lambda candidate_conn, rule_id, now, status, failure_code=None: events.append(
             f"terminal:{status}:{failure_code or '-'}"
@@ -3631,19 +3709,19 @@ def configure_task4_evaluator(
         raising=False,
     )
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "db_release_evaluator_lock",
         lambda candidate_conn: events.append("release"),
     )
     if sender is None:
         monkeypatch.setattr(
-            api,
+            _seam_push,
             "send_notification_pinned",
             lambda *args, **kwargs: events.append("send"),
             raising=False,
         )
     else:
-        monkeypatch.setattr(api, "send_notification_pinned", sender, raising=False)
+        monkeypatch.setattr(_seam_push, "send_notification_pinned", sender, raising=False)
     return events, conn, reader
 
 
@@ -3758,12 +3836,12 @@ def test_real_mysql_subscribe_to_evaluator_reaches_only_fixed_facility_route(
         "VALUES (%s, 0, 20, %s, %s)",
         (
             location_id,
-            api.MAX_CAP[location_id],
+            _seam_runtime.current_runtime().capacities[location_id],
             datetime(2026, 9, 1, 16, 59),
         ),
     )
     monkeypatch.setattr(
-        api,
+        _seam_facility_schedule,
         "load_facility_hours",
         lambda: {
             "generatedAt": "2026-09-01T16:59:00Z",
@@ -3791,7 +3869,7 @@ def test_real_mysql_subscribe_to_evaluator_reaches_only_fixed_facility_route(
     ) -> None:
         sent_urls.append(kwargs.get("url"))
 
-    monkeypatch.setattr(api, "send_notification_pinned", capture_pinned_send)
+    monkeypatch.setattr(_seam_push, "send_notification_pinned", capture_pinned_send)
 
     result = api.evaluate_rules_once(now=TASK4_NOW)
 
@@ -3847,24 +3925,24 @@ def test_evaluator_commits_before_each_candidate_snapshot_without_releasing_lock
     ]
     reader = VersionedReader()
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "db_acquire_evaluator_lock",
         lambda: events.append("lock") or connection,
     )
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "load_evaluator_candidates",
         lambda candidate_conn, at: events.append("rules") or rules,
     )
-    monkeypatch.setattr(api, "load_facility_hours", lambda: events.append("schedule") or {})
+    monkeypatch.setattr(_seam_facility_schedule, "load_facility_hours", lambda: events.append("schedule") or {})
     monkeypatch.setattr(
-        api,
+        _seam_facility_schedule,
         "official_facility_is_open",
         lambda *args, **kwargs: True,
     )
-    monkeypatch.setattr(api, "index_live_rows", lambda rows: rows[0])
+    monkeypatch.setattr(_seam_push, "index_live_rows", lambda rows: rows[0])
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "compute_fresh_section_metrics",
         lambda facility_id, section_key, snapshots, at: {
             "status": "live",
@@ -3873,22 +3951,22 @@ def test_evaluator_commits_before_each_candidate_snapshot_without_releasing_lock
         },
     )
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "claim_pending_rule",
         lambda candidate_conn, rule_id, at: events.append(f"claim:{rule_id}") or True,
     )
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "send_notification_pinned",
         lambda *args, **kwargs: events.append("send"),
     )
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "finalize_claimed_rule",
         lambda *args, **kwargs: events.append("terminal") or True,
     )
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "db_release_evaluator_lock",
         lambda candidate_conn: events.append("release"),
     )
@@ -3956,15 +4034,15 @@ def test_evaluator_resamples_all_claim_gates_after_first_send(
     metric_times: list[datetime] = []
     send_calls: list[int] = []
 
-    monkeypatch.setattr(api, "now_utc", clock)
-    monkeypatch.setattr(api, "db_acquire_evaluator_lock", lambda: connection)
+    monkeypatch.setattr(_seam_runtime, "now_utc", clock)
+    monkeypatch.setattr(_seam_repositories_push_rules, "db_acquire_evaluator_lock", lambda: connection)
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "load_evaluator_candidates",
         lambda candidate_conn, at: [first, second],
     )
     monkeypatch.setattr(
-        api,
+        _seam_facility_schedule,
         "load_facility_hours",
         lambda: task4_schedule_payload(
             [{"label": "Daily", "hours": "Open 24 Hours"}]
@@ -3978,7 +4056,7 @@ def test_evaluator_resamples_all_claim_gates_after_first_send(
         *,
         stale_after_seconds: int,
     ) -> bool:
-        assert stale_after_seconds == api.SCHEDULE_STALE_AFTER_SECONDS
+        assert stale_after_seconds == _seam_runtime.current_runtime().settings.schedule_stale_after_seconds
         schedule_times.append(at)
         return boundary != "schedule" or at < advanced_now
 
@@ -4019,13 +4097,13 @@ def test_evaluator_resamples_all_claim_gates_after_first_send(
         send_calls.append(1)
         clock.value = advanced_now
 
-    monkeypatch.setattr(api, "official_facility_is_open", schedule_open)
-    monkeypatch.setattr(api, "compute_fresh_section_metrics", metrics)
-    monkeypatch.setattr(api, "claim_pending_rule", claim)
-    monkeypatch.setattr(api, "finalize_claimed_rule", finalize)
-    monkeypatch.setattr(api, "send_notification_pinned", send)
+    monkeypatch.setattr(_seam_facility_schedule, "official_facility_is_open", schedule_open)
+    monkeypatch.setattr(_seam_push, "compute_fresh_section_metrics", metrics)
+    monkeypatch.setattr(_seam_repositories_push_rules, "claim_pending_rule", claim)
+    monkeypatch.setattr(_seam_repositories_push_rules, "finalize_claimed_rule", finalize)
+    monkeypatch.setattr(_seam_push, "send_notification_pinned", send)
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "db_release_evaluator_lock",
         lambda candidate_conn: events.append("release"),
     )
@@ -4093,14 +4171,14 @@ def test_evaluator_resamples_all_claim_gates_after_snapshot_read(
             )
 
     reader = AdvancingSnapshotReader()
-    monkeypatch.setattr(api, "now_utc", clock)
-    monkeypatch.setattr(api, "db_acquire_evaluator_lock", lambda: connection)
+    monkeypatch.setattr(_seam_runtime, "now_utc", clock)
+    monkeypatch.setattr(_seam_repositories_push_rules, "db_acquire_evaluator_lock", lambda: connection)
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "load_evaluator_candidates",
         lambda candidate_conn, at: [rule],
     )
-    monkeypatch.setattr(api, "load_facility_hours", lambda: {})
+    monkeypatch.setattr(_seam_facility_schedule, "load_facility_hours", lambda: {})
 
     def schedule_open(
         payload: object,
@@ -4109,7 +4187,7 @@ def test_evaluator_resamples_all_claim_gates_after_snapshot_read(
         *,
         stale_after_seconds: int,
     ) -> bool:
-        assert stale_after_seconds == api.SCHEDULE_STALE_AFTER_SECONDS
+        assert stale_after_seconds == _seam_runtime.current_runtime().settings.schedule_stale_after_seconds
         schedule_times.append(at)
         return boundary != "schedule" or at < advanced_now
 
@@ -4128,21 +4206,21 @@ def test_evaluator_resamples_all_claim_gates_after_snapshot_read(
             "percent": 50.0 if boundary == "threshold" and at >= advanced_now else 20.0,
         }
 
-    monkeypatch.setattr(api, "official_facility_is_open", schedule_open)
-    monkeypatch.setattr(api, "compute_fresh_section_metrics", metrics)
+    monkeypatch.setattr(_seam_facility_schedule, "official_facility_is_open", schedule_open)
+    monkeypatch.setattr(_seam_push, "compute_fresh_section_metrics", metrics)
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "claim_pending_rule",
         lambda candidate_conn, rule_id, at: claim_times.append(at) or True,
     )
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "send_notification_pinned",
         lambda *args, **kwargs: send_calls.append(1),
     )
-    monkeypatch.setattr(api, "finalize_claimed_rule", lambda *args, **kwargs: True)
+    monkeypatch.setattr(_seam_repositories_push_rules, "finalize_claimed_rule", lambda *args, **kwargs: True)
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "db_release_evaluator_lock",
         lambda candidate_conn: events.append("release"),
     )
@@ -4192,24 +4270,24 @@ def test_evaluator_rereads_snapshot_before_each_claim_gate(
         task4_rule(valid_subscription, rule_id=42, threshold=41),
     ]
     claim_ids: list[int] = []
-    monkeypatch.setattr(api, "now_utc", clock)
-    monkeypatch.setattr(api, "db_acquire_evaluator_lock", lambda: connection)
+    monkeypatch.setattr(_seam_runtime, "now_utc", clock)
+    monkeypatch.setattr(_seam_repositories_push_rules, "db_acquire_evaluator_lock", lambda: connection)
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "load_evaluator_candidates",
         lambda candidate_conn, at: rules,
     )
-    monkeypatch.setattr(api, "load_facility_hours", lambda: {})
+    monkeypatch.setattr(_seam_facility_schedule, "load_facility_hours", lambda: {})
     monkeypatch.setattr(
-        api,
+        _seam_facility_schedule,
         "official_facility_is_open",
         lambda payload, facility_id, at, *, stale_after_seconds: (
-            stale_after_seconds == api.SCHEDULE_STALE_AFTER_SECONDS
+            stale_after_seconds == _seam_runtime.current_runtime().settings.schedule_stale_after_seconds
         ),
     )
-    monkeypatch.setattr(api, "index_live_rows", lambda rows: rows[0])
+    monkeypatch.setattr(_seam_push, "index_live_rows", lambda rows: rows[0])
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "compute_fresh_section_metrics",
         lambda facility_id, section_key, snapshots, at: {
             "status": "live",
@@ -4218,12 +4296,12 @@ def test_evaluator_rereads_snapshot_before_each_claim_gate(
         },
     )
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "claim_pending_rule",
         lambda candidate_conn, rule_id, at: claim_ids.append(rule_id) or True,
     )
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "finalize_claimed_rule",
         lambda *args, **kwargs: True,
     )
@@ -4232,9 +4310,9 @@ def test_evaluator_rereads_snapshot_before_each_claim_gate(
         events.append("send")
         clock.value = advanced_now
 
-    monkeypatch.setattr(api, "send_notification_pinned", send)
+    monkeypatch.setattr(_seam_push, "send_notification_pinned", send)
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "db_release_evaluator_lock",
         lambda candidate_conn: events.append("release"),
     )
@@ -4269,9 +4347,9 @@ def test_evaluator_rejects_backward_live_clock_without_unsafe_transition(
     claim_times: list[datetime] = []
     terminal_times: list[datetime] = []
     rule = task4_rule(valid_subscription)
-    monkeypatch.setattr(api, "now_utc", lambda: next(samples))
+    monkeypatch.setattr(_seam_runtime, "now_utc", lambda: next(samples))
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "load_evaluator_candidates",
         lambda connection, at: [rule],
     )
@@ -4292,8 +4370,8 @@ def test_evaluator_rejects_backward_live_clock_without_unsafe_transition(
         state["status"] = status
         return True
 
-    monkeypatch.setattr(api, "claim_pending_rule", claim)
-    monkeypatch.setattr(api, "finalize_claimed_rule", finalize)
+    monkeypatch.setattr(_seam_repositories_push_rules, "claim_pending_rule", claim)
+    monkeypatch.setattr(_seam_repositories_push_rules, "finalize_claimed_rule", finalize)
 
     result = api.evaluate_rules_once(snapshot_reader=reader)
 
@@ -4335,19 +4413,19 @@ def test_evaluator_rejects_second_claim_clock_older_than_prior_terminal(
     ]
     claim_times: list[tuple[int, datetime]] = []
     terminal_times: list[tuple[int, datetime]] = []
-    monkeypatch.setattr(api, "now_utc", lambda: next(samples))
+    monkeypatch.setattr(_seam_runtime, "now_utc", lambda: next(samples))
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "load_evaluator_candidates",
         lambda connection, at: rules,
     )
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "claim_pending_rule",
         lambda connection, rule_id, at: claim_times.append((rule_id, at)) or True,
     )
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "finalize_claimed_rule",
         lambda connection, rule_id, at, status, failure_code=None: terminal_times.append(
             (rule_id, at)
@@ -4368,14 +4446,14 @@ def test_evaluator_rejects_second_claim_clock_older_than_prior_terminal(
 def test_evaluator_lock_contention_performs_no_rule_schedule_snapshot_or_count_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(api, "db_acquire_evaluator_lock", lambda: None)
-    for name in (
-        "load_evaluator_candidates",
-        "load_facility_hours",
-        "db_rules_count",
+    monkeypatch.setattr(_seam_repositories_push_rules, "db_acquire_evaluator_lock", lambda: None)
+    for owner, name in (
+        (_seam_repositories_push_rules, "load_evaluator_candidates"),
+        (_seam_facility_schedule, "load_facility_hours"),
+        (_seam_repositories_push_rules, "db_rules_count"),
     ):
         monkeypatch.setattr(
-            api,
+            owner,
             name,
             lambda *args, _name=name, **kwargs: pytest.fail(
                 f"lock contention reached {_name}"
@@ -4403,17 +4481,17 @@ def test_real_mysql_evaluator_lock_contention_skips_every_state_read_and_release
         pytest.fail(f"evaluator lock contention reached {name}")
 
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "load_evaluator_candidates",
         lambda *args, **kwargs: forbid_read("rules"),
     )
     monkeypatch.setattr(
-        api,
+        _seam_facility_schedule,
         "load_facility_hours",
         lambda *args, **kwargs: forbid_read("schedule"),
     )
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "db_rules_count",
         lambda *args, **kwargs: forbid_read("count"),
     )
@@ -4431,7 +4509,7 @@ def test_real_mysql_evaluator_lock_contention_skips_every_state_read_and_release
         with lock_owner.cursor() as cursor:
             cursor.execute(
                 "SELECT GET_LOCK(%s, 0)",
-                (api.PUSH_EVALUATOR_DB_LOCK_NAME,),
+                (_seam_runtime.current_runtime().settings.push.evaluator_lock_name,),
             )
             acquired = cursor.fetchone() == (1,)
         assert acquired is True
@@ -4445,7 +4523,7 @@ def test_real_mysql_evaluator_lock_contention_skips_every_state_read_and_release
             with lock_owner.cursor() as cursor:
                 cursor.execute(
                     "SELECT RELEASE_LOCK(%s)",
-                    (api.PUSH_EVALUATOR_DB_LOCK_NAME,),
+                    (_seam_runtime.current_runtime().settings.push.evaluator_lock_name,),
                 )
                 release_result = cursor.fetchone()
         lock_owner.close()
@@ -4467,7 +4545,7 @@ def test_real_mysql_evaluator_lock_contention_skips_every_state_read_and_release
     assert mysql_fetch_all(
         migrated_push_database,
         "SELECT IS_FREE_LOCK(%s)",
-        (api.PUSH_EVALUATOR_DB_LOCK_NAME,),
+        (_seam_runtime.current_runtime().settings.push.evaluator_lock_name,),
     ) == ((1,),)
 
 
@@ -4475,7 +4553,7 @@ def test_evaluator_database_lock_failure_is_distinct_and_sanitized(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "db_acquire_evaluator_lock",
         lambda: (_ for _ in ()).throw(
             api.PushEvaluatorStoreError("database-secret-sentinel")
@@ -4521,7 +4599,7 @@ def test_evaluator_lock_rejects_malformed_multi_column_results(
     connection = LockConnection()
     if operation == "acquire":
         monkeypatch.setattr(
-            api,
+            _seam_db,
             "open_db_connection",
             lambda *, autocommit: connection,
         )
@@ -4540,15 +4618,15 @@ def test_evaluator_with_no_candidates_commits_expiry_without_schedule_or_snapsho
 ) -> None:
     events: list[str] = []
     connection = Task4EvaluatorConnection(events)
-    monkeypatch.setattr(api, "db_acquire_evaluator_lock", lambda: connection)
-    monkeypatch.setattr(api, "load_evaluator_candidates", lambda conn, now: [])
+    monkeypatch.setattr(_seam_repositories_push_rules, "db_acquire_evaluator_lock", lambda: connection)
+    monkeypatch.setattr(_seam_repositories_push_rules, "load_evaluator_candidates", lambda conn, now: [])
     monkeypatch.setattr(
-        api,
+        _seam_facility_schedule,
         "load_facility_hours",
         lambda: pytest.fail("empty evaluator loaded schedule"),
     )
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "db_release_evaluator_lock",
         lambda conn: events.append("release"),
     )
@@ -4564,11 +4642,11 @@ def test_evaluator_lock_release_failure_is_fixed_and_sanitized(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     connection = Task4EvaluatorConnection([])
-    monkeypatch.setattr(api, "db_acquire_evaluator_lock", lambda: connection)
-    monkeypatch.setattr(api, "load_evaluator_candidates", lambda conn, now: [])
-    monkeypatch.setattr(api, "load_facility_hours", lambda: {})
+    monkeypatch.setattr(_seam_repositories_push_rules, "db_acquire_evaluator_lock", lambda: connection)
+    monkeypatch.setattr(_seam_repositories_push_rules, "load_evaluator_candidates", lambda conn, now: [])
+    monkeypatch.setattr(_seam_facility_schedule, "load_facility_hours", lambda: {})
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "db_release_evaluator_lock",
         lambda conn: (_ for _ in ()).throw(
             api.PushEvaluatorStoreError("release-secret-sentinel")
@@ -4674,7 +4752,7 @@ def test_evaluator_malformed_stored_subscription_never_claims_sends_or_leaks(
     secret = "stored-subscription-secret-sentinel"
     malformed = task4_rule({"endpoint": secret})
     monkeypatch.setattr(
-        api,
+        _seam_repositories_push_rules,
         "load_evaluator_candidates",
         lambda connection, now: [malformed],
     )
@@ -4778,7 +4856,7 @@ def test_evaluator_loop_emits_only_fixed_allowlisted_error(
         raise asyncio.CancelledError
 
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "evaluate_rules_once",
         lambda: (_ for _ in ()).throw(RuntimeError("evaluator-secret-sentinel")),
     )
@@ -4888,10 +4966,10 @@ def test_evaluator_refreshes_repeatable_read_view_before_later_candidate(
         "VALUES (99001, 0, 90, 100, %s)",
         (datetime(2026, 9, 1, 16, 58),),
     )
-    monkeypatch.setattr(api, "location_ids_for_section", lambda *_: [99001])
-    monkeypatch.setattr(api, "MAX_CAP", {99001: 100})
+    monkeypatch.setattr(_seam_sections, "location_ids_for_section", lambda *_: [99001])
+    monkeypatch.setattr(_seam_runtime.current_runtime(), 'capacities', {99001: 100})
     monkeypatch.setattr(
-        api,
+        _seam_facility_schedule,
         "load_facility_hours",
         lambda: task4_schedule_payload(
             [{"label": "Daily", "hours": "Open 24 Hours"}]
@@ -4899,7 +4977,7 @@ def test_evaluator_refreshes_repeatable_read_view_before_later_candidate(
     )
     sends: list[int] = []
     monkeypatch.setattr(
-        api,
+        _seam_push,
         "send_notification_pinned",
         lambda *args, **kwargs: sends.append(1),
     )
@@ -4930,7 +5008,7 @@ def test_evaluator_refreshes_repeatable_read_view_before_later_candidate(
             with writer_connection.cursor() as cursor:
                 cursor.execute(
                     "SELECT IS_USED_LOCK(%s)",
-                    (api.PUSH_EVALUATOR_DB_LOCK_NAME,),
+                    (_seam_runtime.current_runtime().settings.push.evaluator_lock_name,),
                 )
                 [(lock_owner,)] = [cursor.fetchone()]
                 if type(lock_owner) is not int:
@@ -5011,10 +5089,10 @@ def test_two_real_mysql_evaluators_send_qualifying_rule_at_most_once(
         "VALUES (99001, 0, 20, 100, %s)",
         (datetime(2026, 9, 1, 16, 59),),
     )
-    monkeypatch.setattr(api, "location_ids_for_section", lambda *_: [99001])
-    monkeypatch.setattr(api, "MAX_CAP", {99001: 100})
+    monkeypatch.setattr(_seam_sections, "location_ids_for_section", lambda *_: [99001])
+    monkeypatch.setattr(_seam_runtime.current_runtime(), 'capacities', {99001: 100})
     monkeypatch.setattr(
-        api,
+        _seam_facility_schedule,
         "load_facility_hours",
         lambda: task4_schedule_payload(
             [{"label": "Daily", "hours": "Open 24 Hours"}]
@@ -5027,7 +5105,7 @@ def test_two_real_mysql_evaluators_send_qualifying_rule_at_most_once(
         with send_lock:
             sends.append(1)
 
-    monkeypatch.setattr(api, "send_notification_pinned", send_once)
+    monkeypatch.setattr(_seam_push, "send_notification_pinned", send_once)
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         results = list(
@@ -5045,7 +5123,7 @@ def test_two_real_mysql_evaluators_send_qualifying_rule_at_most_once(
     assert mysql_fetch_all(
         migrated_push_database,
         "SELECT IS_FREE_LOCK(%s)",
-        (api.PUSH_EVALUATOR_DB_LOCK_NAME,),
+        (_seam_runtime.current_runtime().settings.push.evaluator_lock_name,),
     ) == ((1,),)
 
 

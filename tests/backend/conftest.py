@@ -1,3 +1,8 @@
+from server.reclive.api import forecasts as _seam_api_forecasts
+from server.reclive import db as _seam_db
+from dataclasses import replace as _settings_replace
+from server.reclive import runtime as _seam_runtime
+
 import os
 import re
 from collections.abc import Iterator
@@ -286,7 +291,7 @@ def mysql_push_test_client(
     monkeypatch.setenv("GYM_DB_PASSWORD", str(settings["password"]))
     monkeypatch.setenv("GYM_DB_NAME", str(settings["database"]))
     monkeypatch.setattr(
-        forecast_api,
+        _seam_runtime,
         "now_utc",
         lambda: FIXED_PUSH_NOW,
         raising=False,
@@ -325,11 +330,11 @@ def push_test_client(
     monkeypatch.setenv("PUSH_EVALUATOR_ENABLED", "false")
     monkeypatch.setenv("PUSH_ADMIN_ROUTES_ENABLED", "false")
     monkeypatch.setattr(
-        forecast_api,
+        _seam_db,
         "open_db_connection",
         push_repository.open_connection,
     )
-    monkeypatch.setattr(forecast_api, "now_utc", lambda: FIXED_PUSH_NOW, raising=False)
+    monkeypatch.setattr(_seam_runtime, "now_utc", lambda: FIXED_PUSH_NOW, raising=False)
 
     with TestClient(forecast_api.app) as client:
         yield client
@@ -390,13 +395,13 @@ def actual_hours_client(
     import forecast_api
 
     monkeypatch.setattr(
-        forecast_api,
+        _seam_api_forecasts,
         "load_forecast",
         lambda: actual_hours_forecast_payload,
     )
     monkeypatch.setattr(
-        forecast_api,
-        "SECTION_IDS",
+        _seam_runtime.current_runtime(),
+        'section_ids',
         {
             1186: {
                 "overall": [5761, 5762],
@@ -404,13 +409,13 @@ def actual_hours_client(
             }
         },
     )
-    monkeypatch.setattr(forecast_api, "MAX_CAP", {5761: 100, 5762: 100})
-    monkeypatch.setattr(forecast_api, "ACTUAL_HOUR_MIN_COVERAGE", 0.75)
+    monkeypatch.setattr(_seam_runtime.current_runtime(), 'capacities', {5761: 100, 5762: 100})
+    monkeypatch.setattr(_seam_runtime.current_runtime(), "settings", _settings_replace(_seam_runtime.current_runtime().settings, actual_hour_min_coverage=0.75))
 
     def reject_connection(**kwargs: object) -> object:
         raise AssertionError(f"injected actual-hour route opened a database: {kwargs}")
 
-    monkeypatch.setattr(forecast_api, "open_db_connection", reject_connection)
+    monkeypatch.setattr(_seam_db, "open_db_connection", reject_connection)
     dependency = getattr(forecast_api, "get_actual_hour_repository", None)
     if dependency is not None:
         forecast_api.app.dependency_overrides[dependency] = (

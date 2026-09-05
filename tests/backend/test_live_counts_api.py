@@ -1,4 +1,12 @@
 from __future__ import annotations
+from server.reclive import facility_schedule as _seam_facility_schedule
+
+from server.reclive import db as _seam_db
+from server.reclive import push as _seam_push
+from server.reclive.repositories import push_rules as _seam_repositories_push_rules
+from server.reclive import runtime as _seam_runtime
+from server.reclive import sections as _seam_sections
+
 
 import json
 from datetime import datetime, timedelta, timezone
@@ -143,15 +151,15 @@ def configure_evaluator_rule(
         active_identity=1,
     )
     monkeypatch.setattr(
-        forecast_api,
+        _seam_repositories_push_rules,
         "load_evaluator_candidates",
         lambda connection, now: [rule],
     )
-    monkeypatch.setattr(forecast_api, "db_acquire_evaluator_lock", lambda: lock)
+    monkeypatch.setattr(_seam_repositories_push_rules, "db_acquire_evaluator_lock", lambda: lock)
     monkeypatch.setattr(
-        forecast_api, "db_release_evaluator_lock", lambda connection: connection.close()
+        _seam_repositories_push_rules, "db_release_evaluator_lock", lambda connection: connection.close()
     )
-    monkeypatch.setattr(forecast_api, "load_facility_hours", lambda: {})
+    monkeypatch.setattr(_seam_facility_schedule, "load_facility_hours", lambda: {})
 
     def schedule_is_open(
         payload: Mapping[str, Any],
@@ -160,26 +168,26 @@ def configure_evaluator_rule(
         *,
         stale_after_seconds: int,
     ) -> bool:
-        assert stale_after_seconds == forecast_api.SCHEDULE_STALE_AFTER_SECONDS
+        assert stale_after_seconds == _seam_runtime.current_runtime().settings.schedule_stale_after_seconds
         return True
 
     monkeypatch.setattr(
-        forecast_api,
+        _seam_facility_schedule,
         "official_facility_is_open",
         schedule_is_open,
     )
     monkeypatch.setattr(
-        forecast_api,
+        _seam_push,
         "facility_notification_url",
         lambda candidate_facility_id: "/fixture",
     )
     monkeypatch.setattr(
-        forecast_api,
+        _seam_repositories_push_rules,
         "claim_pending_rule",
         lambda connection, rule_id, now: True,
     )
     monkeypatch.setattr(
-        forecast_api,
+        _seam_repositories_push_rules,
         "finalize_claimed_rule",
         lambda connection, rule_id, now, status, failure_code=None: True,
     )
@@ -200,11 +208,11 @@ def configure_parity_case(
         for entry in fixture_case["locations"]
     }
     monkeypatch.setattr(
-        forecast_api,
+        _seam_sections,
         "location_ids_for_section",
         lambda facility_id, section_key: location_ids,
     )
-    monkeypatch.setattr(forecast_api, "MAX_CAP", capacities)
+    monkeypatch.setattr(_seam_runtime.current_runtime(), 'capacities', capacities)
 
     rows: list[SnapshotRow] = []
     for entry in fixture_case["locations"]:
@@ -287,11 +295,11 @@ def test_section_metrics_reject_non_explicit_or_non_integer_observations(
     fetched_at: datetime,
 ) -> None:
     monkeypatch.setattr(
-        forecast_api,
+        _seam_sections,
         "location_ids_for_section",
         lambda facility_id, section_key: [91001],
     )
-    monkeypatch.setattr(forecast_api, "MAX_CAP", {91001: capacity})
+    monkeypatch.setattr(_seam_runtime.current_runtime(), 'capacities', {91001: capacity})
     row = SnapshotRow(
         location_id=91001,
         is_closed=is_closed,
@@ -343,7 +351,7 @@ def test_evaluator_skips_untrusted_or_above_threshold_shared_cases(
     )
     notifications: list[dict[str, Any]] = []
     monkeypatch.setattr(
-        forecast_api,
+        _seam_push,
         "send_notification_pinned",
         lambda *args, **notification: notifications.append(notification),
     )
@@ -375,7 +383,7 @@ def test_evaluator_never_sends_for_partial_summary_even_below_threshold(
     )
     notifications: list[dict[str, Any]] = []
     monkeypatch.setattr(
-        forecast_api,
+        _seam_push,
         "send_notification_pinned",
         lambda *args, **notification: notifications.append(notification),
     )
@@ -408,7 +416,7 @@ def test_evaluator_can_send_for_live_summary_at_coverage_boundary(
     )
     notifications: list[dict[str, Any]] = []
     monkeypatch.setattr(
-        forecast_api,
+        _seam_push,
         "send_notification_pinned",
         lambda *args, **notification: notifications.append(notification),
     )
@@ -437,7 +445,7 @@ def test_evaluator_rounds_half_percent_up_for_comparison_and_copy(
     rows = configure_parity_case(monkeypatch, fixture_case)
     notifications: list[dict[str, Any]] = []
     monkeypatch.setattr(
-        forecast_api,
+        _seam_push,
         "send_notification_pinned",
         lambda *args, **notification: notifications.append(notification),
     )
@@ -492,13 +500,13 @@ def test_evaluator_resamples_aware_utc_for_claim_metrics_and_terminal_audit(
                 tzinfo=timezone.utc,
             )
 
-    monkeypatch.setattr(forecast_api, "datetime", CountingDateTime)
+    monkeypatch.setattr(_seam_runtime.current_runtime(), "clock", lambda: CountingDateTime.now(timezone.utc))
     monkeypatch.setattr(
-        forecast_api,
+        _seam_sections,
         "location_ids_for_section",
         lambda facility_id, section_key: [91001],
     )
-    monkeypatch.setattr(forecast_api, "MAX_CAP", {91001: 100})
+    monkeypatch.setattr(_seam_runtime.current_runtime(), 'capacities', {91001: 100})
     configure_evaluator_rule(
         monkeypatch,
         facility_id=9999,
@@ -517,22 +525,22 @@ def test_evaluator_resamples_aware_utc_for_claim_metrics_and_terminal_audit(
         *,
         stale_after_seconds: int,
     ) -> bool:
-        assert stale_after_seconds == forecast_api.SCHEDULE_STALE_AFTER_SECONDS
+        assert stale_after_seconds == _seam_runtime.current_runtime().settings.schedule_stale_after_seconds
         schedule_times.append(at)
         return True
 
     monkeypatch.setattr(
-        forecast_api,
+        _seam_facility_schedule,
         "official_facility_is_open",
         schedule_is_open,
     )
     monkeypatch.setattr(
-        forecast_api,
+        _seam_repositories_push_rules,
         "claim_pending_rule",
         lambda connection, rule_id, now: claim_times.append(now) or True,
     )
     monkeypatch.setattr(
-        forecast_api,
+        _seam_repositories_push_rules,
         "finalize_claimed_rule",
         lambda connection, rule_id, now, status, failure_code=None: terminal_times.append(
             now
@@ -540,7 +548,7 @@ def test_evaluator_resamples_aware_utc_for_claim_metrics_and_terminal_audit(
         or True,
     )
     monkeypatch.setattr(
-        forecast_api,
+        _seam_push,
         "send_notification_pinned",
         lambda *args, **kwargs: payloads.append(kwargs),
     )
@@ -744,7 +752,7 @@ def test_evaluator_uses_internal_snapshot_rows_without_opening_a_connection(
     def reject_connection(**kwargs: object) -> object:
         raise AssertionError(f"injected evaluator opened a connection: {kwargs}")
 
-    monkeypatch.setattr(forecast_api, "open_db_connection", reject_connection)
+    monkeypatch.setattr(_seam_db, "open_db_connection", reject_connection)
 
     result = forecast_api.evaluate_rules_once(snapshot_reader=reader)
 
@@ -767,12 +775,12 @@ def test_evaluator_factory_path_closes_its_connection_exactly_once(
         return reader
 
     monkeypatch.setattr(
-        forecast_api,
+        _seam_repositories_push_rules,
         "db_acquire_evaluator_lock",
         lambda: connection,
     )
     monkeypatch.setattr(
-        forecast_api,
+        _seam_repositories_push_rules,
         "db_release_evaluator_lock",
         lambda candidate: candidate.close(),
     )

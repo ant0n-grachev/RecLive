@@ -19,9 +19,10 @@ def _resolve_path(raw_path: str) -> str:
     return os.path.abspath(os.path.join(SCRIPT_DIR, raw_path))
 
 
-def load_facility_capacities() -> Dict[int, int]:
-    raw_path = os.getenv("FACILITY_CAPACITIES_JSON_PATH", DEFAULT_CAPACITY_PATH)
-    path = _resolve_path(raw_path)
+def load_facility_capacities(path: str | None = None) -> Dict[int, int]:
+    if path is None:
+        raw_path = os.getenv("FACILITY_CAPACITIES_JSON_PATH", DEFAULT_CAPACITY_PATH)
+        path = _resolve_path(raw_path)
 
     try:
         with open(path, "r", encoding="utf-8") as handle:

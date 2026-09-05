@@ -1,4 +1,9 @@
 from __future__ import annotations
+from server.reclive.api import forecasts as _seam_api_forecasts
+from dataclasses import replace as _settings_replace
+from server.reclive import runtime as _seam_runtime
+from server.reclive import settings as _seam_settings
+
 
 import builtins
 import importlib
@@ -146,12 +151,10 @@ def schedule_test_client(
     def build(payload: Mapping[str, object], now: datetime) -> TestClient:
         schedule_path = tmp_path / "facility_hours.json"
         schedule_path.write_text(json.dumps(payload), encoding="utf-8")
+        monkeypatch.setattr(_seam_runtime.current_runtime(), "settings", _settings_replace(_seam_runtime.current_runtime().settings, facility_hours_json_path=str(schedule_path)))
+        monkeypatch.setattr(_seam_runtime, "now_utc", lambda: now, raising=False)
         monkeypatch.setattr(
-            forecast_api, "FACILITY_HOURS_JSON_PATH", str(schedule_path)
-        )
-        monkeypatch.setattr(forecast_api, "now_utc", lambda: now, raising=False)
-        monkeypatch.setattr(
-            forecast_api,
+            _seam_api_forecasts,
             "load_forecast",
             lambda: {
                 "generatedAt": facility_hours_fetch.iso_utc(now),
@@ -159,7 +162,7 @@ def schedule_test_client(
                 "modelInfo": {"status": "fixture"},
             },
         )
-        monkeypatch.setattr(forecast_api, "evaluator_enabled", lambda: False)
+        monkeypatch.setattr(_seam_settings, "evaluator_enabled", lambda: False)
         return TestClient(forecast_api.app)
 
     return build
@@ -223,8 +226,8 @@ def test_schedule_artifact_failures_share_stable_503_category(
         path.mkdir()
     elif artifact == "invalid":
         path.write_text("{}", encoding="utf-8")
-    monkeypatch.setattr(forecast_api, "FACILITY_HOURS_JSON_PATH", str(path))
-    monkeypatch.setattr(forecast_api, "now_utc", lambda: FIXED_NOW, raising=False)
+    monkeypatch.setattr(_seam_runtime.current_runtime(), "settings", _settings_replace(_seam_runtime.current_runtime().settings, facility_hours_json_path=str(path)))
+    monkeypatch.setattr(_seam_runtime, "now_utc", lambda: FIXED_NOW, raising=False)
 
     response = TestClient(forecast_api.app).get("/api/facility-hours")
 
@@ -238,12 +241,10 @@ def test_health_reports_unavailable_schedule_without_throwing(
     tmp_path: Path,
 ) -> None:
     missing_path = tmp_path / "facility_hours.json"
+    monkeypatch.setattr(_seam_runtime.current_runtime(), "settings", _settings_replace(_seam_runtime.current_runtime().settings, facility_hours_json_path=str(missing_path)))
+    monkeypatch.setattr(_seam_runtime, "now_utc", lambda: FIXED_NOW, raising=False)
     monkeypatch.setattr(
-        forecast_api, "FACILITY_HOURS_JSON_PATH", str(missing_path)
-    )
-    monkeypatch.setattr(forecast_api, "now_utc", lambda: FIXED_NOW, raising=False)
-    monkeypatch.setattr(
-        forecast_api,
+        _seam_api_forecasts,
         "load_forecast",
         lambda: {
             "generatedAt": "2026-09-01T12:00:00Z",

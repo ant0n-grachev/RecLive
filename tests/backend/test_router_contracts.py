@@ -1,4 +1,3 @@
-from copy import deepcopy
 import json
 from pathlib import Path
 
@@ -7,6 +6,8 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 from server import forecast_api
+from server.reclive.api.app import create_app
+from server.reclive.settings import Settings
 
 
 FIXTURE_PATH = (
@@ -48,12 +49,7 @@ def api_client(
     monkeypatch: pytest.MonkeyPatch,
     forecast_payload: dict[str, object],
 ) -> TestClient:
-    monkeypatch.setattr(
-        forecast_api,
-        "load_forecast",
-        lambda: deepcopy(forecast_payload),
-    )
-    return TestClient(forecast_api.app)
+    return TestClient(create_app(Settings.for_test(forecast_json_path=str(FIXTURE_PATH))))
 
 
 def test_router_preserves_all_custom_method_path_pairs() -> None:

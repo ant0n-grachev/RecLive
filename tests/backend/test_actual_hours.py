@@ -1,3 +1,7 @@
+from server.reclive.api import forecasts as _seam_api_forecasts
+from server.reclive import db as _seam_db
+from server.reclive import runtime as _seam_runtime
+
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -1567,13 +1571,13 @@ def configure_owned_actual_hour_route(
     assert callable(dependency), "actual-hour repository dependency is missing"
     forecast_api.app.dependency_overrides.pop(dependency, None)
     monkeypatch.setattr(
-        forecast_api,
+        _seam_api_forecasts,
         "load_forecast",
         lambda: actual_hours_forecast_payload,
     )
     monkeypatch.setattr(
-        forecast_api,
-        "SECTION_IDS",
+        _seam_runtime.current_runtime(),
+        'section_ids',
         {
             1186: {
                 "overall": [5761, 5762],
@@ -1581,13 +1585,13 @@ def configure_owned_actual_hour_route(
             }
         },
     )
-    monkeypatch.setattr(forecast_api, "MAX_CAP", {5761: 100, 5762: 100})
+    monkeypatch.setattr(_seam_runtime.current_runtime(), 'capacities', {5761: 100, 5762: 100})
 
     def open_connection(*, autocommit: bool = True) -> ActualHourSqlConnection:
         assert autocommit is False
         return connection
 
-    monkeypatch.setattr(forecast_api, "open_db_connection", open_connection)
+    monkeypatch.setattr(_seam_db, "open_db_connection", open_connection)
     return dependency
 
 
@@ -1599,7 +1603,7 @@ def test_actual_hour_owned_dependency_preserves_404s_before_opening_database(
     assert callable(dependency), "actual-hour repository dependency is missing"
     forecast_api.app.dependency_overrides.pop(dependency, None)
     monkeypatch.setattr(
-        forecast_api,
+        _seam_api_forecasts,
         "load_forecast",
         lambda: actual_hours_forecast_payload,
     )
@@ -1610,7 +1614,7 @@ def test_actual_hour_owned_dependency_preserves_404s_before_opening_database(
         connection_attempts += 1
         raise AssertionError(f"404 path opened a database: {kwargs}")
 
-    monkeypatch.setattr(forecast_api, "open_db_connection", reject_connection)
+    monkeypatch.setattr(_seam_db, "open_db_connection", reject_connection)
     client = TestClient(forecast_api.app)
 
     missing_facility = client.get(
@@ -1635,7 +1639,7 @@ def test_actual_hour_owned_dependency_sanitizes_connection_failure(
     assert callable(dependency), "actual-hour repository dependency is missing"
     forecast_api.app.dependency_overrides.pop(dependency, None)
     monkeypatch.setattr(
-        forecast_api,
+        _seam_api_forecasts,
         "load_forecast",
         lambda: actual_hours_forecast_payload,
     )
@@ -1643,7 +1647,7 @@ def test_actual_hour_owned_dependency_sanitizes_connection_failure(
     def reject_connection(**kwargs: object) -> object:
         raise RuntimeError(f"private connection detail: {kwargs}")
 
-    monkeypatch.setattr(forecast_api, "open_db_connection", reject_connection)
+    monkeypatch.setattr(_seam_db, "open_db_connection", reject_connection)
 
     response = TestClient(forecast_api.app).get(
         "/api/forecast/facilities/1186/actual-hours?date=2026-08-31"
