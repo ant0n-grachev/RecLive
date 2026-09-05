@@ -29,7 +29,7 @@ const facilityName = (id: 1186 | 1656) => id === 1656
     ? "Bakke Recreation & Wellbeing Center"
     : "Nicholas Recreation Center";
 
-const forecast = (id: 1186 | 1656) => ({
+const forecast = (id: 1186 | 1656, expectedPct?: number) => ({
     facilityId: id,
     facilityName: facilityName(id),
     forecastDayStartHour: 6,
@@ -45,6 +45,7 @@ const forecast = (id: 1186 | 1656) => ({
             hour: 9,
             hourStart: "2026-08-31T09:00:00-05:00",
             expectedCount: 50,
+            ...(expectedPct === undefined ? {} : {expectedPct}),
             spikeAdjusted: true,
         }],
         avoidWindows: [],
@@ -98,7 +99,10 @@ const facilityIdFromPath = (pathname: string): 1186 | 1656 | null => {
     return match?.[1] === "1186" ? 1186 : match?.[1] === "1656" ? 1656 : null;
 };
 
-export async function installDashboardApiMocks(page: Page): Promise<void> {
+export async function installDashboardApiMocks(
+    page: Page,
+    options: {forecastExpectedPct?: number} = {}
+): Promise<void> {
     const context = page.context();
     const previousApiHandler = apiHandlers.get(context);
     if (previousApiHandler) await context.unroute("**/api/**", previousApiHandler);
@@ -143,7 +147,7 @@ export async function installDashboardApiMocks(page: Page): Promise<void> {
 
         const facilityId = facilityIdFromPath(pathname);
         if (method === "GET" && facilityId && pathname.startsWith("/api/forecast/facilities/")) {
-            await route.fulfill({json: forecast(facilityId)});
+            await route.fulfill({json: forecast(facilityId, options.forecastExpectedPct)});
             return;
         }
         if (method === "GET" && facilityId && pathname.startsWith("/api/facility-hours/facilities/")) {
