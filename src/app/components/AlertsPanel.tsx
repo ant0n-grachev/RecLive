@@ -27,7 +27,7 @@ const content = (
 ) => (
     <>
         <Box sx={{display: "flex", alignItems: "center", justifyContent: "space-between", pb: 1}}>
-            <Typography variant="h6">
+            <Typography id="alerts-panel-title" variant="h6">
                 Alerts
             </Typography>
             <IconButton
@@ -74,6 +74,7 @@ export default function AlertsPanel({
             <Dialog
                 open={open}
                 onClose={onClose}
+                aria-labelledby="alerts-panel-title"
                 fullWidth
                 maxWidth="sm"
                 PaperProps={{
@@ -101,6 +102,9 @@ export default function AlertsPanel({
             disableSwipeToOpen
             ModalProps={{keepMounted: true}}
             PaperProps={{
+                role: "dialog",
+                "aria-modal": "true",
+                "aria-labelledby": "alerts-panel-title",
                 sx: {
                     borderTopLeftRadius: 20,
                     borderTopRightRadius: 20,

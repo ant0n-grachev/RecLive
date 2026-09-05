@@ -1,9 +1,23 @@
 import {defineConfig} from "vitest/config";
 import react from "@vitejs/plugin-react";
+import {VitePWA} from "vite-plugin-pwa";
 
 // https://vite.dev/config/
 export default defineConfig({
-    plugins: [react()],
+    plugins: [
+        react(),
+        VitePWA({
+            strategies: "injectManifest",
+            srcDir: "src/pwa",
+            filename: "sw.ts",
+            registerType: "prompt",
+            injectRegister: false,
+            manifest: false,
+            injectManifest: {
+                globPatterns: ["**/*.{js,css,html,svg,png,webp,woff2,webmanifest}"],
+            },
+        }),
+    ],
     test: {
         environment: "jsdom",
         globals: true,

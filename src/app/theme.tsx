@@ -16,21 +16,21 @@ export const createAppTheme = (mode: PaletteMode) => {
             mode,
             success: {
                 light: "#66bb6a",
-                main: OCCUPANCY_MAIN_HEX.success,
+                main: isDark ? "#66bb6a" : OCCUPANCY_MAIN_HEX.success,
                 dark: "#1b5e20",
-                contrastText: "#ffffff",
+                contrastText: isDark ? "#0f172a" : "#ffffff",
             },
             warning: {
                 light: "#facc15",
-                main: OCCUPANCY_MAIN_HEX.warning,
+                main: isDark ? "#facc15" : OCCUPANCY_MAIN_HEX.warning,
                 dark: "#a16207",
                 contrastText: "#111827",
             },
             error: {
                 light: "#ef5350",
-                main: OCCUPANCY_MAIN_HEX.error,
+                main: isDark ? "#ef5350" : OCCUPANCY_MAIN_HEX.error,
                 dark: "#b71c1c",
-                contrastText: "#ffffff",
+                contrastText: isDark ? "#0f172a" : "#ffffff",
             },
             text: isDark
                 ? {
@@ -88,6 +88,38 @@ export const createAppTheme = (mode: PaletteMode) => {
                     "#root": {
                         height: "100%",
                         overflowX: "hidden",
+                    },
+                    button: {
+                        minBlockSize: "44px",
+                    },
+                    'polygon[role="button"]:focus-visible': {
+                        outline: "none",
+                        stroke: isDark ? "#ffffff" : "#000000",
+                        strokeWidth: "3px",
+                        strokeOpacity: 1,
+                        vectorEffect: "non-scaling-stroke",
+                    },
+                    "@media (prefers-reduced-motion: reduce)": {
+                        "*, *::before, *::after": {
+                            animation: "none !important",
+                            scrollBehavior: "auto !important",
+                            transition: "none !important",
+                        },
+                    },
+                },
+            },
+            MuiButtonBase: {
+                styleOverrides: {
+                    root: {
+                        minBlockSize: "44px",
+                    },
+                },
+            },
+            MuiIconButton: {
+                styleOverrides: {
+                    root: {
+                        minBlockSize: "44px",
+                        minInlineSize: "44px",
                     },
                 },
             },

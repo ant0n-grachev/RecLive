@@ -27,7 +27,7 @@ export default function ThemeModeToggle({themeMode, onThemeModeChange}: ThemeMod
             onClick={handleThemeToggle}
             aria-label={`Switch to ${themeMode === "dark" ? "light" : "dark"} theme`}
             sx={{
-                minHeight: 36,
+                minHeight: 44,
                 px: 1.2,
                 border: 0,
                 borderRadius: 999,

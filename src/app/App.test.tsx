@@ -181,6 +181,10 @@ const latestPollingCall = (intervalMs: number) => {
     return call;
 };
 
+afterEach(() => {
+    vi.unstubAllEnvs();
+});
+
 beforeEach(() => {
     vi.clearAllMocks();
     appHookHarness.isOffline = false;
@@ -209,6 +213,43 @@ beforeEach(() => {
 });
 
 describe("App occupancy clock", () => {
+    it("ignores persisted debug state and removes debug globals in normal production", () => {
+        vi.stubEnv("DEV", false);
+        vi.stubEnv("MODE", "production");
+        window.localStorage.setItem("reclive:closureOverride", "true");
+        window.localStorage.setItem("reclive:debugNow", "2026-08-31T12:00:00Z");
+        const getItem = vi.spyOn(Storage.prototype, "getItem");
+        window.recliveShowPredictions = () => "stale";
+        window.recliveRestoreWarnings = () => "stale";
+        window.reclivePredictionOverrideStatus = () => true;
+        window.recliveOverrideClosure = () => "stale";
+        window.recliveRestoreClosure = () => "stale";
+        window.recliveClosureOverrideStatus = () => true;
+        window.recliveSetDebugNow = () => "stale";
+        window.recliveClearDebugNow = () => "stale";
+        window.recliveDebugNowStatus = () => "stale";
+        window.recliveDebugDashboardState = () => ({stale: true});
+
+        render(appTree({
+            initialFacility: 1186,
+            themeMode: "light",
+            onThemeModeChange: vi.fn(),
+        }));
+
+        expect(getItem.mock.calls.map(([key]) => key)).not.toContain("reclive:closureOverride");
+        expect(getItem.mock.calls.map(([key]) => key)).not.toContain("reclive:debugNow");
+        expect(window.recliveShowPredictions).toBeUndefined();
+        expect(window.recliveRestoreWarnings).toBeUndefined();
+        expect(window.reclivePredictionOverrideStatus).toBeUndefined();
+        expect(window.recliveOverrideClosure).toBeUndefined();
+        expect(window.recliveRestoreClosure).toBeUndefined();
+        expect(window.recliveClosureOverrideStatus).toBeUndefined();
+        expect(window.recliveSetDebugNow).toBeUndefined();
+        expect(window.recliveClearDebugNow).toBeUndefined();
+        expect(window.recliveDebugNowStatus).toBeUndefined();
+        expect(window.recliveDebugDashboardState).toBeUndefined();
+    });
+
     it("samples the render time when a canonical payload arrives between clock ticks", async () => {
         vi.useFakeTimers();
         vi.setSystemTime("2026-08-31T12:00:00Z");
@@ -255,6 +296,98 @@ describe("App occupancy clock", () => {
 });
 
 describe("App refresh coordination", () => {
+    it("does not announce the initial live query completing", () => {
+        liveHookState.isLoading = true;
+        const props = {
+            initialFacility: 1186 as const,
+            themeMode: "light" as const,
+            onThemeModeChange: vi.fn(),
+        };
+        const {rerender} = render(appTree(props));
+
+        liveHookState.isLoading = false;
+        rerender(appTree(props));
+
+        expect(screen.queryByRole("status")).not.toBeInTheDocument();
+        expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    it("announces only a completed manual refresh", async () => {
+        const props = {
+            initialFacility: 1186 as const,
+            themeMode: "light" as const,
+            onThemeModeChange: vi.fn(),
+        };
+        const {rerender} = render(appTree(props));
+        const pullToRefresh = appHookHarness.pullToRefreshArgs;
+        if (!pullToRefresh) throw new Error("Pull-to-refresh was not configured");
+
+        act(() => pullToRefresh.onRefresh());
+        expect(screen.getByRole("status")).toHaveTextContent("Refreshing live occupancy");
+
+        liveHookState.isLoading = true;
+        rerender(appTree(props));
+        liveHookState.isLoading = false;
+        rerender(appTree(props));
+        await act(async () => {
+            await Promise.resolve();
+        });
+
+        expect(screen.getByRole("status")).toHaveTextContent("Live occupancy updated");
+    });
+
+    it("announces a retained-data manual refresh failure from retry evidence", async () => {
+        liveHookState.data = canonicalPayload("2026-08-31T12:00:00Z");
+        const props = {
+            initialFacility: 1186 as const,
+            themeMode: "light" as const,
+            onThemeModeChange: vi.fn(),
+        };
+        const {rerender} = render(appTree(props));
+        await act(async () => {
+            await Promise.resolve();
+        });
+        const pullToRefresh = appHookHarness.pullToRefreshArgs;
+        if (!pullToRefresh) throw new Error("Pull-to-refresh was not configured");
+
+        act(() => pullToRefresh.onRefresh());
+        liveHookState.isLoading = true;
+        rerender(appTree(props));
+        liveHookState.hasPendingLiveRetry = true;
+        liveHookState.isLoading = false;
+        rerender(appTree(props));
+        await act(async () => {
+            await Promise.resolve();
+        });
+
+        expect(screen.getByText(/Live occupancy could not be refreshed/))
+            .toHaveAttribute("role", "alert");
+    });
+
+    it("does not announce polling completion and clears a pending manual announcement on facility switch", () => {
+        const props = {
+            initialFacility: 1186 as const,
+            themeMode: "light" as const,
+            onThemeModeChange: vi.fn(),
+        };
+        const {rerender} = render(appTree(props));
+
+        act(() => latestPollingCall(90_000).onRefresh());
+        liveHookState.isLoading = true;
+        rerender(appTree(props));
+        liveHookState.isLoading = false;
+        rerender(appTree(props));
+        expect(screen.queryByRole("status")).not.toBeInTheDocument();
+
+        const pullToRefresh = appHookHarness.pullToRefreshArgs;
+        if (!pullToRefresh) throw new Error("Pull-to-refresh was not configured");
+        act(() => pullToRefresh.onRefresh());
+        expect(screen.getByRole("status")).toHaveTextContent("Refreshing live occupancy");
+
+        fireEvent.click(screen.getByRole("button", {name: "Bakke"}));
+        expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    });
+
     it("wires independent live, forecast, and schedule polling keys", () => {
         render(appTree({
             initialFacility: 1186,

@@ -6,6 +6,7 @@ import {
     useLayoutEffect,
     useMemo,
     useReducer,
+    useRef,
     useState,
 } from "react";
 import {
@@ -58,6 +59,11 @@ import {useForecastData, type ForecastHourBounds} from "./hooks/useForecastData"
 import {useFacilityHours} from "./hooks/useFacilityHours";
 import {useVisibilityPolling} from "./hooks/useVisibilityPolling";
 import {resolveDashboardWarning} from "./warningStatus";
+import {debugControlsEnabled, loadDebugOverrides} from "./debugOverrides";
+import {
+    LiveStatusAnnouncer,
+    type LiveStatus,
+} from "../facilities/LiveStatusAnnouncer";
 import {
     getFacilityNextOpenTimestamp,
     getFacilityOpenStatus,
@@ -117,24 +123,8 @@ const getStoredFacility = (): FacilityId => {
     return stored === 1656 ? 1656 : 1186;
 };
 
-const getInitialClosureOverride = (): boolean => {
-    if (typeof window === "undefined") return false;
-
-    const params = new URLSearchParams(window.location.search);
-    const queryValue = params.get("overrideClosure") ?? params.get("debugClosure");
-    if (queryValue !== null) {
-        return queryValue !== "0" && queryValue.toLowerCase() !== "false";
-    }
-
-    try {
-        return window.localStorage.getItem(CLOSURE_OVERRIDE_STORAGE_KEY) === "true";
-    } catch {
-        return false;
-    }
-};
-
-const writeClosureOverrideStorage = (enabled: boolean) => {
-    if (typeof window === "undefined") return;
+const writeClosureOverrideStorage = (enabled: boolean, debugEnabled: boolean) => {
+    if (!debugEnabled || typeof window === "undefined") return;
     try {
         if (enabled) {
             window.localStorage.setItem(CLOSURE_OVERRIDE_STORAGE_KEY, "true");
@@ -154,24 +144,8 @@ const parseDebugNowMs = (value: string | null | undefined): number | null => {
     return parsed === null ? null : parsed;
 };
 
-const getInitialDebugNowMs = (): number | null => {
-    if (typeof window === "undefined") return null;
-
-    const params = new URLSearchParams(window.location.search);
-    const queryValue = params.get("debugNow");
-    if (queryValue !== null) {
-        return parseDebugNowMs(queryValue);
-    }
-
-    try {
-        return parseDebugNowMs(window.localStorage.getItem(DEBUG_NOW_STORAGE_KEY));
-    } catch {
-        return null;
-    }
-};
-
-const writeDebugNowStorage = (value: string | null) => {
-    if (typeof window === "undefined") return;
+const writeDebugNowStorage = (value: string | null, debugEnabled: boolean) => {
+    if (!debugEnabled || typeof window === "undefined") return;
     try {
         if (value) {
             window.localStorage.setItem(DEBUG_NOW_STORAGE_KEY, value);
@@ -482,6 +456,7 @@ export default function App({
         error,
         liveDataSource,
         liveOutageState,
+        hasPendingLiveRetry,
         cacheTimestampMs,
         prepareRefresh,
     } = useLiveFacilityData({facility, refreshKey: liveRefreshKey, isOffline});
@@ -518,17 +493,26 @@ export default function App({
         refreshOnVisible: false,
     });
     const [lastManualRefresh, setLastManualRefresh] = useState(0);
+    const [liveStatus, setLiveStatus] = useState<LiveStatus>("idle");
+    const previousIsLoadingRef = useRef(isLoading);
+    const manualRefreshFacilityRef = useRef<FacilityId | null>(null);
     const [forecastDaySelection, setForecastDaySelection] = useState<{key: string | null; offset: number}>({
         key: null,
         offset: 0,
     });
     const [isCrowdAlertOpen, setIsCrowdAlertOpen] = useState(false);
     const [isInstallGuideOpen, setIsInstallGuideOpen] = useState(false);
-    const [debugNowMs, setDebugNowMs] = useState<number | null>(() => getInitialDebugNowMs());
+    const debugEnabled = debugControlsEnabled(import.meta.env, window.location.hostname);
+    const [initialDebugOverrides] = useState(() => loadDebugOverrides(debugEnabled));
+    const [debugNowMs, setDebugNowMs] = useState<number | null>(() => (
+        parseDebugNowMs(initialDebugOverrides.debugNowValue)
+    ));
     const [clockTickTs, setClockTickTs] = useState(() => Date.now());
     const nowTs = debugNowMs ?? clockTickTs;
     const [predictionOverrideEnabled, setPredictionOverrideEnabled] = useState(false);
-    const [closureOverrideEnabled, setClosureOverrideEnabled] = useState(() => getInitialClosureOverride());
+    const [closureOverrideEnabled, setClosureOverrideEnabled] = useState(
+        initialDebugOverrides.closureOverrideEnabled
+    );
     useFacilitySeo(facility);
     const facilityContentVariants = useMemo(
         () => (reduceMotion
@@ -599,11 +583,33 @@ export default function App({
     const handleFacilitySelect = (next: FacilityId) => {
         if (next === facility) return;
         onFacilityRouteChange?.(next);
+        manualRefreshFacilityRef.current = null;
+        setLiveStatus("idle");
         setLastManualRefresh(0);
         setForecastDaySelection({key: null, offset: 0});
         prepareRefresh();
         setFacility(next);
     };
+
+    useEffect(() => {
+        const wasLoading = previousIsLoadingRef.current;
+        previousIsLoadingRef.current = isLoading;
+        if (!wasLoading || isLoading) return;
+
+        if (manualRefreshFacilityRef.current !== facility) return;
+        manualRefreshFacilityRef.current = null;
+        const refreshFailed = Boolean(error)
+            || hasPendingLiveRetry
+            || liveOutageState !== "none";
+        const nextStatus: LiveStatus = refreshFailed ? "refresh-error" : "updated";
+        let isCancelled = false;
+        void Promise.resolve().then(() => {
+            if (!isCancelled) setLiveStatus(nextStatus);
+        });
+        return () => {
+            isCancelled = true;
+        };
+    }, [error, facility, hasPendingLiveRetry, isLoading, liveOutageState]);
 
     const activeData = data?.facilityId === facility ? data : null;
     useLayoutEffect(() => {
@@ -729,23 +735,22 @@ export default function App({
         setPredictionOverrideEnabled(enabled);
     }, []);
     const setClosureOverride = useCallback((enabled: boolean) => {
-        writeClosureOverrideStorage(enabled);
+        writeClosureOverrideStorage(enabled, debugEnabled);
         setClosureOverrideEnabled(enabled);
-    }, []);
+    }, [debugEnabled]);
     const setDebugNowOverride = useCallback((value: string | null) => {
         const parsed = parseDebugNowMs(value);
-        writeDebugNowStorage(value && parsed !== null ? value : null);
+        writeDebugNowStorage(value && parsed !== null ? value : null, debugEnabled);
         setDebugNowMs(parsed);
         if (parsed === null) {
             setClockTickTs(Date.now());
         }
         return parsed;
-    }, []);
+    }, [debugEnabled]);
 
     useEffect(() => {
         if (typeof window === "undefined") return;
-        const isLocalDebugHost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
-        if (!import.meta.env.DEV && !isLocalDebugHost) {
+        if (!debugEnabled) {
             delete window.recliveShowPredictions;
             delete window.recliveRestoreWarnings;
             delete window.reclivePredictionOverrideStatus;
@@ -808,13 +813,15 @@ export default function App({
             delete window.recliveDebugNowStatus;
             delete window.recliveDebugDashboardState;
         };
-    }, [closureOverrideEnabled, predictionOverrideEnabled, setClosureOverride, setDebugNowOverride, setPredictionOverride]);
+    }, [closureOverrideEnabled, debugEnabled, predictionOverrideEnabled, setClosureOverride, setDebugNowOverride, setPredictionOverride]);
 
     const manualRefresh = () => {
         if (isLoading) return;
         const now = Date.now();
         if (now - lastManualRefresh < MANUAL_REFRESH_COOLDOWN_MS) return;
         setLastManualRefresh(now);
+        manualRefreshFacilityRef.current = facility;
+        setLiveStatus("refreshing");
         prepareRefresh();
         bumpLiveRefresh();
     };
@@ -943,8 +950,10 @@ export default function App({
     const canShowDailyForecastCard = canShowClosedTomorrowForecast || canShowActiveDailyForecast;
     useEffect(() => {
         if (typeof window === "undefined") return;
-        const isLocalDebugHost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
-        if (!import.meta.env.DEV && !isLocalDebugHost) return;
+        if (!debugEnabled) {
+            delete window.recliveDebugDashboardState;
+            return;
+        }
 
         window.recliveDebugDashboardState = () => ({
             nowTs,
@@ -971,6 +980,7 @@ export default function App({
         canShowActiveDailyForecast,
         canShowClosedTomorrowForecast,
         canShowDailyForecastCard,
+        debugEnabled,
         forecastDays,
         forecastError,
         facilitySummary.status,
@@ -1068,6 +1078,7 @@ export default function App({
     const sectionBlockGap = {xs: 2, sm: 2.5} as const;
     return (
         <Box
+            component="main"
             onTouchStart={enablePullToRefresh ? handleTouchStart : undefined}
             onTouchMove={enablePullToRefresh ? handleTouchMove : undefined}
             onTouchEnd={enablePullToRefresh ? handleTouchEnd : undefined}
@@ -1080,6 +1091,7 @@ export default function App({
                 overscrollBehaviorY: enablePullToRefresh ? "contain" : undefined,
             }}
         >
+            <LiveStatusAnnouncer status={liveStatus}/>
             <Container
                 maxWidth="sm"
                 sx={{

@@ -1,9 +1,11 @@
-import {useEffect, useMemo, useState} from "react";
+import {useCallback, useEffect, useMemo, useState} from "react";
 import {
     Box,
     Button,
+    ClickAwayListener,
     Collapse,
-    Popover,
+    Paper,
+    Popper,
     Stack,
     ToggleButton,
     ToggleButtonGroup,
@@ -19,7 +21,7 @@ import {
     OCCUPANCY_MAIN_HEX,
     type OccupancyThresholds,
 } from "../shared/utils/styles";
-import {env} from "../lib/config/env";
+import {debugControlsEnabled} from "../app/debugOverrides";
 import {
     computeOccupancySummary,
     type OccupancySummary,
@@ -59,7 +61,6 @@ interface FloorMapConfig {
 
 const DEFAULT_DEBUG_COORDS = false;
 const GRID_PRECISION_MULTIPLIER = 4;
-const ENABLE_HEATMAP_DEBUG_HOOK = env.isDev;
 
 const FLOOR_MAPS: Record<FacilityId, Partial<Record<number, FloorMapConfig>>> = {
     1186: {
@@ -407,6 +408,23 @@ const getZoneBounds = (zone: ZoneConfig): {minX: number; maxX: number; minY: num
     maxY: Math.max(...zone.corners.map((point) => point.y)),
 });
 
+const MIN_INTERACTIVE_ZONE_SPAN_PERCENT = 7.25;
+
+const getInteractiveZoneCorners = (zone: ZoneConfig): readonly Point[] => {
+    const bounds = getZoneBounds(zone);
+    const centerX = (bounds.minX + bounds.maxX) / 2;
+    const centerY = (bounds.minY + bounds.maxY) / 2;
+    const width = bounds.maxX - bounds.minX;
+    const height = bounds.maxY - bounds.minY;
+    const scaleX = width > 0 ? Math.max(1, MIN_INTERACTIVE_ZONE_SPAN_PERCENT / width) : 1;
+    const scaleY = height > 0 ? Math.max(1, MIN_INTERACTIVE_ZONE_SPAN_PERCENT / height) : 1;
+
+    return zone.corners.map((point) => ({
+        x: Math.min(100, Math.max(0, centerX + (point.x - centerX) * scaleX)),
+        y: Math.min(100, Math.max(0, centerY + (point.y - centerY) * scaleY)),
+    }));
+};
+
 const getZoneOccupancyThresholds = (
     zone: ZoneConfig,
     locations: Location[],
@@ -439,13 +457,45 @@ interface ZoneSummaryModel {
     thresholds: OccupancyThresholds | null;
 }
 
-interface ZonePresentation {
+export interface HeatmapZonePresentation {
+    id: string;
+    label: string;
+    status: OccupancySummary["status"];
+    percent: number | null;
+    coverage: number | null;
+    count: number | null;
+}
+
+interface ZonePresentation extends HeatmapZonePresentation {
     ariaLabel: string;
     value: string;
     valueColor: string;
 }
 
 const HEATMAP_BASE_FILL = "rgba(100, 116, 139, 0.18)";
+const HEATMAP_ZONE_DIALOG_ID = "heatmap-zone-dialog";
+const HEATMAP_ZONE_DIALOG_TITLE_ID = "heatmap-zone-dialog-title";
+
+// eslint-disable-next-line react-refresh/only-export-components -- Task contract keeps the label formatter beside its component.
+export function zoneAccessibleLabel(zone: HeatmapZonePresentation): string {
+    if (zone.status === "closed") {
+        return `${zone.label}: CLOSED`;
+    }
+    if (
+        zone.status === "unknown"
+        || zone.status === "insufficient"
+        || zone.percent === null
+    ) {
+        return `${zone.label}: Live occupancy unavailable`;
+    }
+
+    const percentText = `${Math.round(zone.percent)}% full`;
+    if (zone.status !== "partial" || zone.coverage === null) {
+        return `${zone.label}: ${percentText}`;
+    }
+
+    return `${zone.label}: ${percentText}. Coverage: ${Math.round(zone.coverage * 100)}% of open capacity observed`;
+}
 
 const getOverlayFill = (percent: number, occupancyThresholds?: OccupancyThresholds | null): string => {
     const tone = getOccupancyTone(percent, occupancyThresholds);
@@ -591,9 +641,18 @@ const getZonePresentation = (
     fallbackThresholds?: OccupancyThresholds | null
 ): ZonePresentation => {
     const {summary, zone} = zoneSummary;
+    const presentation = {
+        id: zoneSummary.key,
+        label: zone.label,
+        status: summary.status,
+        percent: summary.percent,
+        coverage: summary.coverage,
+        count: summary.count,
+    } satisfies HeatmapZonePresentation;
     if (summary.status === "closed") {
         return {
-            ariaLabel: `${zone.label}: CLOSED`,
+            ...presentation,
+            ariaLabel: zoneAccessibleLabel(presentation),
             value: "CLOSED",
             valueColor: "error.main",
         };
@@ -605,7 +664,8 @@ const getZonePresentation = (
     );
     if (!isObserved || summary.percent === null) {
         return {
-            ariaLabel: `${zone.label}: Live occupancy unavailable`,
+            ...presentation,
+            ariaLabel: zoneAccessibleLabel(presentation),
             value: "Live occupancy unavailable",
             valueColor: "text.secondary",
         };
@@ -616,7 +676,8 @@ const getZonePresentation = (
         ? `Coverage: ${Math.round(summary.coverage * 100)}% of open capacity observed`
         : null;
     return {
-        ariaLabel: `${zone.label}: ${percentText}${coverageText ? `. ${coverageText}` : ""}`,
+        ...presentation,
+        ariaLabel: zoneAccessibleLabel(presentation),
         value: `${percentText}${coverageText ? `\n${coverageText}` : ""}`,
         valueColor: getOccupancyColor(
             summary.percent,
@@ -644,8 +705,7 @@ export default function FloorHeatMapCard({
     const [selectedFloor, setSelectedFloor] = useState<number>(floors[0] ?? 0);
     const [selectedZoneInfo, setSelectedZoneInfo] = useState<{
         key: string;
-        top: number;
-        left: number;
+        trigger: SVGPolygonElement;
     } | null>(null);
     const effectiveSelectedFloor = floors.includes(selectedFloor) ? selectedFloor : (floors[0] ?? 0);
     const neutralControlBg = isDark ? alpha(theme.palette.common.white, 0.06) : theme.palette.background.paper;
@@ -663,9 +723,13 @@ export default function FloorHeatMapCard({
     const activeControlShadow = isDark
         ? "0 1px 2px rgba(2, 6, 23, 0.42), 0 8px 18px rgba(2, 6, 23, 0.28)"
         : "0 1px 2px rgba(0, 0, 0, 0.08), 0 8px 18px rgba(0, 0, 0, 0.05)";
+    const debugEnabled = typeof window !== "undefined"
+        && debugControlsEnabled(import.meta.env, window.location.hostname);
 
     useEffect(() => {
-        if (!ENABLE_HEATMAP_DEBUG_HOOK || typeof window === "undefined") {
+        if (typeof window === "undefined") return;
+        if (!debugEnabled) {
+            delete window.heatmapdebug;
             return;
         }
 
@@ -683,7 +747,7 @@ export default function FloorHeatMapCard({
         return () => {
             delete window.heatmapdebug;
         };
-    }, []);
+    }, [debugEnabled]);
 
     const singleFloorData = useMemo(
         () => {
@@ -707,6 +771,25 @@ export default function FloorHeatMapCard({
     const selectedZonePresentation = selectedZoneSummary
         ? getZonePresentation(selectedZoneSummary, occupancyThresholds)
         : null;
+    const closeSelectedZone = useCallback(() => {
+        const trigger = selectedZoneInfo?.trigger;
+        setSelectedZoneInfo(null);
+        if (trigger) {
+            requestAnimationFrame(() => trigger.focus());
+        }
+    }, [selectedZoneInfo]);
+
+    useEffect(() => {
+        if (!selectedZoneInfo) return;
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === "Escape") {
+                closeSelectedZone();
+            }
+        };
+        document.addEventListener("keydown", handleKeyDown);
+        return () => document.removeEventListener("keydown", handleKeyDown);
+    }, [closeSelectedZone, selectedZoneInfo]);
 
     const renderFloorMap = (floor: number, data: FloorRenderData) => {
         if (!data.floorMap) {
@@ -865,17 +948,17 @@ export default function FloorHeatMapCard({
                     })}
 
                     {data.zoneSummaries.map((zoneSummary, zoneIndex) => {
-                        const polygonPoints = zoneSummary.zone.corners
+                        const polygonPoints = getInteractiveZoneCorners(zoneSummary.zone)
                             .map((point) => `${(point.x / 100) * data.gridCols},${(point.y / 100) * data.gridRows}`)
                             .join(" ");
                         const presentation = getZonePresentation(zoneSummary, occupancyThresholds);
-                        const openZonePopover = (top: number, left: number) => {
+                        const openZonePopover = (trigger: SVGPolygonElement) => {
                             setSelectedZoneInfo({
                                 key: zoneSummary.key,
-                                top,
-                                left,
+                                trigger,
                             });
                         };
+                        const isSelected = selectedZoneInfo?.key === zoneSummary.key;
 
                         return (
                             <polygon
@@ -884,26 +967,23 @@ export default function FloorHeatMapCard({
                                 fill="rgba(0, 0, 0, 0.001)"
                                 stroke="transparent"
                                 strokeWidth={0.2}
+                                vectorEffect="non-scaling-stroke"
                                 role="button"
                                 tabIndex={0}
                                 aria-label={presentation.ariaLabel}
+                                aria-haspopup="dialog"
+                                aria-expanded={isSelected}
+                                aria-controls={isSelected ? HEATMAP_ZONE_DIALOG_ID : undefined}
                                 style={{cursor: "pointer"}}
                                 onClick={(event) => {
                                     event.stopPropagation();
-                                    openZonePopover(
-                                        Math.round(event.clientY),
-                                        Math.round(event.clientX)
-                                    );
+                                    openZonePopover(event.currentTarget);
                                 }}
                                 onKeyDown={(event) => {
                                     if (event.key !== "Enter" && event.key !== " ") return;
                                     event.preventDefault();
                                     event.stopPropagation();
-                                    const bounds = event.currentTarget.getBoundingClientRect();
-                                    openZonePopover(
-                                        Math.round(bounds.top + bounds.height / 2),
-                                        Math.round(bounds.left + bounds.width / 2)
-                                    );
+                                    openZonePopover(event.currentTarget);
                                 }}
                             />
                         );
@@ -973,7 +1053,7 @@ export default function FloorHeatMapCard({
                         borderColor: expanded ? activeControlBorder : neutralControlBorder,
                         borderRadius: 999,
                         textTransform: "none",
-                        minHeight: 32,
+                        minHeight: 44,
                         px: 1.5,
                         fontWeight: 700,
                         color: "text.primary",
@@ -1022,7 +1102,7 @@ export default function FloorHeatMapCard({
                                     color: "text.secondary",
                                     bgcolor: neutralControlBg,
                                     textTransform: "none",
-                                    minHeight: 34,
+                                    minHeight: 44,
                                     px: 1.05,
                                     minWidth: 0,
                                     fontWeight: 700,
@@ -1054,38 +1134,58 @@ export default function FloorHeatMapCard({
                     {renderFloorMap(effectiveSelectedFloor, singleFloorData)}
                 </Stack>
             </Collapse>
-            <Popover
+            <Popper
                 open={Boolean(selectedZoneInfo && selectedZoneSummary && selectedZonePresentation)}
-                onClose={() => setSelectedZoneInfo(null)}
-                anchorReference="anchorPosition"
-                anchorPosition={selectedZoneInfo ? {top: selectedZoneInfo.top, left: selectedZoneInfo.left} : undefined}
-                transformOrigin={{vertical: "top", horizontal: "center"}}
-                PaperProps={{
-                    sx: {
-                        px: 1.15,
-                        py: 0.9,
-                        borderRadius: 2,
-                        border: "1px solid",
-                        borderColor: "rgba(15, 23, 42, 0.16)",
-                        boxShadow: "0 10px 24px rgba(0,0,0,0.12)",
-                        minWidth: 140,
-                    },
-                }}
+                anchorEl={selectedZoneInfo?.trigger as unknown as HTMLElement | undefined}
+                placement="bottom"
+                sx={{zIndex: theme.zIndex.tooltip}}
             >
-                <Typography variant="body2" sx={{fontWeight: 700, color: "text.primary"}}>
-                    {selectedZoneSummary?.zone.label}
-                </Typography>
-                <Typography
-                    variant="caption"
-                    sx={{
-                        fontWeight: 800,
-                        color: selectedZonePresentation?.valueColor ?? "text.secondary",
-                        whiteSpace: "pre-line",
-                    }}
-                >
-                    {selectedZonePresentation?.value}
-                </Typography>
-            </Popover>
+                <ClickAwayListener onClickAway={closeSelectedZone}>
+                    <Paper
+                        id={HEATMAP_ZONE_DIALOG_ID}
+                        role="dialog"
+                        aria-modal="false"
+                        aria-labelledby={HEATMAP_ZONE_DIALOG_TITLE_ID}
+                        sx={{
+                            px: 1.15,
+                            py: 0.9,
+                            borderRadius: 2,
+                            border: "1px solid",
+                            borderColor: "rgba(15, 23, 42, 0.16)",
+                            boxShadow: "0 10px 24px rgba(0,0,0,0.12)",
+                            minWidth: 140,
+                        }}
+                    >
+                        <Typography
+                            id={HEATMAP_ZONE_DIALOG_TITLE_ID}
+                            variant="body2"
+                            sx={{fontWeight: 700, color: "text.primary"}}
+                        >
+                            {selectedZonePresentation?.label} details
+                        </Typography>
+                        <Typography
+                            variant="caption"
+                            sx={{
+                                display: "block",
+                                fontWeight: 800,
+                                color: selectedZonePresentation?.valueColor ?? "text.secondary",
+                                whiteSpace: "pre-line",
+                            }}
+                        >
+                            {selectedZonePresentation?.value}
+                        </Typography>
+                        <Button
+                            type="button"
+                            size="small"
+                            aria-label={`Close ${selectedZonePresentation?.label ?? "zone"} details`}
+                            onClick={closeSelectedZone}
+                            sx={{mt: 0.4, textTransform: "none"}}
+                        >
+                            Close
+                        </Button>
+                    </Paper>
+                </ClickAwayListener>
+            </Popper>
         </ModernCard>
     );
 }

@@ -16,7 +16,7 @@ export default function AppFooter({isStandalonePwa, onOpenInstallGuide}: AppFoot
                         variant="text"
                         size="small"
                         onClick={onOpenInstallGuide}
-                        sx={{textTransform: "none", fontWeight: 700, fontSize: "0.78rem"}}
+                        sx={{textTransform: "none", fontWeight: 700, fontSize: "0.78rem", color: "text.secondary"}}
                     >
                         How to add RecLive to your home screen
                     </Button>
@@ -29,7 +29,8 @@ export default function AppFooter({isStandalonePwa, onOpenInstallGuide}: AppFoot
                         href="https://anton.grachev.us"
                         target="_blank"
                         rel={EXTERNAL_LINK_REL}
-                        underline="hover"
+                        underline="always"
+                        color="text.primary"
                         sx={{fontWeight: 700}}
                         onClick={(event) => {
                             event.preventDefault();
@@ -43,7 +44,8 @@ export default function AppFooter({isStandalonePwa, onOpenInstallGuide}: AppFoot
                         href="https://github.com/alexgabrichidze"
                         target="_blank"
                         rel={EXTERNAL_LINK_REL}
-                        underline="hover"
+                        underline="always"
+                        color="text.primary"
                         sx={{fontWeight: 700}}
                         onClick={(event) => {
                             event.preventDefault();

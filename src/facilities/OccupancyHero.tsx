@@ -89,6 +89,7 @@ export default function OccupancyHero({
                             <LinearProgress
                                 variant="determinate"
                                 value={barPercent}
+                                aria-label="Current occupancy percentage"
                                 sx={{
                                     flexGrow: 1,
                                     height: 8,
@@ -138,7 +139,8 @@ export default function OccupancyHero({
                                 href={facilityLink.href}
                                 target="_blank"
                                 rel={EXTERNAL_LINK_REL}
-                                underline="hover"
+                                underline="always"
+                                color="text.primary"
                                 onClick={(event) => {
                                     event.preventDefault();
                                     openExternalInBrowser(facilityLink.href);
@@ -156,7 +158,7 @@ export default function OccupancyHero({
                             onClick={onOpenAlerts}
                             sx={{
                                 minWidth: 72,
-                                minHeight: 40,
+                                minHeight: 44,
                                 px: 1.3,
                                 borderRadius: 999,
                                 textTransform: "none",

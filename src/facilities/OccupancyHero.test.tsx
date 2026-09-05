@@ -34,7 +34,8 @@ const expectTuple = (count: number, capacity: number, percent: number) => {
         new RegExp(`${count}\\s*\\/\\s*${capacity}`)
     );
     expect(screen.getByText(`${percent}% full`)).toBeInTheDocument();
-    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", String(percent));
+    expect(screen.getByRole("progressbar", {name: "Current occupancy percentage"}))
+        .toHaveAttribute("aria-valuenow", String(percent));
 };
 
 describe("OccupancyHero trusted tuple transitions", () => {

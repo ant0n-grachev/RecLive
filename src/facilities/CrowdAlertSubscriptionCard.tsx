@@ -23,6 +23,7 @@ import {
 } from "../lib/api/pushNotifications";
 import {FACILITY_SHARED_CONFIG, FACILITY_SHORT_NAMES} from "../lib/config/facilitySections";
 import type {OccupancySummary} from "../shared/occupancy/computeOccupancySummary";
+import {LiveStatusAnnouncer, type LiveStatus} from "./LiveStatusAnnouncer";
 
 export interface AlertSectionOption {
     key: string;
@@ -261,6 +262,7 @@ export default function CrowdAlertSubscriptionCard({
     const [isCancellingAll, setIsCancellingAll] = useState(false);
     const [cancelAllErrorText, setCancelAllErrorText] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState("");
+    const [liveStatus, setLiveStatus] = useState<LiveStatus>("idle");
     const [managementReloadVersion, setManagementReloadVersion] = useState(0);
 
     const listedSubscriptionRef = useRef<PushSubscriptionJSON | null>(null);
@@ -519,6 +521,7 @@ export default function CrowdAlertSubscriptionCard({
         const normalizedThreshold = Math.max(1, Math.min(thresholdUpperBound, Math.round(parsedThreshold)));
         setPushErrorText(null);
         setSuccessMessage("");
+        setLiveStatus("idle");
         setIsSubmitting(true);
 
         try {
@@ -560,6 +563,7 @@ export default function CrowdAlertSubscriptionCard({
                 setSuccessMessage(result.created
                     ? "Alert set successfully."
                     : "This alert was already active.");
+                setLiveStatus("alert-created");
 
                 if (!requiresAuthoritativeList) {
                     setManagementLoadStatus("success");
@@ -616,6 +620,7 @@ export default function CrowdAlertSubscriptionCard({
             return next;
         });
         setSuccessMessage("");
+        setLiveStatus("idle");
 
         try {
             await cancelPushRule(rule.id, subscriptionJson);
@@ -660,6 +665,7 @@ export default function CrowdAlertSubscriptionCard({
         setIsCancellingAll(true);
         setCancelAllErrorText(null);
         setSuccessMessage("");
+        setLiveStatus("idle");
 
         try {
             await cancelAllPushRules(subscriptionJson);
@@ -699,6 +705,8 @@ export default function CrowdAlertSubscriptionCard({
         alertsUnavailableText ? availabilityErrorId : null,
         creationErrorText ? subscribeErrorId : null,
     ].filter((value): value is string => Boolean(value)).join(" ") || undefined;
+    const isCancellationSuccess = successMessage === "Alert cancelled."
+        || successMessage === "All alerts cancelled.";
 
     return (
         <Stack spacing={1.25}>
@@ -992,24 +1000,17 @@ export default function CrowdAlertSubscriptionCard({
                 </Stack>
             </Box>
 
-            <Box
-                role="status"
-                aria-live="polite"
-                aria-atomic="true"
-                sx={{
-                    position: "absolute",
-                    width: 1,
-                    height: 1,
-                    p: 0,
-                    m: -1,
-                    overflow: "hidden",
-                    clip: "rect(0 0 0 0)",
-                    whiteSpace: "nowrap",
-                    border: 0,
-                }}
-            >
-                {successMessage}
-            </Box>
+            {successMessage && (
+                <Typography
+                    variant="caption"
+                    color="success.main"
+                    role={isCancellationSuccess ? "status" : undefined}
+                    aria-live={isCancellationSuccess ? "polite" : undefined}
+                >
+                    {successMessage}
+                </Typography>
+            )}
+            <LiveStatusAnnouncer status={liveStatus}/>
         </Stack>
     );
 }

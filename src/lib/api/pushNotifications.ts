@@ -143,15 +143,8 @@ export const isWebPushSupported = (): boolean => {
 };
 
 const ensureActiveServiceWorker = async (): Promise<ServiceWorkerRegistration> => {
-    const existing = await navigator.serviceWorker.getRegistration("/");
-    const registration = existing ?? await navigator.serviceWorker.register("/sw.js");
-
-    // Firefox can fail subscription when no active worker is ready yet.
-    if (!registration.active) {
-        await navigator.serviceWorker.ready;
-    }
-
-    return navigator.serviceWorker.ready;
+    const registration = await navigator.serviceWorker.ready;
+    return registration;
 };
 
 const getPushPublicKey = async (): Promise<string> => {

@@ -1472,7 +1472,7 @@ export default function ForecastWindowsCard({
                                                         borderRadius: 999,
                                                         px: 1.15,
                                                         minWidth: 88,
-                                                        minHeight: 34,
+                                                        minHeight: 44,
                                                         bgcolor: active ? style.bg : neutralButtonBg,
                                                         borderColor: active
                                                             ? alpha(style.color, 0.6)
@@ -1539,6 +1539,8 @@ export default function ForecastWindowsCard({
                                             textTransform: "none",
                                             fontWeight: 700,
                                             px: 1.2,
+                                            color: "text.secondary",
+                                            borderColor: "divider",
                                         }}
                                     >
                                         {trendExpanded ? "Hide hourly chart" : "Show hourly chart"}

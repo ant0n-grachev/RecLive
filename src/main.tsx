@@ -1,10 +1,12 @@
 import {useEffect, useMemo, useState} from "react";
 import ReactDOM from "react-dom/client";
 import {BrowserRouter} from "react-router-dom";
+import {useRegisterSW} from "virtual:pwa-register/react";
 import {ThemeProvider, CssBaseline} from "@mui/material";
 import type {PaletteMode} from "@mui/material/styles";
 import {createAppTheme} from "./app/theme";
 import AppRoutes from "./app/AppRoutes";
+import {PwaUpdatePrompt} from "./facilities/PwaUpdatePrompt";
 
 import "@fontsource/roboto/400.css";
 import "@fontsource/roboto/500.css";
@@ -25,8 +27,18 @@ const getStoredThemeMode = (): PaletteMode => {
 };
 
 export function Root() {
+    const {
+        needRefresh: [needRefresh, setNeedRefresh],
+        offlineReady: [offlineReady, setOfflineReady],
+        updateServiceWorker,
+    } = useRegisterSW({immediate: true});
     const [themeMode, setThemeMode] = useState<PaletteMode>(() => getStoredThemeMode());
     const theme = useMemo(() => createAppTheme(themeMode), [themeMode]);
+
+    const dismissPwaPrompt = () => {
+        setNeedRefresh(false);
+        setOfflineReady(false);
+    };
 
     useEffect(() => {
         if (typeof window === "undefined") return;
@@ -42,13 +54,15 @@ export function Root() {
             <CssBaseline/>
             <BrowserRouter>
                 <AppRoutes themeMode={themeMode} onThemeModeChange={setThemeMode}/>
+                <PwaUpdatePrompt
+                    needRefresh={needRefresh}
+                    offlineReady={offlineReady}
+                    updateServiceWorker={updateServiceWorker}
+                    onDismiss={dismissPwaPrompt}
+                />
             </BrowserRouter>
         </ThemeProvider>
     );
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(<Root/>);
-
-if (import.meta.env.PROD && "serviceWorker" in navigator) {
-    void navigator.serviceWorker.register("/sw.js");
-}

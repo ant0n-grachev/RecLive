@@ -155,6 +155,34 @@ const installPushSubscriptionRuntime = () => {
 };
 
 describe("shared request client ownership", () => {
+    it("consumes the ready worker without looking up or registering another worker", async () => {
+        const getSubscription = vi.fn().mockResolvedValue(null);
+        const registration = {
+            active: {},
+            pushManager: {getSubscription},
+        } as unknown as ServiceWorkerRegistration;
+        const getRegistration = vi.fn().mockResolvedValue(null);
+        const register = vi.fn().mockResolvedValue(registration);
+        const ready = vi.fn(() => Promise.resolve(registration));
+        const serviceWorker = {getRegistration, register};
+        Object.defineProperty(serviceWorker, "ready", {configurable: true, get: ready});
+        const restore = [
+            replaceProperty(window, "PushManager", class PushManager {}),
+            replaceProperty(window, "Notification", {}),
+            replaceProperty(navigator, "serviceWorker", serviceWorker),
+        ];
+
+        try {
+            await expect(pushNotifications.getExistingPushSubscription()).resolves.toBeNull();
+            expect(ready).toHaveBeenCalledOnce();
+            expect(getRegistration).not.toHaveBeenCalled();
+            expect(register).not.toHaveBeenCalled();
+            expect(getSubscription).toHaveBeenCalledOnce();
+        } finally {
+            restore.reverse().forEach((callback) => callback());
+        }
+    });
+
     it("retries the public-key GET up to three attempts and validates the key", async () => {
         const runtime = installPushSubscriptionRuntime();
         let requests = 0;

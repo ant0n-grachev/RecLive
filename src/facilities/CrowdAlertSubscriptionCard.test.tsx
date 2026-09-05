@@ -265,7 +265,8 @@ describe("CrowdAlertSubscriptionCard server-backed alert management", () => {
             sectionKey: "overall",
             threshold: 40,
         });
-        await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Alert set successfully."));
+        await waitFor(() => expect(screen.getByText("Alert set successfully.")).toBeVisible());
+        expect(screen.getByRole("status")).toHaveTextContent("Occupancy alert created.");
         expect(screen.getByRole("listitem", {name: /Alert for Nick Entire Facility at 40%/i})).toBeVisible();
     });
 
@@ -515,7 +516,7 @@ describe("CrowdAlertSubscriptionCard server-backed alert management", () => {
         const list = await screen.findByRole("list", {name: "Active alerts"});
         await waitFor(() => expect(within(list).getAllByRole("listitem")).toHaveLength(2));
         expect(screen.queryByText("Could not load alerts right now.")).not.toBeInTheDocument();
-        expect(screen.getByRole("status")).toHaveTextContent("Alert set successfully.");
+        expect(screen.getByText("Alert set successfully.")).toBeVisible();
     });
 
     it("keeps incomplete-list status and safe returned data when the post-subscribe list retry fails", async () => {
@@ -538,7 +539,7 @@ describe("CrowdAlertSubscriptionCard server-backed alert management", () => {
         expect(screen.queryByText("No active alerts for this browser.")).not.toBeInTheDocument();
         expect(screen.queryByText("Could not save this alert right now.")).not.toBeInTheDocument();
         expect(screen.queryByText(/private-retry-list-response/i)).not.toBeInTheDocument();
-        expect(screen.getByRole("status")).toHaveTextContent("Alert set successfully.");
+        expect(screen.getByText("Alert set successfully.")).toBeVisible();
     });
 
     it("treats created true as success, upserts the returned rule, and writes a form default only after success", async () => {
@@ -552,7 +553,8 @@ describe("CrowdAlertSubscriptionCard server-backed alert management", () => {
         expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
 
         subscribe.resolve({created: true, rule: managedRule});
-        await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Alert set successfully."));
+        await waitFor(() => expect(screen.getByText("Alert set successfully.")).toBeVisible());
+        expect(screen.getByRole("status")).toHaveTextContent("Occupancy alert created.");
         expect(screen.getByRole("listitem", {name: /Alert for Nick Entire Facility at 40%/i})).toBeVisible();
         expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null")).toEqual({
             "1186": {sectionKey: "overall", threshold: 40},
@@ -566,7 +568,8 @@ describe("CrowdAlertSubscriptionCard server-backed alert management", () => {
 
         fireEvent.click(screen.getByRole("button", {name: "Set alert"}));
 
-        await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("This alert was already active."));
+        await waitFor(() => expect(screen.getByText("This alert was already active.")).toBeVisible());
+        expect(screen.getByRole("status")).toHaveTextContent("Occupancy alert created.");
         expect(pushApi.subscribePushRule).toHaveBeenCalledTimes(1);
         expect(pushApi.listPushRules).not.toHaveBeenCalled();
         expect(screen.getByRole("listitem", {name: /Alert for Nick Entire Facility at 40%/i})).toBeVisible();
@@ -632,6 +635,7 @@ describe("CrowdAlertSubscriptionCard server-backed alert management", () => {
             name: /Alert for Nick Entire Facility at 40%/i,
         })).not.toBeInTheDocument());
         expect(screen.getByRole("listitem", {name: /Alert for Bakke Area: legacy cardio at 25%/i})).toBeVisible();
+        expect(screen.getByText("Alert cancelled.")).toBeVisible();
         expect(screen.getByRole("status")).toHaveTextContent("Alert cancelled.");
         expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null")).toEqual({
             "1656": {sectionKey: "fitness floors", threshold: 30},
@@ -684,6 +688,7 @@ describe("CrowdAlertSubscriptionCard server-backed alert management", () => {
         cancellation.resolve(2);
         await waitFor(() => expect(screen.queryByRole("listitem")).not.toBeInTheDocument());
         expect(screen.getByText("No active alerts for this browser.")).toBeVisible();
+        expect(screen.getByText("All alerts cancelled.")).toBeVisible();
         expect(screen.getByRole("status")).toHaveTextContent("All alerts cancelled.");
         expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null")).toEqual({
             "1656": {sectionKey: "fitness floors", threshold: 30},
@@ -764,7 +769,7 @@ describe("CrowdAlertSubscriptionCard server-backed alert management", () => {
         expect(pushApi.cancelPushRule).toHaveBeenCalledTimes(1);
 
         subscribe.resolve({created: true, rule: managedRule});
-        await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Alert set successfully."));
+        await waitFor(() => expect(screen.getByText("Alert set successfully.")).toBeVisible());
     });
 
     it("prevents subscribe and cancel-all from overlapping in either direction", async () => {
@@ -985,7 +990,7 @@ describe("CrowdAlertSubscriptionCard server-backed alert management", () => {
 
         fireEvent.click(screen.getByRole("button", {name: "Set alert"}));
 
-        await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Alert set successfully."));
+        await waitFor(() => expect(screen.getByText("Alert set successfully.")).toBeVisible());
         expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null")).toEqual({
             "1186": {sectionKey: "overall", threshold: 40},
             "1656": {sectionKey: "fitness floors", threshold: 30},
@@ -1043,7 +1048,7 @@ describe("CrowdAlertSubscriptionCard server-backed alert management", () => {
         await waitFor(() => expect(pushApi.subscribePushRule).toHaveBeenCalledTimes(1));
         expect(screen.getByRole("button", {name: "Setting alert"})).toBeDisabled();
         subscribe.resolve({created: true, rule: managedRule});
-        await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Alert set successfully."));
+        await waitFor(() => expect(screen.getByText("Alert set successfully.")).toBeVisible());
     });
 
     it("keeps live and partial sections selectable, reports partial coverage, and blocks unknown states", () => {
