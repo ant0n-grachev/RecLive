@@ -27,6 +27,11 @@ const location = (
 afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+});
+
+beforeEach(() => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
 });
 
 describe("FloorHeatMapCard", () => {
