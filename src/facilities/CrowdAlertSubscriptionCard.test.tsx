@@ -804,6 +804,73 @@ describe("CrowdAlertSubscriptionCard server-backed alert management", () => {
         await waitFor(() => expect(screen.queryByRole("listitem")).not.toBeInTheDocument());
     });
 
+    it("normalizes the captured draft only when subscription succeeds", async () => {
+        const subscribe = deferred<{created: boolean; rule: PushRule}>();
+        pushApi.subscribePushRule.mockReturnValue(subscribe.promise);
+        renderOpenCard();
+        await screen.findByText("No active browser subscription was found.");
+        const input = screen.getByLabelText("Alert threshold (%)");
+        fireEvent.change(input, {target: {value: "040"}});
+        fireEvent.click(screen.getByRole("button", {name: "Set alert"}));
+        await waitFor(() => expect(pushApi.subscribePushRule).toHaveBeenCalledTimes(1));
+        expect(input).toHaveProperty("value", "040");
+        subscribe.resolve({created: true, rule: managedRule});
+        await screen.findByText("Alert set successfully.");
+        await waitFor(() => expect(input).toHaveProperty("value", "40"));
+    });
+
+    it("leaves an unnormalized draft unchanged after subscription failure", async () => {
+        const subscribe = deferred<{created: boolean; rule: PushRule}>();
+        pushApi.subscribePushRule.mockReturnValue(subscribe.promise);
+        renderOpenCard();
+        await screen.findByText("No active browser subscription was found.");
+        const input = screen.getByLabelText("Alert threshold (%)");
+        fireEvent.change(input, {target: {value: "040"}});
+        fireEvent.click(screen.getByRole("button", {name: "Set alert"}));
+        await waitFor(() => expect(pushApi.subscribePushRule).toHaveBeenCalledTimes(1));
+        subscribe.reject(new Error("fixture failure"));
+        await screen.findByText("Could not save this alert right now.");
+        expect(input).toHaveProperty("value", "040");
+    });
+
+    it("normalizes repeated successful submissions with the same captured values", async () => {
+        const first = deferred<{created: boolean; rule: PushRule}>();
+        const second = deferred<{created: boolean; rule: PushRule}>();
+        pushApi.subscribePushRule.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+        renderOpenCard();
+        await screen.findByText("No active browser subscription was found.");
+        const input = screen.getByLabelText("Alert threshold (%)");
+        for (const [index, operation] of [first, second].entries()) {
+            fireEvent.change(input, {target: {value: "040"}});
+            fireEvent.click(screen.getByRole("button", {name: "Set alert"}));
+            await waitFor(() => expect(pushApi.subscribePushRule).toHaveBeenCalledTimes(index + 1));
+            expect(input).toHaveProperty("value", "040");
+            operation.resolve({created: index === 0, rule: managedRule});
+            await waitFor(() => expect(input).toHaveProperty("value", "40"));
+            await waitFor(() => expect(screen.getByRole("button", {name: "Set alert"})).toBeEnabled());
+        }
+        expect(pushApi.ensurePushSubscription).toHaveBeenCalledTimes(1);
+        expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    });
+
+    it("does not normalize a newly selected section when the captured section succeeds", async () => {
+        const subscribe = deferred<{created: boolean; rule: PushRule}>();
+        pushApi.subscribePushRule.mockReturnValue(subscribe.promise);
+        renderOpenCard();
+        await screen.findByText("No active browser subscription was found.");
+        fireEvent.change(screen.getByLabelText("Alert threshold (%)"), {target: {value: "040"}});
+        fireEvent.click(screen.getByRole("button", {name: "Set alert"}));
+        await waitFor(() => expect(pushApi.subscribePushRule).toHaveBeenCalledTimes(1));
+        fireEvent.mouseDown(screen.getByRole("combobox", {name: "Gym area"}));
+        fireEvent.click(screen.getByRole("option", {name: "Fitness Floors (Coverage: 60%)"}));
+        fireEvent.change(screen.getByLabelText("Alert threshold (%)"), {target: {value: "031"}});
+        subscribe.resolve({created: true, rule: managedRule});
+        await screen.findByText("Alert set successfully.");
+        expect(screen.getByRole("combobox", {name: "Gym area"})).toHaveTextContent("Fitness Floors");
+        expect(screen.getByLabelText("Alert threshold (%)")).toHaveProperty("value", "031");
+        expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!)).toEqual({1186: {sectionKey: "overall", threshold: 40}});
+    });
+
     it("does not let a stale subscribe completion overwrite a newly opened owner's form default", async () => {
         const staleSubscribe = deferred<{created: boolean; rule: PushRule}>();
         const newestRule: PushRule = {
@@ -831,6 +898,7 @@ describe("CrowdAlertSubscriptionCard server-backed alert management", () => {
         rerender(
             <CrowdAlertSubscriptionCard facility={1186} isOpen onClose={vi.fn()} sections={defaultSections()} />
         );
+        fireEvent.change(screen.getByLabelText("Alert threshold (%)"), {target: {value: "031"}});
         await act(async () => {
             await Promise.resolve();
             await Promise.resolve();
@@ -841,6 +909,7 @@ describe("CrowdAlertSubscriptionCard server-backed alert management", () => {
         await waitFor(() => expect(pushApi.getExistingPushSubscription).toHaveBeenCalledTimes(2));
         expect(await screen.findByRole("listitem", {name: /Alert for Nick Fitness Floors at 30%/i})).toBeVisible();
         await waitFor(() => expect(screen.getByRole("button", {name: "Set alert"})).toBeEnabled());
+        expect(screen.getByLabelText("Alert threshold (%)")).toHaveProperty("value", "031");
         expect(screen.getByRole("listitem", {name: /Alert for Nick Fitness Floors at 30%/i})).toBeVisible();
         expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null")).toEqual({
             "1186": {sectionKey: "fitness floors", threshold: 30},

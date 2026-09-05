@@ -2,7 +2,7 @@ import {Suspense, lazy} from "react";
 import {Box, CircularProgress, Dialog, DialogContent, IconButton, SwipeableDrawer, Typography} from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import type {FacilityId} from "../../lib/types/facility";
-import type {AlertSectionOption} from "../../facilities/CrowdAlertSubscriptionCard";
+import type {AlertSectionOption} from "../../features/alerts/alertTypes";
 
 const CrowdAlertSubscriptionCard = lazy(() => import("../../facilities/CrowdAlertSubscriptionCard"));
 

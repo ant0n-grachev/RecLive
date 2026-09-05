@@ -9,8 +9,7 @@ import type {OccupancyThresholds} from "../../shared/utils/styles";
 import type {FacilityOpenStatus, FacilityOpenWindow} from "../../shared/utils/facilityScheduleStatus";
 import type {FacilityDashboardConfig, SectionConfig} from "../../facilities/constants";
 import type {LiveStatus} from "../../facilities/LiveStatusAnnouncer";
-// Temporary type-only seam until Task 5 creates the canonical alertTypes module.
-import type {AlertSectionOption} from "../../facilities/CrowdAlertSubscriptionCard";
+import type {AlertSectionOption} from "../alerts/alertTypes";
 
 export interface ForecastDaySelection {
     key: string | null;

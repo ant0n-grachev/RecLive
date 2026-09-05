@@ -1,5 +1,5 @@
 import type {ForecastDay, ForecastHour} from "../../lib/types/forecast";
-import type {AlertSectionOption} from "../../facilities/CrowdAlertSubscriptionCard";
+import type {AlertSectionOption} from "../alerts/alertTypes";
 import type {ForecastHourBounds} from "../../app/hooks/useForecastData";
 import type {DashboardSelectorInput, DashboardViewModel} from "./dashboardTypes";
 import {FACILITY_DASHBOARD_CONFIG, FACILITY_KNOWN_IDS, isSectionRow} from "../../facilities/constants";
