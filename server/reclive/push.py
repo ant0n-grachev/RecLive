@@ -30,7 +30,7 @@ from pydantic import (
     model_validator,
 )
 from pywebpush import WebPushException, webpush
-from server.forecast_shared import normalize_section_key
+from server.reclive.sections import normalize_section_key
 from server.reclive.occupancy_repository import (
     RepositoryFactory,
     SnapshotRepository,

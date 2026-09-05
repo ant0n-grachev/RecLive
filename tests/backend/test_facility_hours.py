@@ -18,7 +18,8 @@ from zoneinfo import ZoneInfo
 import pytest
 from fastapi.testclient import TestClient
 
-import facility_hours_fetch
+import facility_hours_fetch as schedule_command
+from server.reclive import facility_schedule as facility_hours_fetch
 import facility_schedule
 import forecast_api
 
@@ -1452,7 +1453,7 @@ def test_main_validates_environment_before_loading_or_collecting(
 ) -> None:
     events: list[str] = []
     monkeypatch.setattr(
-        facility_hours_fetch,
+        schedule_command,
         "load_project_dotenv",
         lambda: events.append("dotenv"),
     )
@@ -1462,7 +1463,7 @@ def test_main_validates_environment_before_loading_or_collecting(
         raise RuntimeError("environment rejected")
 
     monkeypatch.setattr(
-        facility_hours_fetch,
+        schedule_command,
         "validate_production_environment",
         reject_environment,
     )
@@ -1484,7 +1485,7 @@ def test_main_validates_environment_before_loading_or_collecting(
     )
 
     with pytest.raises(RuntimeError, match="environment rejected"):
-        facility_hours_fetch.main()
+        schedule_command.main()
 
     assert events == ["dotenv", "validate"]
 
@@ -1534,9 +1535,9 @@ def test_main_failure_output_contains_only_safe_category(
     marker = "private-cli-provider-marker"
     target = tmp_path / "private-output-marker.json"
     monkeypatch.setattr(sys, "argv", ["facility_hours_fetch.py", "--output", str(target)])
-    monkeypatch.setattr(facility_hours_fetch, "load_project_dotenv", lambda: None)
+    monkeypatch.setattr(schedule_command, "load_project_dotenv", lambda: None)
     monkeypatch.setattr(
-        facility_hours_fetch,
+        schedule_command,
         "validate_production_environment",
         lambda *_args, **_kwargs: None,
     )
@@ -1557,7 +1558,7 @@ def test_main_failure_output_contains_only_safe_category(
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError(marker)),
     )
 
-    assert facility_hours_fetch.main() == 1
+    assert schedule_command.main() == 1
     captured = capsys.readouterr()
     rendered = captured.out + captured.err
     assert "schema_invalid" in rendered
@@ -1575,9 +1576,9 @@ def test_main_publishes_only_sanitized_status_counts(
     mark_facility_stale(payload["facilities"][0])
     payload["okCount"] = 1
     monkeypatch.setattr(sys, "argv", ["facility_hours_fetch.py", "--output", str(target)])
-    monkeypatch.setattr(facility_hours_fetch, "load_project_dotenv", lambda: None)
+    monkeypatch.setattr(schedule_command, "load_project_dotenv", lambda: None)
     monkeypatch.setattr(
-        facility_hours_fetch,
+        schedule_command,
         "validate_production_environment",
         lambda *_args, **_kwargs: None,
     )
@@ -1587,7 +1588,7 @@ def test_main_publishes_only_sanitized_status_counts(
         lambda *_args, **_kwargs: payload,
     )
 
-    assert facility_hours_fetch.main() == 1
+    assert schedule_command.main() == 1
     captured = capsys.readouterr()
     assert captured.err == ""
     assert captured.out == (
@@ -1604,9 +1605,9 @@ def test_main_atomic_failure_reports_only_io_error_category(
     marker = "private-write-marker"
     target = tmp_path / "private-output-marker.json"
     monkeypatch.setattr(sys, "argv", ["facility_hours_fetch.py", "--output", str(target)])
-    monkeypatch.setattr(facility_hours_fetch, "load_project_dotenv", lambda: None)
+    monkeypatch.setattr(schedule_command, "load_project_dotenv", lambda: None)
     monkeypatch.setattr(
-        facility_hours_fetch,
+        schedule_command,
         "validate_production_environment",
         lambda *_args, **_kwargs: None,
     )
@@ -1629,7 +1630,7 @@ def test_main_atomic_failure_reports_only_io_error_category(
 
     monkeypatch.setattr(facility_hours_fetch, "atomic_write_json", write_failure)
 
-    assert facility_hours_fetch.main() == 1
+    assert schedule_command.main() == 1
     captured = capsys.readouterr()
     rendered = captured.out + captured.err
     assert rendered == "facility_hours_fetch: failed category=io_error\n"
@@ -2243,11 +2244,12 @@ def test_regex_parser_imports_and_parses_when_beautiful_soup_is_missing(
             raise ModuleNotFoundError("No module named 'bs4'", name="bs4")
         return original_import(name, globals, locals, fromlist, level)
 
-    previous_module = sys.modules.pop("facility_hours_fetch", None)
+    previous_module = sys.modules.pop("server.reclive.facility_schedule", None)
+    previous_bare = sys.modules.pop("reclive.facility_schedule", None)
     monkeypatch.setattr(builtins, "__import__", import_without_bs4)
     try:
         try:
-            facility_hours_fetch = importlib.import_module("facility_hours_fetch")
+            facility_hours_fetch = importlib.import_module("server.reclive.facility_schedule")
         except ModuleNotFoundError as exc:
             pytest.fail(f"optional Beautiful Soup import escaped: {exc.name}")
 
@@ -2263,6 +2265,11 @@ def test_regex_parser_imports_and_parses_when_beautiful_soup_is_missing(
             "hours": "6:00 am - 10:00 pm",
         }
     finally:
-        sys.modules.pop("facility_hours_fetch", None)
+        sys.modules.pop("server.reclive.facility_schedule", None)
+        sys.modules.pop("reclive.facility_schedule", None)
         if previous_module is not None:
-            sys.modules["facility_hours_fetch"] = previous_module
+            sys.modules["server.reclive.facility_schedule"] = previous_module
+            import server.reclive
+            server.reclive.facility_schedule = previous_module
+        if previous_bare is not None:
+            sys.modules["reclive.facility_schedule"] = previous_bare

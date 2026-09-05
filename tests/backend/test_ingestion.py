@@ -339,8 +339,8 @@ def test_fetch_live_raises_http_then_decodes_once_with_bounded_timeouts(
         calls.append((url, timeout))
         return Response()
 
-    monkeypatch.setattr(gym_fetch, "LIVE_COUNTS_URL", "https://controlled.invalid/live")
-    monkeypatch.setattr(gym_fetch.requests, "get", fake_get)
+    monkeypatch.setattr(ingestion_module, "LIVE_COUNTS_URL", "https://controlled.invalid/live")
+    monkeypatch.setattr(ingestion_module.requests, "get", fake_get)
 
     assert gym_fetch.fetch_live() is payload
     assert calls == [("https://controlled.invalid/live", (5, 20))]
@@ -366,7 +366,7 @@ def test_db_connect_explicitly_disables_autocommit(monkeypatch) -> None:
         observed.append(settings["autocommit"])
         return connection
 
-    monkeypatch.setattr(gym_fetch.pymysql, "connect", fake_connect)
+    monkeypatch.setattr(ingestion_module.pymysql, "connect", fake_connect)
 
     assert gym_fetch.db_connect() is connection
     assert observed == [False]
@@ -383,6 +383,8 @@ def test_direct_script_entry_reaches_injected_runner_without_sensitive_output() 
         import pymysql
         import requests
         import reclive.ingestion as ingestion
+        import env_loader
+        env_loader._DOTENV_STATE.loaded = True
 
         calls = []
         fake_connection = object()

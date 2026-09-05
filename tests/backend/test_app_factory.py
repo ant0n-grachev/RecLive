@@ -659,3 +659,60 @@ def test_snapshot_dependency_is_canonical_and_closes_its_connection():
     assert get_snapshot_repository in {
         item.call for item in route.dependant.dependencies
     }
+
+
+@pytest.mark.parametrize("raw_environment", ["", " \t "])
+def test_captured_api_settings_reject_blank_environment_before_startup_work(
+    raw_environment, monkeypatch
+):
+    from server.reclive import db, sections
+    from server.reclive.settings import build_settings_from_environment
+
+    calls = []
+
+    def unexpected_work(*args, **kwargs):
+        calls.append("work")
+        raise AssertionError("blank environment reached startup work")
+
+    monkeypatch.setattr(
+        sections, "ensure_runtime_facility_configuration", unexpected_work
+    )
+    monkeypatch.setattr(db, "open_db_connection", unexpected_work)
+    monkeypatch.setattr(push, "evaluator_loop", unexpected_work)
+    settings = build_settings_from_environment({"APP_ENV": raw_environment})
+    app = create_app(settings)
+
+    async def run():
+        async with app.router.lifespan_context(app):
+            pytest.fail("blank environment reached completed startup")
+
+    with pytest.raises(RuntimeError) as error:
+        asyncio.run(run())
+    assert str(error.value) == "APP_ENV must be development, test, or production"
+    assert calls == []
+    assert app.state.runtime.task is None
+    assert app.state.runtime.configuration_loaded is False
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        (None, "development"),
+        ("development", "development"),
+        (" DeVelopMent ", "development"),
+        (" TEST ", "test"),
+        (" production ", "production"),
+    ],
+)
+def test_api_environment_capture_keeps_missing_default_and_valid_modes(raw, expected):
+    from server.reclive.settings import app_environment, build_settings_from_environment
+
+    values = {"SCHEDULE_MAX_AGE_SECONDS": "120", "FORECAST_API_PORT": " 8001 "}
+    if raw is not None:
+        values["APP_ENV"] = raw
+    settings = build_settings_from_environment(values)
+    assert settings.environment == expected
+    assert settings.schedule_stale_after_seconds == 120
+    assert settings.port == 8001
+    with runtime_scope(Runtime(settings)):
+        assert app_environment() == expected

@@ -66,6 +66,10 @@ class Settings:
     capacities: Mapping[int, int] | None = None
     facility_names: Mapping[int, str] | None = None
     section_ids: Mapping[int, Mapping[str, tuple[int, ...]]] | None = None
+    live_counts_url: str | None = None
+    recwell_site_base: str = "https://recwell.wisc.edu"
+    recwell_nick_url: str = "https://recwell.wisc.edu/locations/nick/"
+    recwell_bakke_url: str = "https://recwell.wisc.edu/locations/bakke/"
 
     def __post_init__(self):
         object.__setattr__(self, "cors_origins", tuple(self.cors_origins))
@@ -95,6 +99,45 @@ class Settings:
         return build_settings_from_environment(os.environ, legacy=legacy)
 
     @classmethod
+    def for_commands(cls, environment: Mapping[str, str] | None = None):
+        """Capture collector inputs without parsing or initializing API services."""
+        from server.facility_capacities import _resolve_path
+
+        values = dict(os.environ if environment is None else environment)
+
+        def read(name, default=None):
+            raw = values.get(name)
+            return str(raw).strip() if raw is not None and str(raw).strip() else default
+
+        raw_capacity = read(
+            "FACILITY_CAPACITIES_JSON_PATH",
+            str(SERVER_ROOT.parent / "shared/facility_capacities.json"),
+        )
+        return cls(
+            environment=str(values.get("APP_ENV", "development")).strip().lower(),
+            environment_values=values,
+            capacity_config_path=_resolve_path(raw_capacity),
+            facility_hours_json_path=resolve_command_path(
+                read("FACILITY_HOURS_JSON_PATH", "facility_hours.json")
+            ),
+            live_counts_url=read("LIVE_COUNTS_URL"),
+            recwell_site_base=read("RECWELL_SITE_BASE", "https://recwell.wisc.edu"),
+            recwell_nick_url=read(
+                "RECWELL_NICK_URL", "https://recwell.wisc.edu/locations/nick/"
+            ),
+            recwell_bakke_url=read(
+                "RECWELL_BAKKE_URL", "https://recwell.wisc.edu/locations/bakke/"
+            ),
+            database=DatabaseSettings(
+                host=read("GYM_DB_HOST"),
+                port=read("GYM_DB_PORT"),
+                user=read("GYM_DB_USER"),
+                password=read("GYM_DB_PASSWORD"),
+                name=read("GYM_DB_NAME"),
+            ),
+        )
+
+    @classmethod
     def for_test(cls, *, forecast_json_path: str | None = None):
         return cls(
             forecast_json_path=forecast_json_path or str(SERVER_ROOT / "forecast.json"),
@@ -112,6 +155,42 @@ class Settings:
             facility_names={},
             section_ids={},
         )
+
+
+def resolve_command_path(raw: str) -> str:
+    if os.path.isabs(raw):
+        return raw
+    normalized = raw.replace("\\", "/")
+    if normalized.startswith("server/"):
+        normalized = normalized.split("/", 1)[1]
+    return os.path.abspath(os.path.join(SERVER_ROOT, normalized))
+
+
+def validate_command_environment(
+    settings: Settings, required_names: Sequence[str]
+) -> None:
+    """Validate effective command fields, including explicit immutable overrides."""
+    from server import env_loader
+
+    values = dict(settings.environment_values)
+    values.update(
+        {
+            "APP_ENV": settings.environment,
+            "LIVE_COUNTS_URL": settings.live_counts_url,
+            "FACILITY_HOURS_JSON_PATH": settings.facility_hours_json_path,
+            "GYM_DB_HOST": settings.database.host,
+            "GYM_DB_PORT": settings.database.port,
+            "GYM_DB_USER": settings.database.user,
+            "GYM_DB_PASSWORD": settings.database.password,
+            "GYM_DB_NAME": settings.database.name,
+        }
+    )
+    env_loader.validate_production_environment(
+        {name: "" if value is None else str(value) for name, value in values.items()},
+        required_names=required_names,
+        cors_name=None,
+        admin_enabled=False,
+    )
 
 
 def build_settings_from_environment(
@@ -231,8 +310,12 @@ def build_settings_from_environment(
             timezone=db_timezone,
         ),
         push=push,
-        environment=read("APP_ENV", "development").lower(),
+        environment=str(values.get("APP_ENV", "development")).strip().lower(),
         environment_values=values,
+        live_counts_url=read("LIVE_COUNTS_URL"),
+        recwell_site_base=read("RECWELL_SITE_BASE", Settings.recwell_site_base),
+        recwell_nick_url=read("RECWELL_NICK_URL", Settings.recwell_nick_url),
+        recwell_bakke_url=read("RECWELL_BAKKE_URL", Settings.recwell_bakke_url),
     )
 
 

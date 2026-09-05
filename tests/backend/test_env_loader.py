@@ -414,12 +414,12 @@ def test_gym_fetch_validates_before_loading_capacity_data(
     monkeypatch.delenv("LIVE_COUNTS_URL", raising=False)
     monkeypatch.setattr(gym_fetch, "load_project_dotenv", lambda: None)
     monkeypatch.setattr(
-        gym_fetch,
+        importlib.import_module("server.reclive.ingestion"),
         "load_facility_capacities",
         lambda: data_calls.append("capacities") or {},
     )
     monkeypatch.setattr(
-        gym_fetch,
+        importlib.import_module("server.reclive.ingestion"),
         "run_ingestion",
         lambda *_args: data_calls.append("ingestion")
         or SimpleNamespace(status="succeeded"),
@@ -439,7 +439,7 @@ def test_gym_fetch_rejects_unknown_environment_before_loading_capacity_data(
     monkeypatch.setenv("APP_ENV", "private-environment-marker")
     monkeypatch.setattr(gym_fetch, "load_project_dotenv", lambda: None)
     monkeypatch.setattr(
-        gym_fetch,
+        importlib.import_module("server.reclive.ingestion"),
         "load_facility_capacities",
         lambda: data_calls.append("capacities") or {},
     )
@@ -624,12 +624,12 @@ def test_facility_hours_fetch_validates_before_collecting_or_writing(
     monkeypatch.setattr(facility_hours_fetch, "load_project_dotenv", lambda: None, raising=False)
     monkeypatch.setattr(sys, "argv", ["facility_hours_fetch.py"])
     monkeypatch.setattr(
-        facility_hours_fetch,
+        importlib.import_module("server.reclive.facility_schedule"),
         "collect_facility_hours",
         lambda **_kwargs: data_calls.append("collect") or {"status": "ok"},
     )
     monkeypatch.setattr(
-        facility_hours_fetch,
+        importlib.import_module("server.reclive.facility_schedule"),
         "write_json",
         lambda *_args: data_calls.append("write"),
     )

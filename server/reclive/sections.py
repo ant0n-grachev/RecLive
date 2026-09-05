@@ -3,9 +3,12 @@ from __future__ import annotations
 import sys as _import_sys
 import json
 from typing import Any, Dict, List, Optional, Tuple
-from server.forecast_shared import normalize_section_key
 from server.facility_capacities import load_facility_capacities
 from server.reclive.runtime import current_runtime
+
+
+def normalize_section_key(value: str) -> str:
+    return " ".join(str(value or "").strip().lower().split())
 
 
 def load_facility_sections() -> Tuple[Dict[int, str], Dict[int, Dict[str, List[int]]]]:

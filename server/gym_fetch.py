@@ -1,93 +1,41 @@
-from __future__ import annotations
+"""Executable compatibility entry point for live-count ingestion."""
 
-import os
 import sys
-from datetime import datetime, timezone
-from typing import Any
 
-import pymysql
-import requests
+if not __package__:
+    import reclive  # noqa: F401 - initialize the canonical parent for direct scripts.
 
-import env_loader
-from env_loader import load_project_dotenv
-from facility_capacities import load_facility_capacities
-from reclive.ingestion import failed_result, finish_ingestion_result, run_ingestion
-
-
-def require_env(name: str) -> str:
-    value = os.getenv(name)
-    if value is None:
-        raise RuntimeError(f"Missing required env var: {name}")
-
-    normalized = value.strip()
-    if not normalized:
-        raise RuntimeError(f"Missing required env var: {name}")
-    return normalized
-
-
-def require_int_env(name: str) -> int:
-    raw = require_env(name)
-    try:
-        return int(raw)
-    except ValueError as exc:
-        raise RuntimeError(f"Invalid integer for env var {name}") from exc
-
-
-LIVE_COUNTS_URL: str | None = None
-
-
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def db_connect() -> Any:
-    return pymysql.connect(
-        host=require_env("GYM_DB_HOST"),
-        port=require_int_env("GYM_DB_PORT"),
-        user=require_env("GYM_DB_USER"),
-        password=require_env("GYM_DB_PASSWORD"),
-        database=require_env("GYM_DB_NAME"),
-        autocommit=False,
-        charset="utf8mb4",
-        connect_timeout=10,
-        read_timeout=20,
-        write_timeout=20,
-    )
-
-
-def fetch_live() -> object:
-    url = LIVE_COUNTS_URL or require_env("LIVE_COUNTS_URL")
-    response = requests.get(url, timeout=(5, 20))
-    response.raise_for_status()
-    return response.json()
+from server.env_loader import load_project_dotenv
+from server.reclive.settings import Settings
+from server.reclive.ingestion import (
+    LIVE_COUNTS_URL as LIVE_COUNTS_URL,
+    require_env as require_env,
+    require_int_env as require_int_env,
+    utc_now as utc_now,
+    db_connect as db_connect,
+    fetch_live as fetch_live,
+    load_facility_capacities as load_facility_capacities,
+    failed_result as failed_result,
+    finish_ingestion_result as finish_ingestion_result,
+    run_ingestion as run_ingestion,
+    run_configured_ingestion as run_configured_ingestion,
+)
 
 
 def main() -> int:
     try:
         load_project_dotenv()
-        env_loader.validate_production_environment(
-            os.environ,
-            required_names=(
-                "LIVE_COUNTS_URL",
-                "GYM_DB_HOST",
-                "GYM_DB_PORT",
-                "GYM_DB_USER",
-                "GYM_DB_PASSWORD",
-                "GYM_DB_NAME",
-            ),
-            cors_name=None,
-            admin_enabled=False,
-        )
-        capacities = load_facility_capacities()
+        result = run_configured_ingestion(Settings.for_commands())
     except Exception:
-        finish_ingestion_result(
-            failed_result("validation"), None, utc_now, print
-        )
+        finish_ingestion_result(failed_result("validation"), None, utc_now, print)
         return 1
 
-    result = run_ingestion(fetch_live, db_connect, capacities, utc_now)
     return 0 if result.status == "succeeded" else 1
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
+
+sys.modules.setdefault("server.gym_fetch", sys.modules[__name__])
+sys.modules.setdefault("gym_fetch", sys.modules[__name__])
+setattr(sys.modules["server"], "gym_fetch", sys.modules[__name__])

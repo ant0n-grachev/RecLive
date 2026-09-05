@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import os
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -8,6 +9,109 @@ from typing import Any, Literal
 
 import requests
 import pymysql
+
+from server.facility_capacities import load_facility_capacities
+from server.reclive.settings import Settings, validate_command_environment
+
+
+def require_env(name: str) -> str:
+    value = os.getenv(name)
+    if value is None:
+        raise RuntimeError(f"Missing required env var: {name}")
+    normalized = value.strip()
+    if not normalized:
+        raise RuntimeError(f"Missing required env var: {name}")
+    return normalized
+
+
+def require_int_env(name: str) -> int:
+    raw = require_env(name)
+    try:
+        return int(raw)
+    except ValueError:
+        raise RuntimeError(f"Invalid integer for env var {name}") from None
+
+
+LIVE_COUNTS_URL: str | None = None
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def db_connect(settings: Settings | None = None) -> Any:
+    from server.reclive.db import open_db_connection
+    from server.reclive.settings import DatabaseSettings
+
+    database = (
+        settings.database
+        if settings is not None
+        else DatabaseSettings(
+            host=require_env("GYM_DB_HOST"),
+            port=require_int_env("GYM_DB_PORT"),
+            user=require_env("GYM_DB_USER"),
+            password=require_env("GYM_DB_PASSWORD"),
+            name=require_env("GYM_DB_NAME"),
+        )
+    )
+    for name, value in (
+        ("GYM_DB_HOST", database.host),
+        ("GYM_DB_PORT", database.port),
+        ("GYM_DB_USER", database.user),
+        ("GYM_DB_PASSWORD", database.password),
+        ("GYM_DB_NAME", database.name),
+    ):
+        if value is None or not str(value).strip():
+            raise RuntimeError(f"Missing required env var: {name}")
+    return open_db_connection(database, autocommit=False)
+
+
+def fetch_live(settings: Settings | None = None) -> object:
+    url = LIVE_COUNTS_URL or (
+        settings.live_counts_url
+        if settings is not None
+        else require_env("LIVE_COUNTS_URL")
+    )
+    if not url:
+        raise RuntimeError("Missing required env var: LIVE_COUNTS_URL")
+    response = requests.get(url, timeout=(5, 20))
+    response.raise_for_status()
+    return response.json()
+
+
+def run_configured_ingestion(
+    settings: Settings,
+    *,
+    fetch_payload: Callable[[], object] | None = None,
+    connect: Callable[[], Any] | None = None,
+    now: Callable[[], datetime] | None = None,
+    repository_factory: Callable[[Any], Any] | None = None,
+    event_sink: Callable[[str], None] = print,
+) -> IngestionRunResult:
+    """Compose the existing transaction owner from captured command inputs."""
+    validate_command_environment(
+        settings,
+        (
+            "LIVE_COUNTS_URL",
+            "GYM_DB_HOST",
+            "GYM_DB_PORT",
+            "GYM_DB_USER",
+            "GYM_DB_PASSWORD",
+            "GYM_DB_NAME",
+        ),
+    )
+    capacities = settings.capacities
+    if capacities is None:
+        capacities = load_facility_capacities(settings.capacity_config_path)
+    return run_ingestion(
+        fetch_payload if fetch_payload is not None else lambda: fetch_live(settings),
+        connect if connect is not None else lambda: db_connect(settings),
+        capacities,
+        now if now is not None else utc_now,
+        repository_factory=repository_factory,
+        event_sink=event_sink,
+    )
+
 
 ALLOWED_ERROR_CATEGORIES = frozenset(
     {"network", "http", "payload_not_list", "validation", "database", "transaction"}
