@@ -454,6 +454,7 @@ def test_forecast_job_validates_before_building_or_writing_forecast(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     import forecast_job
+    from server.reclive.forecasting import job as forecast_job_owner
 
     data_calls: list[str] = []
     for name in (
@@ -470,12 +471,12 @@ def test_forecast_job_validates_before_building_or_writing_forecast(
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.delenv("MODEL_BASENAME", raising=False)
     monkeypatch.setattr(
-        forecast_job,
+        forecast_job_owner,
         "build_forecast",
         lambda: data_calls.append("build") or {"facilities": [], "modelInfo": {}},
     )
     monkeypatch.setattr(
-        forecast_job,
+        forecast_job_owner,
         "write_forecast",
         lambda _payload: data_calls.append("write"),
     )
@@ -492,6 +493,7 @@ def test_forecast_job_rejects_invalid_database_port_without_value_or_trace(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     import forecast_job
+    from server.reclive.forecasting import job as forecast_job_owner
 
     port = "private-port-marker"
     data_calls: list[str] = []
@@ -514,12 +516,12 @@ def test_forecast_job_rejects_invalid_database_port_without_value_or_trace(
         return forecast_job.require_int_env("GYM_DB_PORT")
 
     monkeypatch.setattr(
-        forecast_job,
+        forecast_job_owner,
         "build_forecast",
         build_with_port,
     )
     monkeypatch.setattr(
-        forecast_job,
+        forecast_job_owner,
         "write_forecast",
         lambda _payload: data_calls.append("write"),
     )
@@ -555,6 +557,7 @@ def test_forecast_job_uses_fixed_safe_output_for_unexpected_failure(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     import forecast_job
+    from server.reclive.forecasting import job as forecast_job_owner
 
     production_values = {
         "APP_ENV": "production",
@@ -573,7 +576,7 @@ def test_forecast_job_uses_fixed_safe_output_for_unexpected_failure(
     def fail_forecast() -> dict[str, object]:
         raise RuntimeError("private-upstream-marker")
 
-    monkeypatch.setattr(forecast_job, "build_forecast", fail_forecast)
+    monkeypatch.setattr(forecast_job_owner, "build_forecast", fail_forecast)
 
     assert forecast_job.main() == 1
     captured = capsys.readouterr()

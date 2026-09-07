@@ -10,6 +10,33 @@ from datetime import datetime, timezone
 import pytest
 
 
+@pytest.mark.parametrize("first", ["forecast_job", "server.forecast_job"])
+def test_forecasting_imports_share_owners_and_script_paths(first, tmp_path):
+    root = Path(__file__).resolve().parents[2]
+    code = textwrap.dedent(f"""
+        import importlib, sys, os
+        sys.path[:0] = [{str(root)!r}, {str(root / 'server')!r}]
+        import env_loader
+        os.environ.update(env_loader.DEFAULT_ENV)
+        env_loader._DOTENV_STATE.loaded = True
+        importlib.import_module({first!r})
+        import forecast_job
+        import server.forecast_job as package
+        from server.reclive.forecasting import config, features, job
+        assert forecast_job is package
+        assert forecast_job.build_forecast is job.build_forecast
+        assert forecast_job.main is job.main
+        assert forecast_job.configured_direct_horizon_hours is features.configured_direct_horizon_hours
+        assert config.SCRIPT_DIR == {str(root / 'server')!r}
+        assert config.resolve_path('fixture.json') == {str(root / 'server/fixture.json')!r}
+        print('forecast-owner-ok')
+    """)
+    result = subprocess.run([sys.executable, "-c", code], cwd=tmp_path,
+                            capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "forecast-owner-ok\n"
+
+
 @pytest.mark.parametrize("status, expected", [("succeeded", 0), ("failed", 1)])
 def test_gym_fetch_main_delegates_to_configured_ingestion(
     monkeypatch, status, expected
