@@ -7,7 +7,7 @@ import math
 import os
 import re
 import shutil
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional, Set, Tuple
 
 import pymysql
@@ -183,12 +183,32 @@ def load_history(
         "staleLocations": [],
     }
 
+    # Same deterministic UTC cutover as the qualified actual-hours repository.
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT started_at FROM ingestion_runs "
+            "WHERE status='succeeded' ORDER BY started_at, id LIMIT 1"
+        )
+        first_success = cur.fetchone()
+    cutover = metrics.reporting_utc(first_success[0], trusted_db=True) if first_success else None
+
     sql = config.SQL_HISTORY_BASE
     params: Tuple[object, ...] = ()
     if config.HISTORY_DAYS > 0:
-        sql += " AND fetched_at >= %s"
-        since = datetime.now(config.DB_TZ) - timedelta(days=config.HISTORY_DAYS)
-        params = (since,)
+        now = datetime.now(timezone.utc)
+        since = now - timedelta(days=config.HISTORY_DAYS)
+        legacy_since = (
+            now.astimezone(config.DB_TZ) - timedelta(days=config.HISTORY_DAYS)
+        ).replace(tzinfo=None)
+        if cutover is None:
+            sql += " AND fetched_at >= %s"
+            params = (legacy_since,)
+        else:
+            sql += " AND ((fetched_at < %s AND fetched_at >= %s) OR fetched_at >= %s)"
+            params = (
+                cutover.replace(tzinfo=None), legacy_since,
+                max(cutover, since).replace(tzinfo=None),
+            )
 
     with conn.cursor() as cur:
         cur.execute(sql, params)
@@ -216,21 +236,28 @@ def load_history(
                 quality["rowsDroppedInvalid"] += 1
                 continue
 
-            local_dt = features.parse_observed_at_value(last_updated)
-            if local_dt is None and fetched_at is not None:
-                local_dt = features.to_local(fetched_at)
+            fetched_utc = metrics.reporting_utc(fetched_at, trusted_db=True)
+            trusted = cutover is not None and fetched_utc is not None and fetched_utc >= cutover
+            observed_at = fetched_utc if trusted else last_updated
+            if trusted:
+                local_dt = fetched_utc.astimezone(config.TZ)
+            else:
+                # Legacy/no-cutover rows retain source-first GYM_DB_TIMEZONE semantics.
+                local_dt = features.parse_observed_at_value(last_updated)
+                if local_dt is None and fetched_at is not None:
+                    local_dt = features.to_local(fetched_at)
             if local_dt is None:
                 quality["rowsDroppedInvalid"] += 1
                 continue
 
-            reporting_canonical_observed = metrics.reporting_utc(last_updated, trusted_db=True)
+            reporting_canonical_observed = metrics.reporting_utc(observed_at, trusted_db=True)
             reporting_time_aligned_by_loc[loc_id] = (
                 reporting_time_aligned_by_loc.get(loc_id, True)
                 and reporting_canonical_observed is not None
                 and reporting_canonical_observed == metrics.reporting_utc(local_dt)
             )
             reporting_observation = metrics.raw_baseline_observation(
-                last_updated, fetched_at, reporting_original_count,
+                observed_at, fetched_at, reporting_original_count,
             )
             if reporting_observation is not None:
                 reporting_raw_by_loc.setdefault(loc_id, []).append(reporting_observation)

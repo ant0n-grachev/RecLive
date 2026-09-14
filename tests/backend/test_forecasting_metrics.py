@@ -258,6 +258,9 @@ class FakeCursor:
     def fetchall(self):
         return self.rows
 
+    def fetchone(self):
+        return None
+
 
 class FakeConnection:
     def __init__(self, rows=()):

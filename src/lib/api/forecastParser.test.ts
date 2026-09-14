@@ -120,6 +120,36 @@ const deferred = <T,>() => {
 };
 
 describe("mergeActualHoursIntoDays", () => {
+    it.each(["failed", "mismatched", "wrong-date", "unmatched", "low-location", "low-time", "missing-location", "missing-time", "missing-threshold", "valid"])(
+        "uses only the qualified actual overlay in both hour paths: %s", async (scenario) => {
+            const date = chicagoDateToday();
+            const hourStart = `${date}T09:00:00-05:00`;
+            const embedded = {hourStart, expectedCount: 50, actualCount: 777, actualPct: 0.9,
+                actualCoverage: 0.1, actualSampleCount: 1};
+            const hour = validActualHourAt(scenario === "unmatched" ? `${date}T10:00:00-05:00` : hourStart);
+            const rawHour: Record<string, unknown> = {...hour};
+            if (scenario === "low-location") Object.assign(rawHour, {observedCapacity: 20, actualCoverage: 0.1});
+            if (scenario === "low-time") rawHour.temporalCoverage = 0.1;
+            if (scenario === "missing-time") delete rawHour.temporalCoverage;
+            if (scenario === "missing-location") delete rawHour.actualCoverage;
+            if (scenario === "missing-threshold") delete rawHour.coverageThreshold;
+            server.use(
+                http.get(FORECAST_URL, () => HttpResponse.json({...futureForecastResponse(), weeklyForecast: [{
+                    date, dayName: "Monday", totalHours: [embedded],
+                    categories: [{key: "fitness floors", title: "Fitness Floors", hours: [embedded]}],
+                }]})),
+                http.get(ACTUAL_URL, () => scenario === "failed" ? new HttpResponse(null, {status: 400}) : HttpResponse.json({
+                    facilityId: scenario === "mismatched" ? 1656 : 1186, date: scenario === "wrong-date" ? "2000-01-01" : date,
+                    totalHours: [rawHour], categories: [{key: "fitness floors", title: "Fitness Floors", hours: [rawHour]}],
+                })),
+            );
+            const result = await forecastParser.fetchForecastDays(1186);
+            for (const output of [result.days[0].totalHours![0], result.days[0].categories![0].hours[0]]) {
+                expect(output.expectedCount).toBe(50);
+                expect(output.actualCount).toBe(scenario === "valid" ? 40 : undefined);
+            }
+        },
+    );
     it.each([
         ["low coverage with a non-null actual", {
             hourStart: "2026-11-01T01:00:00-06:00",

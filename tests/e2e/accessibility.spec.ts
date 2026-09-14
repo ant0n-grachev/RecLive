@@ -16,6 +16,24 @@ test.beforeEach(async ({page}) => {
     await page.emulateMedia({reducedMotion: "reduce"});
 });
 
+for (const {level, expectedPct} of [
+    {level: "LOW", expectedPct: 0.2}, {level: "MEDIUM", expectedPct: 0.5}, {level: "PEAK", expectedPct: 0.9},
+]) {
+    for (const mode of ["light", "dark"] as const) {
+        test(`populated ${level} crowd caption passes contrast in ${mode}`, async ({page}) => {
+            await page.clock.setFixedTime(new Date("2026-08-31T12:00:00Z"));
+            await installDashboardApiMocks(page, {forecastExpectedPct: expectedPct});
+            await page.addInitScript((theme) => localStorage.setItem("reclive:themeMode", theme), mode);
+            await page.goto("/nick");
+            await expect(page.getByText(`${level} CROWD`, {exact: true})).toBeVisible();
+            const results = await new AxeBuilder({page}).include("main").withRules(["color-contrast"]).analyze();
+            expect(results.violations).toEqual([]);
+            expect(results.incomplete.filter((rule) => rule.id === "color-contrast").flatMap((rule) => rule.nodes)
+                .filter((node) => node.html.includes(`${level} CROWD`))).toEqual([]);
+        });
+    }
+}
+
 const seriousOrCritical = (violations: ReadonlyArray<{impact: string | null}>) =>
     violations.filter((violation) => ["serious", "critical"].includes(violation.impact ?? ""));
 

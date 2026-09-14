@@ -134,12 +134,6 @@ export const getChicagoMinuteOfDayFromTimestamp = (timestampMs: number): number 
     return Math.max(0, Math.min((24 * 60) - 1, hour * 60 + minute));
 };
 
-const getChicagoMinuteOfDay = (value: string): number | null => {
-    const timestampMs = getChicagoTimestampMs(value);
-    if (timestampMs === null) return null;
-    return getChicagoMinuteOfDayFromTimestamp(timestampMs);
-};
-
 export const getChicagoDateKeyFromTimestamp = (timestampMs: number): string | null => {
     const parts = chicagoDateFormatter.formatToParts(new Date(timestampMs));
     const year = parts.find((part) => part.type === "year")?.value;
@@ -175,6 +169,18 @@ export const buildForecastDisplaySlots = (
     const actualCutoffTs = getChicagoHourStartTimestamp(nowTs);
     const fallbackRanges = buildBandTimeRanges(fallbackBands);
     const totalHours = Array.isArray(day.totalHours) ? day.totalHours : [];
+    const dayIndex = getDateKeyDayIndex(day.date);
+    const businessDayMinute = (timestampMs: number): number | null => {
+        const pointDay = getDateKeyDayIndex(getChicagoDateKeyFromTimestamp(timestampMs));
+        const minute = getChicagoMinuteOfDayFromTimestamp(timestampMs);
+        if (dayIndex === null || pointDay === null || minute === null) return null;
+        const offset = (pointDay - dayIndex) * MINUTES_PER_DAY + minute;
+        // Current card callers supply calendar-day windows, including same-date
+        // post-midnight spillover. Explicitly supplied extended helper windows
+        // retain their actual date offset; no cross-date extension is inferred.
+        if (!enforceWorkingHours && (offset < 0 || offset >= MINUTES_PER_DAY)) return null;
+        return offset;
+    };
 
     if (totalHours.length > 0) {
         const bySlot = new Map<number, {
@@ -189,7 +195,7 @@ export const buildForecastDisplaySlots = (
 
         for (const hour of totalHours) {
             const timestampMs = getChicagoTimestampMs(hour.hourStart);
-            const minuteOfDay = getChicagoMinuteOfDay(hour.hourStart);
+            const minuteOfDay = timestampMs === null ? null : businessDayMinute(timestampMs);
             if (timestampMs === null || minuteOfDay === null) continue;
 
             const slotStartMinute = Math.floor(minuteOfDay / FORECAST_DISPLAY_SLOT_MINUTES) * FORECAST_DISPLAY_SLOT_MINUTES;
@@ -270,7 +276,7 @@ export const buildForecastDisplaySlots = (
     for (const hours of categorySources) {
         for (const hour of hours) {
             const timestampMs = getChicagoTimestampMs(hour.hourStart);
-            const minuteOfDay = getChicagoMinuteOfDay(hour.hourStart);
+            const minuteOfDay = timestampMs === null ? null : businessDayMinute(timestampMs);
             if (timestampMs === null || minuteOfDay === null) continue;
 
             const slotStartMinute = Math.floor(minuteOfDay / FORECAST_DISPLAY_SLOT_MINUTES) * FORECAST_DISPLAY_SLOT_MINUTES;

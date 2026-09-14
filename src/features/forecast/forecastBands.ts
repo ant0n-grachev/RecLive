@@ -18,6 +18,14 @@ export const BAND_STYLES: Record<CrowdBandLevel, {label: string; color: string; 
     medium: {label: "MEDIUM CROWD", color: OCCUPANCY_MAIN_HEX.warning, bg: OCCUPANCY_SOFT_BG.warning},
     peak: {label: "PEAK CROWD", color: OCCUPANCY_MAIN_HEX.error, bg: OCCUPANCY_SOFT_BG.error},
 };
+// Caption foregrounds must remain readable on the matching translucent fill.
+// Bar/occupancy identity colors stay unchanged.
+export const getBandCaptionStyle = (level: CrowdBandLevel, isDark: boolean) => ({
+    ...BAND_STYLES[level],
+    color: isDark
+        ? {low: "#86efac", medium: "#fde047", peak: "#fca5a5"}[level]
+        : {low: "#166534", medium: "#854d0e", peak: "#991b1b"}[level],
+});
 export const UNKNOWN_BAND_STYLE = {
     label: "BAND UNAVAILABLE",
     color: "#64748b",

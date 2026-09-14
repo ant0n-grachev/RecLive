@@ -1113,6 +1113,31 @@ def test_build_combined_payload_updates_facilities_independently(
     assert (result["okCount"], result["totalCount"]) == (1, 2)
 
 
+@pytest.mark.parametrize("healthy_index", [0, 1])
+@pytest.mark.parametrize("retained_status", ["ok", "stale"])
+def test_valid_unavailable_sibling_preserves_last_good_hours(monkeypatch, healthy_index, retained_status):
+    previous = valid_schedule_payload()
+    for index, record in enumerate(previous["facilities"]):
+        facility_id = record["facilityId"]
+        if index != healthy_index or retained_status == "stale":
+            previous["facilities"][index] = facility_hours_fetch.merge_facility_candidate(
+                candidate_for(facility_id, source=None, error_category="upstream_http", fetched_at=FIXED_NOW),
+                record if index == healthy_index else None,
+                FIXED_NOW,
+            )
+    previous["okCount"] = int(retained_status == "ok")
+    monkeypatch.setattr(facility_hours_fetch, "collect_facility_candidate", lambda facility, site_base, fetched_at:
+        candidate_for(facility["facilityId"], source=None, error_category="upstream_http", fetched_at=fetched_at)
+        if facility["facilityId"] == previous["facilities"][healthy_index]["facilityId"] else
+        candidate_for(facility["facilityId"], source="direct_html", error_category=None, fetched_at=fetched_at))
+    result = facility_hours_fetch.build_combined_payload(
+        [facility_config(1186), facility_config(1656)], previous, "https://recwell.example.test", FIXED_NOW)
+    retained = result["facilities"][healthy_index]
+    assert retained["status"] == "stale"
+    assert retained["sections"] == previous["facilities"][healthy_index]["sections"]
+    assert result["facilities"][1 - healthy_index]["status"] == "ok"
+
+
 def test_one_invalid_previous_row_discards_the_entire_previous_artifact(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

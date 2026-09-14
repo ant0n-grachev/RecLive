@@ -43,7 +43,18 @@ class PushRuleRepository:
             )
 
 
-PUSH_RULE_SELECT_COLUMNS = "\n    id,\n    endpoint_hash,\n    subscription_json,\n    facility_id,\n    section_key,\n    threshold,\n    created_at,\n    expires_at,\n    status,\n    active_identity\n"
+PUSH_RULE_SELECT_COLUMNS = """
+    id,
+    endpoint_hash,
+    subscription_json,
+    facility_id,
+    section_key,
+    threshold,
+    created_at,
+    expires_at,
+    status,
+    active_identity
+"""
 
 
 def push_rules_table_name() -> str:
@@ -334,7 +345,12 @@ def db_subscribe_rule(
                 raise _push_http_error(409, "push_rule_limit_reached")
             try:
                 cur.execute(
-                    f"\n                    INSERT INTO {table_name}\n                        (endpoint_hash, subscription_json, facility_id,\n                         section_key, threshold, created_at, expires_at, status)\n                    VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending')\n                    ",
+                    f"""
+                    INSERT INTO {table_name}
+                        (endpoint_hash, subscription_json, facility_id,
+                         section_key, threshold, created_at, expires_at, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending')
+                    """,
                     (
                         digest,
                         subscription_json,
@@ -742,11 +758,22 @@ def record_public_push_write(subject_hash: bytes) -> None:
         conn = current_runtime().connect(autocommit=False)
         with conn.cursor() as cur:
             cur.execute(
-                "\n                INSERT INTO push_rate_limits\n                    (subject_hash, window_started_at, request_count, updated_at)\n                VALUES (%s, %s, 1, %s)\n                ON DUPLICATE KEY UPDATE\n                    request_count = request_count + 1,\n                    updated_at = VALUES(updated_at)\n                ",
+                """
+                INSERT INTO push_rate_limits
+                    (subject_hash, window_started_at, request_count, updated_at)
+                VALUES (%s, %s, 1, %s)
+                ON DUPLICATE KEY UPDATE
+                    request_count = request_count + 1,
+                    updated_at = VALUES(updated_at)
+                """,
                 (subject_hash, window_started_at, updated_at),
             )
             cur.execute(
-                "\n                SELECT request_count\n                FROM push_rate_limits\n                WHERE subject_hash = %s AND window_started_at = %s\n                ",
+                """
+                SELECT request_count
+                FROM push_rate_limits
+                WHERE subject_hash = %s AND window_started_at = %s
+                """,
                 (subject_hash, window_started_at),
             )
             row = cur.fetchone()

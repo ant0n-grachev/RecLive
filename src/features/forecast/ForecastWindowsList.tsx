@@ -2,7 +2,7 @@ import {Box, Stack, Typography} from "@mui/material";
 import type {ForecastWindow} from "../../lib/types/forecast";
 import {INNER_SURFACE_SX} from "../../shared/utils/styles";
 import {
-    BAND_STYLES,
+    getBandCaptionStyle,
     isCurrentBand,
     sortBands,
     type CrowdBand,
@@ -36,7 +36,7 @@ function ForecastBands({bands, nowTs, isDark}: {
     return (
         <Stack spacing={0.8}>
             {sorted.map((band, index) => {
-                const style = BAND_STYLES[band.level] ?? BAND_STYLES.medium;
+                const style = getBandCaptionStyle(band.level, isDark);
                 const isCurrent = isCurrentBand(band, nowTs);
                 return (
                     <Box

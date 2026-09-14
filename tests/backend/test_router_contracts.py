@@ -115,7 +115,7 @@ def test_full_facility_route_retains_interval_and_qualified_actual_fields(
     }
 
 
-def test_forecast_router_preserves_compact_contract(api_client: TestClient) -> None:
+def test_forecast_router_preserves_expected_compact_fields_without_embedded_actuals(api_client: TestClient) -> None:
     response = api_client.get("/api/forecast/facilities/1186?compact=1")
 
     assert response.status_code == 200
@@ -144,10 +144,6 @@ def test_forecast_router_preserves_compact_contract(api_client: TestClient) -> N
                                 "hourStart": "2026-08-31T09:00:00-05:00",
                                 "expectedCount": 60,
                                 "expectedPct": 0.3,
-                                "actualCount": 58,
-                                "actualPct": 0.29,
-                                "actualSampleCount": 12,
-                                "actualCoverage": 1.0,
                                 "spikeAdjusted": False,
                             },
                             {
@@ -155,10 +151,6 @@ def test_forecast_router_preserves_compact_contract(api_client: TestClient) -> N
                                 "hourStart": "2026-08-31T10:00:00-05:00",
                                 "expectedCount": 72,
                                 "expectedPct": 0.36,
-                                "actualCount": 70,
-                                "actualPct": 0.35,
-                                "actualSampleCount": 11,
-                                "actualCoverage": 0.92,
                                 "spikeAdjusted": True,
                             },
                         ],
@@ -170,20 +162,12 @@ def test_forecast_router_preserves_compact_contract(api_client: TestClient) -> N
                         "hourStart": "2026-08-31T09:00:00-05:00",
                         "expectedCount": 210,
                         "expectedPct": 0.42,
-                        "actualCount": 205,
-                        "actualPct": 0.41,
-                        "actualSampleCount": 24,
-                        "actualCoverage": 1.0,
                     },
                     {
                         "hour": 10,
                         "hourStart": "2026-08-31T10:00:00-05:00",
                         "expectedCount": 240,
                         "expectedPct": 0.48,
-                        "actualCount": 232,
-                        "actualPct": 0.464,
-                        "actualSampleCount": 22,
-                        "actualCoverage": 0.91,
                     },
                 ],
                 "avoidWindows": [],
@@ -274,10 +258,6 @@ def test_date_route_preserves_full_and_compact_bakke_views(
                             "hourStart": "2026-08-31T09:00:00-05:00",
                             "expectedCount": 66,
                             "expectedPct": 0.275,
-                            "actualCount": 64,
-                            "actualPct": 0.2667,
-                            "actualSampleCount": 10,
-                            "actualCoverage": 1.0,
                             "spikeAdjusted": False,
                         },
                         {
@@ -285,10 +265,6 @@ def test_date_route_preserves_full_and_compact_bakke_views(
                             "hourStart": "2026-08-31T10:00:00-05:00",
                             "expectedCount": 78,
                             "expectedPct": 0.325,
-                            "actualCount": 75,
-                            "actualPct": 0.3125,
-                            "actualSampleCount": 9,
-                            "actualCoverage": 0.9,
                             "spikeAdjusted": True,
                         },
                     ],
@@ -300,20 +276,12 @@ def test_date_route_preserves_full_and_compact_bakke_views(
                     "hourStart": "2026-08-31T09:00:00-05:00",
                     "expectedCount": 260,
                     "expectedPct": 0.4,
-                    "actualCount": 252,
-                    "actualPct": 0.3877,
-                    "actualSampleCount": 21,
-                    "actualCoverage": 1.0,
                 },
                 {
                     "hour": 10,
                     "hourStart": "2026-08-31T10:00:00-05:00",
                     "expectedCount": 292,
                     "expectedPct": 0.4492,
-                    "actualCount": 286,
-                    "actualPct": 0.44,
-                    "actualSampleCount": 19,
-                    "actualCoverage": 0.9,
                 },
             ],
             "avoidWindows": [

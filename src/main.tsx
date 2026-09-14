@@ -7,6 +7,7 @@ import type {PaletteMode} from "@mui/material/styles";
 import {createAppTheme} from "./app/theme";
 import AppRoutes from "./app/AppRoutes";
 import {PwaUpdatePrompt} from "./facilities/PwaUpdatePrompt";
+import {reportServiceWorkerRegistered, reportServiceWorkerRegistrationError} from "./lib/serviceWorkerReadiness";
 
 import "@fontsource/roboto/400.css";
 import "@fontsource/roboto/500.css";
@@ -31,7 +32,14 @@ export function Root() {
         needRefresh: [needRefresh, setNeedRefresh],
         offlineReady: [offlineReady, setOfflineReady],
         updateServiceWorker,
-    } = useRegisterSW({immediate: true});
+    } = useRegisterSW({
+        immediate: true,
+        onRegisteredSW: (_url, registration) => {
+            if (registration) reportServiceWorkerRegistered();
+            else reportServiceWorkerRegistrationError();
+        },
+        onRegisterError: reportServiceWorkerRegistrationError,
+    });
     const [themeMode, setThemeMode] = useState<PaletteMode>(() => getStoredThemeMode());
     const theme = useMemo(() => createAppTheme(themeMode), [themeMode]);
 

@@ -8,6 +8,14 @@ import {
 import {facilityScheduleSchema} from "../../lib/api/schemas";
 
 describe("dashboard selection", () => {
+    it("never averages tomorrow's same hour into today's section chips", () => {
+        const day = {date: "2026-08-31", dayName: "Monday", categories: [{key: "fitness floors", title: "Fitness Floors", hours: [
+            {hourStart: "2026-08-31T09:00:00-05:00", expectedCount: 20},
+            {hourStart: "2026-09-01T09:00:00-05:00", expectedCount: 900},
+        ]}]};
+        const result = buildSectionForecastMap(day, Date.parse("2026-08-31T08:00:00-05:00"), [], false);
+        expect(result["fitness floors"].map(({expectedCount}) => expectedCount)).toEqual([20]);
+    });
     it("keeps active facility summaries and ordered full alert sections", () => {
         const view = buildDashboardViewModel(fixtureDashboardInput);
         expect(view.facilitySummary).toMatchObject({status: "live", count: 220, coverage: 1, percent: 20});

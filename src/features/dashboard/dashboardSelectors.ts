@@ -3,7 +3,7 @@ import type {AlertSectionOption} from "../alerts/alertTypes";
 import type {ForecastHourBounds} from "../../app/hooks/useForecastData";
 import type {DashboardSelectorInput, DashboardViewModel} from "./dashboardTypes";
 import {FACILITY_DASHBOARD_CONFIG, FACILITY_KNOWN_IDS, isSectionRow} from "../../facilities/constants";
-import {getChicagoDayAge, getChicagoTimestampMs, getChicagoHour, isWithinChicagoHours} from "../../shared/utils/chicagoTime";
+import {getChicagoTimestampMs, getChicagoHour, isWithinChicagoHours} from "../../shared/utils/chicagoTime";
 import {combineOccupancyThresholds, type OccupancyThresholds} from "../../shared/utils/styles";
 import {computeOccupancySummary} from "../../shared/occupancy/computeOccupancySummary";
 import {resolveDashboardWarning} from "../../app/warningStatus";
@@ -258,7 +258,9 @@ export const buildSectionForecastMap = (
                 const hourTs = getChicagoTimestampMs(hour.hourStart);
                 if (hourTs === null || hourTs <= nowTs) return false;
                 // Keep "+1/+2/+3h" chips in the same Chicago day, never after midnight.
-                if (getChicagoDayAge(hour.hourStart, new Date(nowTs)) !== 0) {
+                const hourDate = getChicagoDateParts(new Date(hourTs));
+                const today = getChicagoDateParts(new Date(nowTs));
+                if (!hourDate || !today || chicagoDayKey(hourDate) !== chicagoDayKey(today)) {
                     return false;
                 }
                 if (!enforceWorkingHours) {

@@ -1,4 +1,5 @@
 import type {ZodType} from "zod";
+import {waitForActiveServiceWorker} from "../serviceWorkerReadiness";
 import {requestJson, type RequestOptions} from "./client";
 import {
     pushAvailabilitySchema,
@@ -142,11 +143,6 @@ export const isWebPushSupported = (): boolean => {
     return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 };
 
-const ensureActiveServiceWorker = async (): Promise<ServiceWorkerRegistration> => {
-    const registration = await navigator.serviceWorker.ready;
-    return registration;
-};
-
 const getPushPublicKey = async (): Promise<string> => {
     const payload = await requestWithFixedError(
         "/api/push/public-key",
@@ -171,7 +167,7 @@ export const ensurePushSubscription = async (): Promise<PushSubscription> => {
         throw new Error("Notifications permission was not granted.");
     }
 
-    const registration = await ensureActiveServiceWorker();
+    const registration = await waitForActiveServiceWorker();
     const existing = await registration.pushManager.getSubscription();
     if (existing) return existing;
 
@@ -185,7 +181,7 @@ export const ensurePushSubscription = async (): Promise<PushSubscription> => {
 
 export const getExistingPushSubscription = async (): Promise<PushSubscription | null> => {
     if (!isWebPushSupported()) return null;
-    const registration = await ensureActiveServiceWorker();
+    const registration = await waitForActiveServiceWorker();
     return registration.pushManager.getSubscription();
 };
 

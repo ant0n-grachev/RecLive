@@ -2,11 +2,13 @@ import type {ForecastDay} from "../../lib/types/forecast";
 import {
     fixtureCategoryForecastDays,
     fixtureForecastDays,
+    fixtureSchedule,
     fixtureThresholds,
 } from "../../test/fixtures/dashboard";
 import {buildCrowdBandsFromDisplaySlots} from "./forecastBands";
 import {buildForecastDisplaySlots} from "./forecastTime";
 import {buildHistogramModel, type ForecastDisplaySlot} from "./forecastHistogram";
+import {getFacilityOpenWindowsForDate} from "../../shared/utils/facilityScheduleStatus";
 
 const fixtureSlots: ForecastDisplaySlot[] = [
     {startMinute: 360, endMinute: 390, startTs: 0, endTs: 1, count: 40, percent: 0.20, source: "actual", level: "low"},
@@ -18,6 +20,48 @@ const fixtureSlots: ForecastDisplaySlot[] = [
     {startMinute: 540, endMinute: 570, startTs: 6, endTs: 7, count: 0, percent: null, source: "predicted", level: "unknown"},
     {startMinute: 570, endMinute: 600, startTs: 7, endTs: 8, count: 0, percent: null, source: "predicted", level: "unknown"},
 ];
+
+it.each(["total", "category"])("retains date identity with explicitly supplied extended helper windows for %s", (path) => {
+    const hours = [
+        {hourStart: "2026-08-31T23:00:00-05:00", expectedCount: 20},
+        {hourStart: "2026-09-01T23:00:00-05:00", expectedCount: 900},
+        {hourStart: "2026-09-01T01:00:00-05:00", expectedCount: 30},
+        {hourStart: "2026-08-31T01:00:00-05:00", expectedCount: 800},
+        {hourStart: "2026-09-02T01:00:00-05:00", expectedCount: 700},
+    ];
+    const day: ForecastDay = {date: "2026-08-31", dayName: "Monday",
+        ...(path === "total" ? {totalHours: hours} : {categories: [{key: "fitness floors", title: "Fitness Floors", hours}]}),
+    };
+    const slots = buildForecastDisplaySlots(day, [{startMinutes: 22 * 60, endMinutes: 26 * 60}], true,
+        fixtureThresholds, [], Date.parse("2026-08-31T12:00:00Z"));
+    expect(slots.map(({count, startMinute, startTs}) => ({count, startMinute, startTs}))).toEqual([
+        {count: 20, startMinute: 1380, startTs: Date.parse("2026-08-31T23:00:00-05:00")},
+        {count: 30, startMinute: 1500, startTs: Date.parse("2026-09-01T01:00:00-05:00")},
+    ]);
+    const unrestricted = buildForecastDisplaySlots(day, [], false, fixtureThresholds, [], Date.parse("2026-08-31T12:00:00Z"));
+    expect(unrestricted.map(({count}) => count)).toEqual([800, 20]);
+});
+
+it.each(["total", "category"])("keeps real schedule post-midnight spillover on its own date for %s", (path) => {
+    const schedule = {...fixtureSchedule, sections: [{title: "Building Hours", note: null,
+        rows: [{label: "Monday - Sunday", hours: "10pm - 2am"}],
+    }]};
+    const hours = [
+        {hourStart: "2026-08-31T01:00:00-05:00", expectedCount: 20},
+        {hourStart: "2026-09-01T01:00:00-05:00", expectedCount: 900},
+        {hourStart: "2026-08-31T23:00:00-05:00", expectedCount: 30},
+    ];
+    const day: ForecastDay = {date: "2026-08-31", dayName: "Monday",
+        ...(path === "total" ? {totalHours: hours} : {categories: [{key: "fitness floors", title: "Fitness Floors", hours}]}),
+    };
+    const windows = getFacilityOpenWindowsForDate(schedule, day.date);
+    expect(windows).toEqual([{startMinutes: 0, endMinutes: 120}, {startMinutes: 1320, endMinutes: 1440}]);
+    const slots = buildForecastDisplaySlots(day, windows, true, fixtureThresholds, [], Date.parse("2026-08-31T12:00:00Z"));
+    expect(slots.map(({count, startTs}) => ({count, startTs}))).toEqual([
+        {count: 20, startTs: Date.parse("2026-08-31T01:00:00-05:00")},
+        {count: 30, startTs: Date.parse("2026-08-31T23:00:00-05:00")},
+    ]);
+});
 
 it("preserves actual, predicted, mixed, and unknown bar counts", () => {
     const model = buildHistogramModel(fixtureSlots, 240, fixtureThresholds);

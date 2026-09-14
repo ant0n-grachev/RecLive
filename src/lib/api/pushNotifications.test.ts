@@ -155,6 +155,27 @@ const installPushSubscriptionRuntime = () => {
 };
 
 describe("shared request client ownership", () => {
+    it.each(["lookup", "create"])("settles never-ready worker %s within the request budget", async (operation) => {
+        vi.useFakeTimers();
+        const restore = [
+            replaceProperty(window, "PushManager", class PushManager {}),
+            replaceProperty(window, "isSecureContext", true),
+            replaceProperty(window, "Notification", {requestPermission: vi.fn().mockResolvedValue("granted")}),
+            replaceProperty(navigator, "serviceWorker", {ready: new Promise(() => {})}),
+        ];
+        let outcome = "pending";
+        const pending = (operation === "lookup" ? pushNotifications.getExistingPushSubscription() : pushNotifications.ensurePushSubscription())
+            .then(() => {outcome = "success";}, () => {outcome = "safe failure";});
+        try {
+            await vi.advanceTimersByTimeAsync(10_000);
+            expect(outcome).toBe("safe failure");
+            await pending;
+            expect(vi.getTimerCount()).toBe(0);
+        } finally {
+            restore.reverse().forEach((callback) => callback());
+            vi.useRealTimers();
+        }
+    });
     it("consumes the ready worker without looking up or registering another worker", async () => {
         const getSubscription = vi.fn().mockResolvedValue(null);
         const registration = {

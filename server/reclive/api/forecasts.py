@@ -71,10 +71,6 @@ def compact_hour_payload(hour: Dict[str, Any]) -> Dict[str, Any]:
         "hourStart",
         "expectedCount",
         "expectedPct",
-        "actualCount",
-        "actualPct",
-        "actualSampleCount",
-        "actualCoverage",
         "spikeAdjusted",
     ):
         if key in hour:

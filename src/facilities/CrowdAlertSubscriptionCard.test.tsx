@@ -363,6 +363,20 @@ describe("CrowdAlertSubscriptionCard server-backed alert management", () => {
         expect(screen.getByRole("listitem", {name: /Alert for Nick Entire Facility at 40%/i})).toBeVisible();
     });
 
+    it("recovers safe worker lookup failure by closing and reopening alerts", async () => {
+        pushApi.getExistingPushSubscription
+            .mockRejectedValueOnce(new Error("synthetic worker registration failure"))
+            .mockResolvedValueOnce(browserSubscription());
+        pushApi.listPushRules.mockResolvedValue([managedRule]);
+        const {rerender} = renderOpenCard();
+        expect(await screen.findByText("Could not access this browser's alerts right now.")).toBeVisible();
+        expect(screen.queryByText(/synthetic worker registration failure/i)).not.toBeInTheDocument();
+        rerender(<CrowdAlertSubscriptionCard facility={1186} isOpen={false} onClose={vi.fn()} sections={defaultSections()}/>);
+        rerender(<CrowdAlertSubscriptionCard facility={1186} isOpen onClose={vi.fn()} sections={defaultSections()}/>);
+        expect(await screen.findByRole("listitem", {name: /Alert for Nick Entire Facility at 40%/i})).toBeVisible();
+        expect(screen.queryByText("Could not access this browser's alerts right now.")).not.toBeInTheDocument();
+    });
+
     it("disables and handler-guards retained per-rule controls while owner lookup is loading", async () => {
         const refreshLookup = deferred<PushSubscription | null>();
         pushApi.getExistingPushSubscription

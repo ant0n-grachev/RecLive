@@ -112,12 +112,13 @@ health/route evidence when authorized. Record each step separately in this order
 1. Install the final frontend lock with `npm ci`. In an isolated Python environment,
    install both `server/requirements.txt` and `server/requirements-dev.txt`; record
    installed versions and `python -m pip --no-cache-dir check`.
-2. Run `env -u NODE_OPTIONS node --test tests/frontend/isolation.test.mjs`, then
+2. Run `env -u NODE_OPTIONS node --test tests/frontend/isolation.test.mjs tests/frontend/vitest-mocker-security.test.mjs`, then
    `npm run lint`. Run the original frontend scripts through the test-only launcher:
 
    ```bash
    env -u NODE_OPTIONS node tests/frontend/run-isolated.cjs build
    env -u NODE_OPTIONS node tests/frontend/run-isolated.cjs test:run
+   env -u NODE_OPTIONS node tests/frontend/run-isolated.cjs test:coverage
    env -u NODE_OPTIONS node tests/frontend/run-isolated.cjs test:e2e
    ```
 

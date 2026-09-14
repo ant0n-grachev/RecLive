@@ -1963,25 +1963,17 @@ def build_combined_payload(
         else:
             for record, identity in zip(previous_records, validated_identities):
                 facility_id, facility_name, slug, public_url = identity
-                probe = FacilityCandidate(
-                    facility_id=facility_id,
-                    facility_name=facility_name,
-                    slug=slug,
-                    public_url=public_url,
-                    source=None,
-                    resolved_url=None,
-                    source_modified_gmt=None,
-                    sections=(),
-                    fetched_at=generated_at,
-                    error_category="schema_invalid",
-                )
+                # Payload validation already checked status/content. An error
+                # record has no reusable hours, but cannot invalidate its sibling.
                 if (
-                    _copy_valid_previous_facility(
-                        record,
-                        probe,
-                        generated_at,
+                    record.get("facilityId") != facility_id
+                    or record.get("facilityName") != facility_name
+                    or record.get("slug") != slug
+                    or _safe_current_public_url(record.get("url"), public_url) is None
+                    or (
+                        record.get("resolvedUrl") is not None
+                        and safe_same_origin_https_url(record.get("resolvedUrl"), public_url) is None
                     )
-                    is None
                 ):
                     normalized_previous = None
                     break

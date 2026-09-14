@@ -157,12 +157,24 @@ export const forecastHourSchema = z.object({
     hourStart: explicitIsoDateTimeSchema,
     expectedCount: safeNonnegativeIntegerSchema,
     expectedPct: unitIntervalSchema.nullable().optional(),
-    actualCount: safeNonnegativeIntegerSchema.nullable().optional(),
-    actualPct: unitIntervalSchema.nullable().optional(),
-    actualSampleCount: safeNonnegativeIntegerSchema.optional(),
-    actualCoverage: unitIntervalSchema.nullable().optional(),
+    // Legacy embedded observations are discarded. Only actual-hours may qualify them.
+    actualCount: z.unknown().optional(),
+    actualPct: z.unknown().optional(),
+    actualSampleCount: z.unknown().optional(),
+    actualCoverage: z.unknown().optional(),
+    temporalCoverage: z.unknown().optional(),
+    coverageThreshold: z.unknown().optional(),
+    observedCount: z.unknown().optional(),
+    observedCapacity: z.unknown().optional(),
+    expectedCapacity: z.unknown().optional(),
     spikeAdjusted: z.boolean().optional(),
-}).strict();
+}).strict().transform(({hour, hourStart, expectedCount, expectedPct, spikeAdjusted}) => ({
+    hourStart,
+    expectedCount,
+    ...(hour === undefined ? {} : {hour}),
+    ...(expectedPct === undefined ? {} : {expectedPct}),
+    ...(spikeAdjusted === undefined ? {} : {spikeAdjusted}),
+}));
 
 const forecastWindowSchema = z.object({
     start: explicitIsoDateTimeSchema,
