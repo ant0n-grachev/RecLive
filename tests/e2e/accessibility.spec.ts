@@ -1,10 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
-import {mkdirSync} from "node:fs";
 import {expect, test, type Locator, type Page} from "@playwright/test";
 import {installDashboardApiMocks, removeDashboardApiMocks} from "./support/apiMocks";
-
-const screenshotDir = "/private/tmp/reclive-task5-browser";
-mkdirSync(screenshotDir, {recursive: true});
 
 const routeCases = [
     {path: "/nick", label: "Nick", total: /30\s*\/\s*1028/},
@@ -58,7 +54,7 @@ const expectAllVisibleButtonsAtLeast44 = async (page: Page) => {
 
 for (const routeCase of routeCases) {
     for (const viewport of viewportCases) {
-        test(`${routeCase.label} ${viewport.name} renders without overlays or runtime errors`, async ({page}) => {
+        test(`${routeCase.label} ${viewport.name} renders without overlays or runtime errors`, async ({page}, testInfo) => {
             const consoleProblems: string[] = [];
             const pageErrors: string[] = [];
             page.on("console", (message) => {
@@ -87,7 +83,7 @@ for (const routeCase of routeCases) {
             await expect(alertsDialog.getByRole("region", {name: "Manage alerts"})).toBeVisible();
             await expectMinimumTarget(alertsDialog.getByRole("button", {name: "Close alerts"}), 44);
             await page.screenshot({
-                path: `${screenshotDir}/${routeCase.label.toLowerCase()}-${viewport.name}-alerts-open.png`,
+                path: testInfo.outputPath(`${routeCase.label.toLowerCase()}-${viewport.name}-alerts-open.png`),
                 fullPage: true,
             });
             await alertsDialog.getByRole("button", {name: "Close alerts"}).click();
@@ -95,7 +91,7 @@ for (const routeCase of routeCases) {
 
             await expectAllVisibleButtonsAtLeast44(page);
             await page.screenshot({
-                path: `${screenshotDir}/${routeCase.label.toLowerCase()}-${viewport.name}.png`,
+                path: testInfo.outputPath(`${routeCase.label.toLowerCase()}-${viewport.name}.png`),
                 fullPage: true,
             });
 
@@ -141,7 +137,7 @@ for (const routeCase of routeCases) {
 }
 
 for (const routeCase of routeCases) {
-    test(`${routeCase.label} exposes every configured heat-map floor with usable zone targets`, async ({page}) => {
+    test(`${routeCase.label} exposes every configured heat-map floor with usable zone targets`, async ({page}, testInfo) => {
         await page.setViewportSize({width: 390, height: 844});
         await page.clock.setFixedTime(new Date("2026-08-31T12:00:00Z"));
         await installDashboardApiMocks(page);
@@ -169,13 +165,13 @@ for (const routeCase of routeCases) {
             : page.locator('main polygon[role="button"]').first();
         await focusedZone.focus();
         await page.screenshot({
-            path: `${screenshotDir}/${routeCase.label.toLowerCase()}-mobile-heatmap-floor4-focus.png`,
+            path: testInfo.outputPath(`${routeCase.label.toLowerCase()}-mobile-heatmap-floor4-focus.png`),
             fullPage: true,
         });
     });
 }
 
-test("heat-map dialog supports Enter, Space, Escape, close, and click-away with focus restoration", async ({page}) => {
+test("heat-map dialog supports Enter, Space, Escape, close, and click-away with focus restoration", async ({page}, testInfo) => {
     await page.setViewportSize({width: 1280, height: 900});
     await page.clock.setFixedTime(new Date("2026-08-31T12:00:00Z"));
     await installDashboardApiMocks(page);
@@ -199,7 +195,7 @@ test("heat-map dialog supports Enter, Space, Escape, close, and click-away with 
     });
     await expect(page.getByRole("dialog", {name: "Power House details"})).toBeVisible();
     await page.screenshot({
-        path: `${screenshotDir}/nick-desktop-heatmap-dialog.png`,
+        path: testInfo.outputPath("nick-desktop-heatmap-dialog.png"),
         fullPage: true,
     });
     await page.keyboard.press("Escape");
@@ -223,7 +219,7 @@ test("heat-map dialog supports Enter, Space, Escape, close, and click-away with 
     await page.keyboard.press("ArrowRight");
     expect(await zone.evaluate((element) => getComputedStyle(element).stroke)).toBe("rgb(255, 255, 255)");
     await page.screenshot({
-        path: `${screenshotDir}/nick-desktop-heatmap-focus-dark.png`,
+        path: testInfo.outputPath("nick-desktop-heatmap-focus-dark.png"),
         fullPage: true,
     });
     const darkMainResults = await new AxeBuilder({page}).include("main").analyze();

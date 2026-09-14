@@ -86,6 +86,42 @@ print(json.dumps([c.RESAMPLE_MINUTES,c.WINDOW_RESAMPLE_MINUTES,c.CROWD_BAND_BRID
     assert result.stderr == ""
 
 
+def normalized_ast_dump(expression):
+    """Ignore only Call's empty-keyword dump spelling, never literal contents."""
+    tree = ast.parse(expression, mode="eval")
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "Call":
+            node.keywords = [
+                keyword for keyword in node.keywords
+                if not (keyword.arg == "keywords" and isinstance(keyword.value, ast.List) and not keyword.value.elts)
+            ]
+    return ast.dump(tree)
+
+
+def test_ast_dump_normalization_accepts_empty_keyword_representations():
+    omitted = "Call(func=Name(id='f', ctx=Load()), args=[Constant(value='value')])"
+    explicit = "Call(func=Name(id='f', ctx=Load()), args=[Constant(value='value')], keywords=[])"
+    assert normalized_ast_dump(omitted) == normalized_ast_dump(explicit)
+
+
+def test_ast_dump_normalization_preserves_semantic_changes():
+    original = "max(5, int(os.getenv('RATE', '15')))"
+    for changed in (
+        "min(5, int(os.getenv('RATE', '15')))",
+        "max(6, int(os.getenv('RATE', '15')))",
+        "max(5, float(os.getenv('RATE', '15')))",
+        "max(5, int(os.getenv('OTHER_RATE', '15')))",
+        "max(5, int(os.getenv('RATE', '16')))",
+        "max(5, int(os.getenv('RATE', '15'), base=10))",
+    ):
+        assert normalized_ast_dump(ast.dump(ast.parse(original, mode="eval"))) != normalized_ast_dump(ast.dump(ast.parse(changed, mode="eval")))
+    for left, right in (
+        ("f(option=[])", "f()"),
+        ("'literal, keywords=[]'", "'literal'"),
+    ):
+        assert normalized_ast_dump(ast.dump(ast.parse(left, mode="eval"))) != normalized_ast_dump(ast.dump(ast.parse(right, mode="eval")))
+
+
 def test_all_numeric_initializers_preserve_original_ast_contract():
     baseline = json.loads((ROOT / "tests/fixtures/forecast_config_numeric_baseline.json").read_text())
     tree = ast.parse((ROOT / "server/reclive/forecasting/config.py").read_text())
@@ -107,7 +143,7 @@ def test_all_numeric_initializers_preserve_original_ast_contract():
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {"int", "float"}:
                 assert not any(isinstance(arg, ast.Call) and isinstance(arg.func, ast.Attribute) and arg.func.attr == "getenv" for arg in node.args)
     for row in baseline:
-        assert ast.dump(restore.visit(assignments[row["symbol"]])) == row["expression"]
+        assert normalized_ast_dump(ast.dump(restore.visit(assignments[row["symbol"]]))) == normalized_ast_dump(row["expression"])
     assert len(baseline) == restore.count == 156
 
 
