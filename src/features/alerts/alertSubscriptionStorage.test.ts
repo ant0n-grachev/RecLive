@@ -36,19 +36,23 @@ it("recovers unavailable storage", () => {
     expect(() => writeStoredSubscriptions({})).not.toThrow();
 });
 
-it("preserves matching live/partial selection and falls back past closed/unknown", () => {
+it("preserves matching live selection and excludes partial, closed, and unknown sections", () => {
     writeStoredSubscriptions({1186: {sectionKey: "partial", threshold: 12}});
-    expect(resolveInitialSectionKey(1186, [closed, unknown, overall, partial])).toBe("partial");
+    expect(resolveInitialSectionKey(1186, [closed, unknown, overall, partial])).toBe("overall");
     expect(resolveInitialSectionKey(1656, [closed, unknown, overall, partial])).toBe("overall");
+    expect(resolveInitialSectionKey(1186, [partial])).toBe("");
     expect(resolveInitialSectionKey(1186, [closed, unknown])).toBe("");
     expect(resolveInitialSectionKey(1186, [overall])).toBe("overall");
+    writeStoredSubscriptions({1186: {sectionKey: "overall", threshold: 12}});
+    expect(resolveInitialSectionKey(1186, [{...overall, key: "other"}, overall])).toBe("overall");
 });
 
 it("clamps and rounds matching defaults while using the fallback for other sections", () => {
     writeStoredSubscriptions({1186: {sectionKey: "overall", threshold: 40}, 1656: {sectionKey: "overall", threshold: 8.6}});
     expect(resolveDefaultThresholdInput(1186, overall)).toBe("19");
     expect(resolveDefaultThresholdInput(1656, overall)).toBe("9");
-    expect(resolveDefaultThresholdInput(1656, partial)).toBe("19");
+    expect(resolveDefaultThresholdInput(1656, partial)).toBe("");
+    expect(resolveDefaultThresholdInput(1656, {...overall, key: "other"})).toBe("19");
     writeStoredSubscriptions({1186: {sectionKey: "overall", threshold: -5}});
     expect(resolveDefaultThresholdInput(1186, overall)).toBe("1");
 });

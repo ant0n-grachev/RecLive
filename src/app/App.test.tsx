@@ -408,8 +408,9 @@ describe("App refresh coordination", () => {
             await Promise.resolve();
         });
 
-        expect(screen.getByText(/Live occupancy could not be refreshed/))
-            .toHaveAttribute("role", "alert");
+        expect(screen.getByRole("status")).toHaveTextContent("Couldn't refresh. Try again.");
+        expect(screen.getByRole("status")).toHaveAttribute("aria-live", "polite");
+        expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     });
 
     it("does not announce polling completion and clears a pending manual announcement on facility switch", () => {
