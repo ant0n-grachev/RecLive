@@ -7,19 +7,14 @@ export interface PwaUpdatePromptProps {
 
 export function PwaUpdatePrompt({
     needRefresh,
-    offlineReady,
     updateServiceWorker,
     onDismiss,
 }: PwaUpdatePromptProps) {
-    if (!needRefresh && !offlineReady) return null;
-
-    const message = needRefresh
-        ? "A new version of RecLive is ready."
-        : "RecLive is ready to use offline.";
+    if (!needRefresh) return null;
 
     return (
         <div role="status" aria-live="polite">
-            <p>{message}</p>
+            <p>A new version of RecLive is ready.</p>
             {needRefresh && (
                 <button
                     type="button"

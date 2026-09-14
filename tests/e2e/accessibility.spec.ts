@@ -12,6 +12,8 @@ const viewportCases = [
     {name: "mobile", width: 390, height: 844},
 ] as const;
 
+const automaticDiagnosticCopy = /saved snapshot|backup feed|observed-capacity coverage|No internet connection right now|Live and prediction services are temporarily unavailable|Prediction services are temporarily unavailable|Current counts may be delayed/i;
+
 test.beforeEach(async ({page}) => {
     await page.emulateMedia({reducedMotion: "reduce"});
 });
@@ -70,6 +72,19 @@ const expectAllVisibleButtonsAtLeast44 = async (page: Page) => {
     }
 };
 
+const expectNoHorizontalOverflow = async (page: Page) => {
+    expect(await page.evaluate(() => (
+        document.documentElement.scrollWidth <= document.documentElement.clientWidth
+    ))).toBe(true);
+};
+
+const expectQuietUnavailableOccupancy = async (page: Page) => {
+    await expect(page.getByLabel("Current count unavailable").first()).toHaveText("—");
+    await expect(page.getByRole("progressbar", {name: "Current occupancy percentage"})).toHaveCount(0);
+    await expect(page.getByText(automaticDiagnosticCopy)).toHaveCount(0);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+};
+
 for (const routeCase of routeCases) {
     for (const viewport of viewportCases) {
         test(`${routeCase.label} ${viewport.name} renders without overlays or runtime errors`, async ({page}, testInfo) => {
@@ -92,6 +107,11 @@ for (const routeCase of routeCases) {
             await waitForSettledDashboard(page, routeCase.total);
             await expect(page.locator("vite-error-overlay")).toHaveCount(0);
             await expect(page.getByText(/Internal Server Error|Failed to fetch dynamically imported module/)).toHaveCount(0);
+
+            await page.screenshot({
+                path: testInfo.outputPath(`${routeCase.label.toLowerCase()}-${viewport.name}-first-viewport.png`),
+                fullPage: false,
+            });
 
             const alertsButton = page.getByRole("button", {name: "Alerts", exact: true});
             await expectMinimumTarget(alertsButton, 44);
@@ -117,6 +137,47 @@ for (const routeCase of routeCases) {
             expect(consoleProblems).toEqual([]);
         });
     }
+}
+
+for (const stateCase of [
+    {name: "partial", liveCountsMode: "partial" as const, viewport: viewportCases[1]},
+    {name: "missing", liveCountsMode: "missing" as const, viewport: viewportCases[0]},
+]) {
+    test(`Nick ${stateCase.name} occupancy stays quiet at ${stateCase.viewport.name} size`, async ({page}, testInfo) => {
+        const consoleProblems: string[] = [];
+        const pageErrors: string[] = [];
+        page.on("console", (message) => {
+            if (["warning", "error"].includes(message.type())) consoleProblems.push(message.text());
+        });
+        page.on("pageerror", (error) => pageErrors.push(error.message));
+
+        await page.setViewportSize({width: stateCase.viewport.width, height: stateCase.viewport.height});
+        await page.clock.setFixedTime(new Date("2026-08-31T12:00:00Z"));
+        await installDashboardApiMocks(page, {liveCountsMode: stateCase.liveCountsMode});
+        await page.goto("/nick");
+
+        await expect(page).toHaveURL(/\/nick$/);
+        await expect(page).toHaveTitle(/Nick/i);
+        await expect(page.locator("main")).toBeVisible();
+        await expect(page.locator("main")).not.toBeEmpty();
+        await expect(page.getByRole("button", {name: "Nick", exact: true})).toHaveAttribute("aria-pressed", "true");
+        await expect(page.getByRole("button", {name: "Alerts", exact: true})).toBeVisible();
+        await expect(page.getByRole("button", {name: "Show map", exact: true})).toBeVisible();
+        await expect(page.getByText("Forecast Today", {exact: true})).toBeVisible();
+        await expectQuietUnavailableOccupancy(page);
+        await expect(page.locator("vite-error-overlay")).toHaveCount(0);
+        await expect(page.getByText(/Internal Server Error|Failed to fetch dynamically imported module/)).toHaveCount(0);
+        await expectNoHorizontalOverflow(page);
+        const accessibilityResults = await new AxeBuilder({page}).include("main").analyze();
+        expect(seriousOrCritical(accessibilityResults.violations)).toEqual([]);
+        await page.screenshot({
+            path: testInfo.outputPath(`nick-${stateCase.name}-${stateCase.viewport.name}.png`),
+            fullPage: false,
+        });
+
+        expect(pageErrors).toEqual([]);
+        expect(consoleProblems).toEqual([]);
+    });
 }
 
 for (const routeCase of routeCases) {
@@ -244,7 +305,7 @@ test("heat-map dialog supports Enter, Space, Escape, close, and click-away with 
     expect(seriousOrCritical(darkMainResults.violations)).toEqual([]);
 });
 
-test("generated worker controls the app shell offline and never caches API responses", async ({page, context}) => {
+test("generated worker preserves a quiet cached shell, expires counts, and recovers online", async ({page, context}) => {
     await page.clock.setFixedTime(new Date("2026-08-31T12:00:00Z"));
     await installDashboardApiMocks(page);
     await page.goto("/nick");
@@ -272,22 +333,36 @@ test("generated worker controls the app shell offline and never caches API respo
     await removeDashboardApiMocks(page);
     await context.setOffline(true);
     await page.reload();
+    await expect(page).toHaveURL(/\/nick$/);
+    await expect(page).toHaveTitle(/Nick/i);
     await expect(page.locator("main")).toBeVisible();
+    await expect(page.locator("main")).not.toBeEmpty();
+    await expect(page.getByRole("button", {name: "Nick", exact: true})).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("heading", {name: routeCases[0].total})).toBeVisible();
-    await expect(page.getByText(/offline|saved snapshot/i).first()).toBeVisible();
+    await expect(page.getByText(automaticDiagnosticCopy)).toHaveCount(0);
 
     await page.clock.setFixedTime(new Date("2026-08-31T12:11:00Z"));
     await page.reload();
     await expect(page.locator("main")).toBeVisible();
-    await expect(page.getByText(/saved snapshot/i).first()).toBeVisible();
-    await expect(page.getByText("Live occupancy unavailable", {exact: true}).first()).toBeVisible();
-    await expect(page.getByRole("progressbar", {name: "Current occupancy percentage"})).toHaveCount(0);
+    await expect(page.getByRole("heading", {name: routeCases[0].total})).toHaveCount(0);
+    await expectQuietUnavailableOccupancy(page);
 
     await page.evaluate(() => window.localStorage.removeItem("reclive:facilityCache"));
     await page.goto("/bakke");
+    await expect(page).toHaveURL(/\/bakke$/);
+    await expect(page).toHaveTitle(/Bakke/i);
     await expect(page.locator("main")).toBeVisible();
-    await expect(page.getByText(/No internet connection right now/i)).toBeVisible();
+    await expect(page.locator("main")).not.toBeEmpty();
+    await expect(page.getByRole("button", {name: "Bakke", exact: true})).toHaveAttribute("aria-pressed", "true");
+    await expectQuietUnavailableOccupancy(page);
+    await expect(page.getByRole("button", {name: "Try again", exact: true})).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+
+    await installDashboardApiMocks(page, {observedAt: "2026-08-31T12:11:00Z"});
     await context.setOffline(false);
+    await page.reload();
+    await waitForSettledDashboard(page, routeCases[1].total);
+    await expect(page.getByRole("button", {name: "Bakke", exact: true})).toHaveAttribute("aria-pressed", "true");
 });
 
 test("normal production localhost never exposes debug globals", async ({page}) => {

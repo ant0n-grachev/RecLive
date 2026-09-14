@@ -111,13 +111,10 @@ export default function AlertRuleForm({
 
         const currentCount = selectedSection.summary.count;
         const base = currentCount === null
-            ? `${facilityName}'s ${selectedSection.label} current occupancy is ${currentOccupancyPercent}% of observed capacity.`
-            : `${facilityName}'s ${selectedSection.label} current occupancy is ${currentCount} people (${currentOccupancyPercent}% of observed capacity).`;
-        const coverage = selectedSection.summary.status === "partial"
-            ? ` Coverage: ${Math.round(selectedSection.summary.coverage * 100)}% of open capacity observed.`
-            : "";
-        if (!hasValidThresholdRange) return `${base}${coverage}\nThere is no lower threshold available yet.`;
-        return `${base}${coverage}\nChoose a threshold between 1-${thresholdUpperBound}.`;
+            ? `${facilityName}'s ${selectedSection.label} current occupancy is ${currentOccupancyPercent}% full.`
+            : `${facilityName}'s ${selectedSection.label} current occupancy is ${currentCount} people (${currentOccupancyPercent}% full).`;
+        if (!hasValidThresholdRange) return `${base}\nThere is no lower threshold available yet.`;
+        return `${base}\nChoose a threshold between 1-${thresholdUpperBound}.`;
     }, [
         selectedSection,
         facilityName,
@@ -198,9 +195,6 @@ export default function AlertRuleForm({
                 {orderedSections.map((section) => (
                     <MenuItem key={section.key} value={section.key} disabled={!hasUsableSummary(section)}>
                         {section.label}
-                        {section.summary.status === "partial"
-                            ? ` (Coverage: ${Math.round(section.summary.coverage * 100)}%)`
-                            : ""}
                     </MenuItem>
                 ))}
             </TextField>
@@ -245,7 +239,7 @@ export default function AlertRuleForm({
                     requireStandalonePwaForAlerts
                         ? "Install the PWA on mobile to enable alerts."
                         : !selectedSection
-                            ? "Live occupancy unavailable for alert thresholds."
+                            ? "Current occupancy unavailable."
                             : !hasValidThresholdRange
                                 ? `Current occupancy is ${currentOccupancyPercent}%, so there is no lower threshold to set yet.`
                                 : (thresholdInput.length > 0 && !isThresholdValid

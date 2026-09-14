@@ -35,3 +35,9 @@ it("does not render when neither worker state is active", () => {
 
     expect(container).toBeEmptyDOMElement();
 });
+
+it("keeps offline preparation silent without announcing system status", () => {
+    const {container} = render(<PwaUpdatePrompt needRefresh={false} offlineReady
+        updateServiceWorker={async () => undefined} onDismiss={() => undefined}/>);
+    expect(container).toBeEmptyDOMElement();
+});

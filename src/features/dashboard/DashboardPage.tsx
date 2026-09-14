@@ -1,5 +1,5 @@
 import {Suspense, lazy, useMemo} from "react";
-import {Alert, Box, CircularProgress, Container, Stack, Typography, useMediaQuery} from "@mui/material";
+import {Box, Button, CircularProgress, Container, Stack, Typography, useMediaQuery} from "@mui/material";
 import {useTheme, type PaletteMode} from "@mui/material/styles";
 import {AnimatePresence, motion, useReducedMotion} from "framer-motion";
 import AlertsPanel from "../../app/components/AlertsPanel";
@@ -39,14 +39,14 @@ export function DashboardPage({state, view, themeMode, onThemeModeChange}: Dashb
         isStandalonePwa, isTouchCapable, enablePullToRefresh, pullDistance,
         isPulling, isReadyToRefresh, showPullIndicator, handleFacilitySelect,
         setForecastDaySelection, setIsCrowdAlertOpen, setIsInstallGuideOpen,
-        resetPullGesture, handleTouchStart, handleTouchMove, handleTouchEnd,
+        resetPullGesture, handleTouchStart, handleTouchMove, handleTouchEnd, manualRefresh,
     } = state;
     const {
         activeData, facilitySummary, alertSections, dashboardConfig, knownIds,
         sectionConfigs, hasOtherSectionLocations, visibleForecastDays,
         selectedForecastDay, forecastDisplayKey, resolvedForecastDayOffset,
         nextOpenLabel, scheduleStatus, showClosedFacilityMode,
-        canShowDailyForecastCard, warningText, occupancyThresholds,
+        canShowDailyForecastCard, occupancyThresholds,
         sectionOccupancyThresholds, sectionForecastMap,
     } = view;
     const facilityContentVariants = useMemo(
@@ -165,9 +165,13 @@ export function DashboardPage({state, view, themeMode, onThemeModeChange}: Dashb
                 )}
 
                 {error && !activeData && (
-                    <Alert severity="warning" sx={{borderRadius: 2}}>
-                        {error}
-                    </Alert>
+                    <Stack spacing={1}>
+                        <OccupancyHero summary={facilitySummary} nowTs={nowTs} facilityId={facility}
+                            headerAction={<ThemeModeToggle themeMode={themeMode} onThemeModeChange={onThemeModeChange}/>}/>
+                        <Button onClick={manualRefresh} sx={{alignSelf: "center", minHeight: 44, textTransform: "none"}}>
+                            Try again
+                        </Button>
+                    </Stack>
                 )}
 
                 <AnimatePresence mode="wait" initial={false}>
@@ -215,14 +219,6 @@ export function DashboardPage({state, view, themeMode, onThemeModeChange}: Dashb
                                     }
                                 />
                             </Box>
-
-                            {!showClosedFacilityMode && warningText && (
-                                <Box component={motion.div} variants={facilityItemVariants}>
-                                    <Alert severity="warning" variant="outlined" sx={{borderRadius: 2}}>
-                                        {warningText}
-                                    </Alert>
-                                </Box>
-                            )}
 
                             {canShowDailyForecastCard && visibleForecastDays.length > 0 && (
                                 <Box component={motion.div} variants={facilityItemVariants}>

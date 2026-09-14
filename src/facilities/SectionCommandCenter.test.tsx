@@ -43,11 +43,11 @@ describe("SectionCommandCenter trusted tuple transitions", () => {
 
     it("shows the truthful tuple immediately when occupancy recovers", () => {
         const {rerender} = render(section(location(null, 100, null)));
-        expect(screen.getByText("Live occupancy unavailable")).toBeInTheDocument();
+        expect(screen.getByLabelText("Current count unavailable")).toHaveTextContent("—");
 
         rerender(section(location(30, 100)));
 
-        expect(screen.queryByText("Live occupancy unavailable")).not.toBeInTheDocument();
+        expect(screen.queryByLabelText("Current count unavailable")).not.toBeInTheDocument();
         expectTuple(30, 100, 30);
     });
 

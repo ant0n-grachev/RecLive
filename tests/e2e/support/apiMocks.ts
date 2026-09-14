@@ -7,23 +7,29 @@ const vapidPublicKey =
 
 const nickLocationIds = [5761, 5764, 5760, 7089, 5762, 5758, 7090, 5766, 5753, 5754, 5763];
 const bakkeLocationIds = [8718, 8717, 8720, 8698, 8716, 10550, 8705, 8712, 8700, 8714, 8701, 8699, 8696, 8694, 8695];
+const partialFreshLocationIds = new Set([5761, 5764, 5760, 5762, 8717, 8700, 10550, 8716]);
+type LiveCountsMode = "fresh" | "partial" | "missing";
 
-const liveRow = (locationId: number) => ({
+const liveRow = (locationId: number, mode: LiveCountsMode, liveObservedAt: string) => ({
     LocationId: locationId,
     IsClosed: false,
-    LastCount: locationId === 5761 ? 30 : locationId === 8717 ? 24 : 0,
-    LastUpdatedDateAndTime: observedAt,
-    FetchedAt: observedAt,
+    LastCount: mode === "missing" ? null : locationId === 5761 ? 30 : locationId === 8717 ? 24 : 0,
+    LastUpdatedDateAndTime: mode === "missing" ? null : liveObservedAt,
+    FetchedAt: mode === "fresh" || (mode === "partial" && partialFreshLocationIds.has(locationId))
+        ? liveObservedAt
+        : null,
 });
 
-const liveCounts = {
+const liveCounts = (mode: LiveCountsMode, liveObservedAt: string) => ({
     ingestion: {
-        lastSuccessfulFetchAt: observedAt,
+        lastSuccessfulFetchAt: liveObservedAt,
         ageSeconds: 0,
         status: "healthy",
     },
-    rows: [...nickLocationIds, ...bakkeLocationIds].map(liveRow),
-};
+    rows: [...nickLocationIds, ...bakkeLocationIds].map(
+        (locationId) => liveRow(locationId, mode, liveObservedAt)
+    ),
+});
 
 const facilityName = (id: 1186 | 1656) => id === 1656
     ? "Bakke Recreation & Wellbeing Center"
@@ -101,7 +107,7 @@ const facilityIdFromPath = (pathname: string): 1186 | 1656 | null => {
 
 export async function installDashboardApiMocks(
     page: Page,
-    options: {forecastExpectedPct?: number} = {}
+    options: {forecastExpectedPct?: number; liveCountsMode?: LiveCountsMode; observedAt?: string} = {}
 ): Promise<void> {
     const context = page.context();
     const previousApiHandler = apiHandlers.get(context);
@@ -130,7 +136,9 @@ export async function installDashboardApiMocks(
         const method = request.method();
 
         if (method === "GET" && pathname === "/api/live-counts") {
-            await route.fulfill({json: liveCounts});
+            await route.fulfill({
+                json: liveCounts(options.liveCountsMode ?? "fresh", options.observedAt ?? observedAt),
+            });
             return;
         }
 

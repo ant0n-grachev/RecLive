@@ -9,7 +9,9 @@ it("announces refresh completion after an in-progress state", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Live occupancy updated");
 });
 
-it("uses assertive announcement for a refresh failure", () => {
+it("reports a requested refresh failure briefly without a stale-data announcement", () => {
     render(<LiveStatusAnnouncer status="refresh-error" />);
-    expect(screen.getByRole("alert")).toHaveTextContent("Live occupancy could not be refreshed");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Couldn't refresh. Try again.");
+    expect(screen.getByRole("status")).not.toHaveTextContent(/last available|stale/i);
 });

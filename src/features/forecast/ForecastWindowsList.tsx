@@ -106,8 +106,8 @@ export default function ForecastWindowsList({
     return (
         <Stack spacing={0.5}>
             {filteredBestWindows.length === 0 && filteredAvoidWindows.length === 0 ? (
-                <Typography variant="body2" color="text.secondary" sx={{fontWeight: 600}}>
-                    Forecast crowd bands are unavailable for this day.
+                <Typography variant="body2" role="img" aria-label="Forecast windows unavailable" color="text.secondary" sx={{fontWeight: 600}}>
+                    —
                 </Typography>
             ) : (
                 <>

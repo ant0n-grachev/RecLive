@@ -93,22 +93,16 @@ export default function FacilityHoursBlock({
                         )}
 
                         {!isLoading && error && !schedule && (
-                            <Typography variant="body2" color="text.secondary">
-                                Schedule is unavailable right now.
+                            <Typography variant="body2" role="img" color="text.secondary" aria-label="Opening hours unavailable">
+                                —
                             </Typography>
                         )}
 
                         {schedule && (
                             <Stack spacing={2}>
-                                {schedule.stale ? (
-                                    <Typography variant="body2" color="warning.main">
-                                        Official hours may be out of date. Showing the last verified schedule.
-                                    </Typography>
-                                ) : null}
-
                                 {schedule.sections.length === 0 && (
-                                    <Typography variant="body2" color="text.secondary">
-                                        No schedule rows are available for this facility yet.
+                                    <Typography variant="body2" role="img" color="text.secondary" aria-label="Opening hours unavailable">
+                                        —
                                     </Typography>
                                 )}
 

@@ -105,7 +105,7 @@ const option = (
 
 const defaultSections = (): AlertSectionOption[] => [
     {key: "overall", label: "Entire Facility", summary: summary("live", 60)},
-    {key: "fitness floors", label: "Fitness Floors", summary: summary("partial", 45)},
+    {key: "fitness floors", label: "Fitness Floors", summary: summary("live", 45)},
 ];
 
 const renderOpenCard = (
@@ -153,7 +153,7 @@ describe("resolveInitialSectionKey", () => {
         ])).toBe("weights");
     });
 
-    it("preserves a saved partial selection", () => {
+    it("replaces a saved partial selection with the first live option", () => {
         window.localStorage.setItem("reclive:crowd-alert-subscriptions", JSON.stringify({
             "1186": {sectionKey: "courts", threshold: 20},
         }));
@@ -161,7 +161,7 @@ describe("resolveInitialSectionKey", () => {
         expect(resolveInitialSectionKey(1186, [
             option("overall", summary("live", 25)),
             option("courts", summary("partial", 40)),
-        ])).toBe("courts");
+        ])).toBe("overall");
     });
 
     it("returns no selection when no option has a usable percentage", () => {
@@ -477,10 +477,27 @@ describe("CrowdAlertSubscriptionCard server-backed alert management", () => {
         renderOpenCard();
 
         expect(await screen.findByRole("listitem", {name: /Alert for Nick Entire Facility at 40%/i})).toBeVisible();
-        expect(screen.getByText("Alerts are temporarily unavailable right now. Please try again shortly.")).toBeVisible();
+        expect(screen.getByText("Alerts aren’t available right now. Try again.")).toBeVisible();
         expect(screen.queryByText("Could not load alerts right now.")).not.toBeInTheDocument();
         expect(screen.getByRole("button", {name: "Set alert"})).toBeDisabled();
     });
+
+    it.each(["push_rules_db_unavailable", "push_vapid_unconfigured"] as const)(
+        "uses the same concise unavailable message for %s",
+        async (reason) => {
+            pushApi.getPushAvailability.mockResolvedValue({
+                apiAvailable: true,
+                dbAvailable: reason !== "push_rules_db_unavailable",
+                alertsAvailable: false,
+                reason,
+            });
+
+            renderOpenCard();
+
+            expect(await screen.findByText("Alerts aren’t available right now. Try again.")).toBeVisible();
+            expect(screen.getByRole("button", {name: "Set alert"})).toBeDisabled();
+        }
+    );
 
     it("shows a fixed associated subscribe failure without erasing loaded rules or defaults", async () => {
         const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -876,7 +893,7 @@ describe("CrowdAlertSubscriptionCard server-backed alert management", () => {
         fireEvent.click(screen.getByRole("button", {name: "Set alert"}));
         await waitFor(() => expect(pushApi.subscribePushRule).toHaveBeenCalledTimes(1));
         fireEvent.mouseDown(screen.getByRole("combobox", {name: "Gym area"}));
-        fireEvent.click(screen.getByRole("option", {name: "Fitness Floors (Coverage: 60%)"}));
+        fireEvent.click(screen.getByRole("option", {name: "Fitness Floors"}));
         fireEvent.change(screen.getByLabelText("Alert threshold (%)"), {target: {value: "031"}});
         subscribe.resolve({created: true, rule: managedRule});
         await screen.findByText("Alert set successfully.");
@@ -1134,7 +1151,7 @@ describe("CrowdAlertSubscriptionCard server-backed alert management", () => {
         await waitFor(() => expect(screen.getByText("Alert set successfully.")).toBeVisible());
     });
 
-    it("keeps live and partial sections selectable, reports partial coverage, and blocks unknown states", () => {
+    it("keeps only live sections selectable without exposing partial coverage", () => {
         window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
             "1186": {sectionKey: "fitness floors", threshold: 20},
         }));
@@ -1153,15 +1170,33 @@ describe("CrowdAlertSubscriptionCard server-backed alert management", () => {
             />
         );
 
-        expect(screen.getByRole("combobox", {name: "Gym area"})).toHaveTextContent("Fitness Floors");
-        expect(screen.getByText(/Coverage: 60% of open capacity observed\./)).toBeVisible();
+        expect(screen.getByRole("combobox", {name: "Gym area"})).toHaveTextContent("Entire Facility");
+        expect(screen.getByText(/25 people \(60% full\)/)).toBeVisible();
+        expect(screen.queryByText(/Coverage:/)).not.toBeInTheDocument();
         expect(screen.getByLabelText("Alert threshold (%)")).toBeEnabled();
 
         fireEvent.mouseDown(screen.getByRole("combobox", {name: "Gym area"}));
         expect(screen.getByRole("option", {name: "Entire Facility"})).not.toHaveAttribute("aria-disabled", "true");
-        expect(screen.getByRole("option", {name: "Fitness Floors (Coverage: 60%)"})).not.toHaveAttribute("aria-disabled", "true");
+        expect(screen.getByRole("option", {name: "Fitness Floors"})).toHaveAttribute("aria-disabled", "true");
         expect(screen.getByRole("option", {name: "Unknown Area"})).toHaveAttribute("aria-disabled", "true");
         expect(screen.getByRole("option", {name: "Insufficient Area"})).toHaveAttribute("aria-disabled", "true");
         expect(screen.getByRole("option", {name: "Closed Area"})).toHaveAttribute("aria-disabled", "true");
+    });
+
+    it("uses concise unavailable copy when no live section can set a threshold", () => {
+        render(
+            <CrowdAlertSubscriptionCard
+                facility={1186}
+                isOpen={false}
+                onClose={vi.fn()}
+                sections={[
+                    {key: "partial", label: "Partial Area", summary: summary("partial", 45)},
+                    {key: "unknown", label: "Unknown Area", summary: summary("unknown", null)},
+                ]}
+            />
+        );
+
+        expect(screen.getByText("Current occupancy unavailable.")).toBeVisible();
+        expect(screen.getByRole("button", {name: "Set alert"})).toBeDisabled();
     });
 });

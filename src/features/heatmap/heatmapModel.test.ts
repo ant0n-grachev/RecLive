@@ -49,11 +49,15 @@ describe("buildFloorRenderData", () => {
         expect(result.floorMap?.zones.some((zone) => zone.label === "The Point")).toBe(false);
     });
 
-    it("keeps fractional coverage and colored cells for a partially observed zone", () => {
-        let locations = withLocation(fixtureLocationsByFacility[1186], 5753, {
-            currentCapacity: 3,
-            maxCapacity: 6,
-        });
+    it("keeps partial data in the model without painting it as trustworthy", () => {
+        let locations = withLocation(
+            fixtureLocationsByFacility[1186].filter((location) => [5753, 5754].includes(location.locationId)),
+            5753,
+            {
+                currentCapacity: 3,
+                maxCapacity: 6,
+            }
+        );
         locations = withLocation(locations, 5754, {
             currentCapacity: 2,
             maxCapacity: 6,
@@ -73,7 +77,7 @@ describe("buildFloorRenderData", () => {
         expect(racquetball?.summary.status).toBe("partial");
         expect(racquetball?.summary.coverage).toBe(0.5);
         expect(racquetball?.summary.percent).toBe(50);
-        expect(result.heatCells.length).toBeGreaterThan(0);
+        expect(result.heatCells).toEqual([]);
         expect(result.mapScale).toBe(2);
     });
 

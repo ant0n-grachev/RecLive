@@ -294,6 +294,8 @@ export default function HeatmapCard({
                         </Typography>
                         <Typography
                             variant="caption"
+                            role={selectedZonePresentation?.value === "—" ? "img" : undefined}
+                            aria-label={selectedZonePresentation?.value === "—" ? selectedZonePresentation.ariaLabel : undefined}
                             sx={{
                                 display: "block",
                                 fontWeight: 800,

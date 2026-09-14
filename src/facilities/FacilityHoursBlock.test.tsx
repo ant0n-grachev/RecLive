@@ -29,7 +29,7 @@ const staleSchedule: FacilityHoursFacilityPayload = {
 };
 
 describe("FacilityHoursBlock", () => {
-    it("labels preserved schedule data as stale without hiding its rows", () => {
+    it("keeps preserved hours without an automatic stale-data notice", () => {
         renderWithApp(
             <FacilityHoursBlock
                 facilityName="Nick"
@@ -46,11 +46,18 @@ describe("FacilityHoursBlock", () => {
         fireEvent.click(accordionButton);
 
         expect(accordionButton).toHaveAttribute("aria-expanded", "true");
-        expect(screen.getByText(
+        expect(screen.queryByText(
             "Official hours may be out of date. Showing the last verified schedule.",
-        )).toBeVisible();
+        )).not.toBeInTheDocument();
         expect(screen.getByText("6:00 am - 10:00 pm")).toBeVisible();
         expect(screen.queryByText("anti_bot")).not.toBeInTheDocument();
+    });
+
+    it.each([null, {...staleSchedule, sections: []}])("keeps missing hours neutral", (schedule) => {
+        renderWithApp(<FacilityHoursBlock facilityName="Nick" isLoading={false} error="Internal failure" schedule={schedule}/>);
+        fireEvent.click(screen.getByRole("button", {name: /official hours, closures & notices/i}));
+        expect(screen.getByRole("img", {name: "Opening hours unavailable"})).toHaveTextContent("—");
+        expect(screen.queryByText(/schedule is unavailable|No schedule rows|Internal failure/i)).not.toBeInTheDocument();
     });
 
     it("does not label a fresh official schedule as stale", () => {

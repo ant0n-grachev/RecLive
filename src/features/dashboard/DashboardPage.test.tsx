@@ -137,16 +137,32 @@ it("renders loading and error states without stale facility cards", () => {
     expect(screen.getByText("Loading...")).toBeVisible();
     expect(screen.queryByText("Live Occupancy")).not.toBeInTheDocument();
 
-    const errorProps = createPageProps({data: null, isLoading: false, error: "Live data unavailable."});
+    const errorProps = createPageProps({data: null, isLoading: false, error: "Live data unavailable.", manualRefresh: vi.fn()});
     rerender(
         <ThemeProvider theme={createAppTheme(errorProps.themeMode)}>
             <DashboardPage {...errorProps}/>
         </ThemeProvider>
     );
 
-    expect(screen.getByRole("alert")).toHaveTextContent("Live data unavailable.");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Current count unavailable")).toHaveTextContent("—");
+    fireEvent.click(screen.getByRole("button", {name: "Try again"}));
+    expect(errorProps.state.manualRefresh).toHaveBeenCalledOnce();
     expect(screen.queryByText("Loading...")).not.toBeInTheDocument();
-    expect(screen.queryByText("Live Occupancy")).not.toBeInTheDocument();
+    expect(screen.getByText("Live Occupancy")).toBeVisible();
+});
+
+it.each([
+    {isOffline: true, liveOutageState: "cache" as const, liveDataSource: "cache" as const},
+    {liveOutageState: "cache" as const, liveDataSource: "cache" as const},
+    {liveDataSource: "fallback_api" as const},
+    {forecastError: "Forecast unavailable right now."},
+])("keeps automatic data diagnostics off the dashboard: %j", async (overrides) => {
+    renderPage(createPageProps(overrides));
+    await settlePageImports();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText(/backup feed|saved snapshot|temporarily unavailable|observed-capacity coverage/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", {name: "Alerts"})).toBeVisible();
 });
 
 it("keeps closed-mode copy, tomorrow forecast controls, and theme control", () => {

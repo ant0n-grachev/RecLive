@@ -66,7 +66,7 @@ export const writeStoredSubscriptions = (value: StoredSubscriptions): void => {
 export const normalizePercentInt = (value: number): number => Math.max(0, Math.round(value));
 
 export const hasUsableSummary = (section: AlertSectionOption): boolean => (
-    (section.summary.status === "live" || section.summary.status === "partial")
+    section.summary.status === "live"
     && section.summary.percent !== null
     && Number.isFinite(section.summary.percent)
 );

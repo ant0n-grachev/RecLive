@@ -36,7 +36,7 @@ export default function OccupancyHero({
 }: Props) {
     const theme = useTheme();
     const hasObservedOccupancy = (
-        (summary.status === "live" || summary.status === "partial")
+        summary.status === "live"
         && summary.count !== null
         && summary.percent !== null
     );
@@ -103,16 +103,11 @@ export default function OccupancyHero({
                                 }}
                             />
                         </Stack>
-                        {summary.status === "partial" && (
-                            <Typography variant="body2" color="text.secondary" sx={{fontWeight: 600}}>
-                                Coverage: {Math.round(summary.coverage * 100)}% of open capacity observed
-                            </Typography>
-                        )}
                     </>
                 ) : (
                     <>
-                        <Typography variant="h5" sx={{fontWeight: 800, color: "text.secondary"}}>
-                            Live occupancy unavailable
+                        <Typography variant="h3" aria-label="Current count unavailable" sx={{fontWeight: 800, color: "text.secondary"}}>
+                            —
                         </Typography>
                         <Box
                             aria-hidden="true"
@@ -127,7 +122,7 @@ export default function OccupancyHero({
 
                 <Stack direction="row" justifyContent="space-between" alignItems="flex-end" spacing={1.25}>
                     <Stack spacing={0.4} sx={{minWidth: 0, flexGrow: 1}}>
-                        {relativeUpdatedText && (
+                        {hasObservedOccupancy && relativeUpdatedText && (
                             <Typography variant="body2" color="text.secondary">
                                 {relativeUpdatedText}
                             </Typography>

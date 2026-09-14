@@ -1,5 +1,5 @@
 import {type TouchEvent, useEffect, useMemo, useRef, useState} from "react";
-import {Alert, Box, Button, CircularProgress, Collapse, Stack, Typography} from "@mui/material";
+import {Box, Button, CircularProgress, Collapse, Stack, Typography} from "@mui/material";
 import {alpha, useTheme} from "@mui/material/styles";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import {AnimatePresence, motion, useReducedMotion} from "framer-motion";
@@ -419,9 +419,7 @@ export default function ForecastWindowsCard({
             )}
 
             {!isLoading && error && (
-                <Alert severity="info" variant="outlined" sx={{mt: 1}}>
-                    {error}
-                </Alert>
+                <Typography role="img" aria-label="Forecast unavailable" color="text.secondary" sx={{mt: 1}}>—</Typography>
             )}
 
             <Box
@@ -551,11 +549,6 @@ export default function ForecastWindowsCard({
                                                 <Typography variant="body2" color="text.secondary" sx={{display: "block", mt: 0.4, fontWeight: 700}}>
                                                     Max people: {Math.round(histogram.maxCount)}
                                                 </Typography>
-                                                {histogram.unknownBarCount > 0 && (
-                                                    <Typography variant="body2" color="text.secondary" sx={{display: "block", mt: 0.25, fontWeight: 700}}>
-                                                        Some half-hour colors are unavailable because occupancy thresholds were missing for one or both halves.
-                                                    </Typography>
-                                                )}
                                                 <Typography variant="body2" color="text.primary" sx={{display: "block", mt: 0.25, fontWeight: 700}}>
                                                     {selectedHistogramBar
                                                         ? `${selectedHistogramBar.rangeLabel}: ${Math.round(selectedHistogramBar.count)}`

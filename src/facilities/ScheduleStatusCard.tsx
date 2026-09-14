@@ -15,7 +15,7 @@ interface ScheduleStatusCardProps {
 const STATUS_TEXT: Record<FacilityOpenStatus["state"], string> = {
     open: "Open now according to the official schedule",
     closed: "Closed now according to the official schedule",
-    unknown: "Schedule status is temporarily unavailable",
+    unknown: "—",
 };
 
 const STATUS_COLOR: Record<FacilityOpenStatus["state"], "success" | "error" | "default"> = {
@@ -64,15 +64,15 @@ export default function ScheduleStatusCard({
                     <Typography variant="subtitle2" color="text.secondary">
                         Schedule Status
                     </Typography>
-                    <Chip
+                    {status.state !== "unknown" && <Chip
                         size="small"
                         color={STATUS_COLOR[status.state]}
                         icon={statusIcon(status.state)}
                         label={status.state.toUpperCase()}
                         sx={{fontWeight: 700, flexShrink: 0}}
-                    />
+                    />}
                 </Stack>
-                <Typography variant="body1" sx={{fontWeight: 700}}>
+                <Typography variant="body1" role={status.state === "unknown" ? "img" : undefined} aria-label={status.state === "unknown" ? "Opening hours unavailable" : undefined} sx={{fontWeight: 700}}>
                     {STATUS_TEXT[status.state]}
                 </Typography>
                 {detailText && (

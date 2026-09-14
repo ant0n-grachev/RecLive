@@ -43,7 +43,7 @@ export default function SectionSummaryOther({
         summary: computeOccupancySummary([location], {nowMs: nowTs}),
     }));
     const hasObservedOccupancy = (
-        (summary.status === "live" || summary.status === "partial")
+        summary.status === "live"
         && summary.count !== null
         && summary.percent !== null
     );
@@ -90,18 +90,13 @@ export default function SectionSummaryOther({
             ) : hasObservedOccupancy && summary.count !== null ? (
                 <Typography variant="h5">{summary.count} / {summary.observedCapacity}</Typography>
             ) : (
-                <Typography variant="h6" color="text.secondary" sx={{fontWeight: 800}}>
-                    Live occupancy unavailable
+                <Typography variant="h6" aria-label="Current count unavailable" color="text.secondary" sx={{fontWeight: 800}}>
+                    —
                 </Typography>
             )}
 
             {hasObservedOccupancy && (
                 <Typography sx={{color, fontWeight: 600}}>{percent}% full</Typography>
-            )}
-            {summary.status === "partial" && (
-                <Typography variant="body2" color="text.secondary" sx={{fontWeight: 600}}>
-                    Coverage: {Math.round(summary.coverage * 100)}% of open capacity observed
-                </Typography>
             )}
 
             <Stack spacing={1} sx={{mt: 1}}>
@@ -174,8 +169,8 @@ export default function SectionSummaryOther({
                                         </Typography>
                                     </>
                                 ) : (
-                                    <Typography variant="body2" color="text.secondary" fontWeight={700}>
-                                        Live occupancy unavailable
+                                    <Typography variant="body2" role="img" aria-label="Current count unavailable" color="text.secondary" fontWeight={700}>
+                                        —
                                     </Typography>
                                 )}
                             </Stack>

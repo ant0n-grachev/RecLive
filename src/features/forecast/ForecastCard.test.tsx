@@ -36,6 +36,27 @@ describe("ForecastCard", () => {
         vi.setSystemTime(new Date("2026-08-31T13:15:00Z"));
     });
 
+    it("keeps a failed forecast neutral without rendering diagnostics or old forecast values", () => {
+        renderCard({error: "Forecast service temporarily unavailable."});
+        expect(screen.getByRole("img", {name: "Forecast unavailable"})).toHaveTextContent("—");
+        expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+        expect(screen.queryByText(/Forecast service/)).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", {name: "Show hourly chart"})).not.toBeInTheDocument();
+    });
+
+    it("keeps empty crowd windows quiet without a diagnostic notice", () => {
+        renderCard({day: {...fixtureForecastDays[0], totalHours: [], categories: [], crowdBands: [], bestWindows: [], avoidWindows: []}});
+        expect(screen.getByRole("img", {name: "Forecast windows unavailable"})).toHaveTextContent("—");
+        expect(screen.queryByText(/crowd bands are unavailable/)).not.toBeInTheDocument();
+    });
+
+    it("keeps the hourly chart usable without internal threshold explanations", () => {
+        renderCard({occupancyThresholds: null});
+        fireEvent.click(screen.getByRole("button", {name: "Show hourly chart"}));
+        expect(screen.getByRole("img", {name: "People histogram by hourly forecast bar"})).toBeVisible();
+        expect(screen.queryByText(/half-hour colors|occupancy thresholds were missing/)).not.toBeInTheDocument();
+    });
+
     it("preserves day controls, horizontal swipe, filtering, keyboard bars, and the current marker", () => {
         const {container, props} = renderCard();
 

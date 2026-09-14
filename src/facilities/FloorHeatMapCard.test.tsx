@@ -35,7 +35,7 @@ beforeEach(() => {
 });
 
 describe("FloorHeatMapCard", () => {
-    it("describes partial coverage without presenting it as complete coverage", () => {
+    it("describes a partial zone as unavailable without exposing its percentage", () => {
         expect(zoneAccessibleLabel({
             id: "power-house",
             label: "Power House",
@@ -43,7 +43,7 @@ describe("FloorHeatMapCard", () => {
             percent: 60,
             coverage: 0.6,
             count: 30,
-        })).toBe("Power House: 60% full. Coverage: 60% of open capacity observed");
+        })).toBe("Power House: occupancy unavailable");
     });
 
     it("removes a stale heatmap debug global in normal production", () => {
@@ -82,7 +82,7 @@ describe("FloorHeatMapCard", () => {
         );
 
         expect(screen.queryByText("20% full")).not.toBeInTheDocument();
-        expect(screen.getByText("Live occupancy unavailable")).toBeInTheDocument();
+        expect(screen.getByRole("img", {name: "Power House: occupancy unavailable"})).toHaveTextContent("—");
     });
 
     it("names zone controls by trust state and supports keyboard activation", () => {
@@ -114,10 +114,10 @@ describe("FloorHeatMapCard", () => {
         fireEvent.click(screen.getByRole("button", {name: "Show map"}));
 
         const partialZone = screen.getByRole("button", {
-            name: "Racquetball: 50% full. Coverage: 50% of open capacity observed",
+            name: "Racquetball: occupancy unavailable",
         });
         const unavailableZone = screen.getByRole("button", {
-            name: "Track: Live occupancy unavailable",
+            name: "Track: occupancy unavailable",
         });
         expect(partialZone).toHaveAttribute("tabindex", "0");
         expect(partialZone).toHaveAttribute("vector-effect", "non-scaling-stroke");
@@ -127,11 +127,11 @@ describe("FloorHeatMapCard", () => {
 
         fireEvent.keyDown(partialZone, {key: "Enter"});
         expect(screen.getByRole("dialog", {name: "Racquetball details"})).toBeInTheDocument();
-        expect(screen.getByText(/Coverage: 50%/)).toBeInTheDocument();
+        expect(screen.getByRole("img", {name: "Racquetball: occupancy unavailable"})).toHaveTextContent("—");
 
         fireEvent.keyDown(unavailableZone, {key: " "});
         expect(screen.getByRole("dialog", {name: "Track details"})).toBeInTheDocument();
-        expect(screen.getByText("Live occupancy unavailable")).toBeInTheDocument();
+        expect(screen.getByRole("img", {name: "Track: occupancy unavailable"})).toHaveTextContent("—");
         fireEvent.keyDown(document, {key: "Escape"});
 
         rerender(

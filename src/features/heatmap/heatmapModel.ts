@@ -71,20 +71,11 @@ export function zoneAccessibleLabel(zone: HeatmapZonePresentation): string {
     if (zone.status === "closed") {
         return `${zone.label}: CLOSED`;
     }
-    if (
-        zone.status === "unknown"
-        || zone.status === "insufficient"
-        || zone.percent === null
-    ) {
-        return `${zone.label}: Live occupancy unavailable`;
+    if (zone.status !== "live" || zone.percent === null) {
+        return `${zone.label}: occupancy unavailable`;
     }
 
-    const percentText = `${Math.round(zone.percent)}% full`;
-    if (zone.status !== "partial" || zone.coverage === null) {
-        return `${zone.label}: ${percentText}`;
-    }
-
-    return `${zone.label}: ${percentText}. Coverage: ${Math.round(zone.coverage * 100)}% of open capacity observed`;
+    return `${zone.label}: ${Math.round(zone.percent)}% full`;
 }
 
 const getOverlayFill = (percent: number, occupancyThresholds?: OccupancyThresholds | null): string => {
@@ -163,7 +154,7 @@ export function buildFloorRenderData(
                 }
 
                 if (
-                    (item.summary.status !== "live" && item.summary.status !== "partial")
+                    item.summary.status !== "live"
                     || item.summary.percent === null
                 ) {
                     continue;
@@ -224,27 +215,21 @@ export const getZonePresentation = (
         };
     }
 
-    const isObserved = (
-        (summary.status === "live" || summary.status === "partial")
-        && summary.percent !== null
-    );
+    const isObserved = summary.status === "live" && summary.percent !== null;
     if (!isObserved || summary.percent === null) {
         return {
             ...presentation,
             ariaLabel: zoneAccessibleLabel(presentation),
-            value: "Live occupancy unavailable",
+            value: "—",
             valueColor: "text.secondary",
         };
     }
 
     const percentText = `${Math.round(summary.percent)}% full`;
-    const coverageText = summary.status === "partial"
-        ? `Coverage: ${Math.round(summary.coverage * 100)}% of open capacity observed`
-        : null;
     return {
         ...presentation,
         ariaLabel: zoneAccessibleLabel(presentation),
-        value: `${percentText}${coverageText ? `\n${coverageText}` : ""}`,
+        value: percentText,
         valueColor: getOccupancyColor(
             summary.percent,
             zoneSummary.thresholds ?? fallbackThresholds

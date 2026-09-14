@@ -64,7 +64,7 @@ export default function SectionCommandCenter({
         summary: computeOccupancySummary([location], {nowMs: nowTs}),
     }));
     const hasObservedOccupancy = (
-        (summary.status === "live" || summary.status === "partial")
+        summary.status === "live"
         && summary.count !== null
         && summary.percent !== null
     );
@@ -108,16 +108,11 @@ export default function SectionCommandCenter({
             <Typography variant="body2" sx={{fontWeight: 700, color: percentColor, fontVariantNumeric: "tabular-nums"}}>
                 {displayPercent}% full
             </Typography>
-            {summary.status === "partial" && (
-                <Typography variant="caption" color="text.secondary" sx={{fontWeight: 600}}>
-                    Coverage: {Math.round(summary.coverage * 100)}% of open capacity observed
-                </Typography>
-            )}
         </Box>
     ) : (
         <Box sx={{...metricColumnSx, ...metricStackSx}}>
-            <Typography variant="body2" sx={{fontWeight: 700, color: "text.secondary"}}>
-                Live occupancy unavailable
+            <Typography variant="body2" role="img" aria-label="Current count unavailable" sx={{fontWeight: 700, color: "text.secondary"}}>
+                —
             </Typography>
         </Box>
     );
@@ -221,8 +216,8 @@ export default function SectionCommandCenter({
                                 </Box>
                             </Typography>
                         ) : (
-                            <Typography variant="body2" sx={{fontWeight: 700, color: "text.secondary"}}>
-                                Live occupancy unavailable
+                            <Typography variant="body2" role="img" aria-label="Current count unavailable" sx={{fontWeight: 700, color: "text.secondary"}}>
+                                —
                             </Typography>
                         )}
                     </Box>

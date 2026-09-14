@@ -33,6 +33,7 @@ const LIST_ERROR_TEXT = "Could not load alerts right now.";
 const SUBSCRIBE_ERROR_TEXT = "Could not save this alert right now.";
 const CANCEL_ERROR_TEXT = "Could not cancel this alert right now.";
 const CANCEL_ALL_ERROR_TEXT = "Could not cancel alerts right now.";
+const AVAILABILITY_ERROR_TEXT = "Alerts aren’t available right now. Try again.";
 
 const removeMatchingStoredDefaults = (rules: PushRule[]): void => {
     const stored = readStoredSubscriptions();
@@ -118,17 +119,13 @@ export default function AlertsDialog({
                 if (!active) return;
                 if (availability.alertsAvailable) {
                     setAlertsUnavailableText(null);
-                } else if (availability.reason === "push_rules_db_unavailable") {
-                    setAlertsUnavailableText("Alerts are temporarily unavailable because the data service is down.");
-                } else if (availability.reason === "push_vapid_unconfigured") {
-                    setAlertsUnavailableText("Alerts are temporarily unavailable while notification keys are being configured.");
                 } else {
-                    setAlertsUnavailableText("Alerts are temporarily unavailable right now. Please try again shortly.");
+                    setAlertsUnavailableText(AVAILABILITY_ERROR_TEXT);
                 }
             })
             .catch(() => {
                 if (active) {
-                    setAlertsUnavailableText("Alerts are temporarily unavailable right now. Please try again shortly.");
+                    setAlertsUnavailableText(AVAILABILITY_ERROR_TEXT);
                 }
             })
             .finally(() => {

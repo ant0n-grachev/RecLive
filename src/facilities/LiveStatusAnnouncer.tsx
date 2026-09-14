@@ -5,7 +5,7 @@ export type LiveStatus = "idle" | "refreshing" | "updated" | "refresh-error" | "
 const messages: Record<Exclude<LiveStatus, "idle">, string> = {
     refreshing: "Refreshing live occupancy.",
     updated: "Live occupancy updated.",
-    "refresh-error": "Live occupancy could not be refreshed. Showing the last available data.",
+    "refresh-error": "Couldn't refresh. Try again.",
     "alert-created": "Occupancy alert created.",
 };
 
@@ -24,11 +24,10 @@ const visuallyHidden: CSSProperties = {
 export function LiveStatusAnnouncer({status}: {status: LiveStatus}) {
     if (status === "idle") return null;
 
-    const assertive = status === "refresh-error";
     return (
         <div
-            role={assertive ? "alert" : "status"}
-            aria-live={assertive ? "assertive" : "polite"}
+            role="status"
+            aria-live="polite"
             style={visuallyHidden}
         >
             {messages[status]}
