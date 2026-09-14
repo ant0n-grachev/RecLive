@@ -55,6 +55,8 @@ class Settings:
         SERVER_ROOT.parent / "shared/facility_capacities.json"
     )
     actual_hour_min_coverage: float = 0.75
+    ingestion_stale_after_seconds: int = 600
+    forecast_stale_after_seconds: int = 21_600
     schedule_stale_after_seconds: int = 21600
     cors_origins: tuple[str, ...] = ("*",)
     host: str = "0.0.0.0"
@@ -72,6 +74,15 @@ class Settings:
     recwell_bakke_url: str = "https://recwell.wisc.edu/locations/bakke/"
 
     def __post_init__(self):
+        for name, value in {
+            "INGESTION_STALE_AFTER_SECONDS": self.ingestion_stale_after_seconds,
+            "FORECAST_STALE_AFTER_SECONDS": self.forecast_stale_after_seconds,
+            "SCHEDULE_STALE_AFTER_SECONDS": self.schedule_stale_after_seconds,
+        }.items():
+            if type(value) is not int or value <= 0:
+                raise RuntimeError(
+                    f"Invalid configuration: {name} must be a positive integer"
+                )
         object.__setattr__(self, "cors_origins", tuple(self.cors_origins))
         object.__setattr__(
             self, "environment_values", MappingProxyType(dict(self.environment_values))
@@ -211,6 +222,23 @@ def build_settings_from_environment(
         except ValueError:
             raise RuntimeError(f"Invalid integer for env var {name}") from None
 
+    def positive_integer(name, default):
+        if name not in values:
+            return default
+        raw_value = values[name]
+        raw = "" if raw_value is None else str(raw_value).strip()
+        try:
+            value = int(raw)
+        except ValueError:
+            raise RuntimeError(
+                f"Invalid configuration: {name} must be a positive integer"
+            ) from None
+        if value <= 0:
+            raise RuntimeError(
+                f"Invalid configuration: {name} must be a positive integer"
+            )
+        return value
+
     def boolean(name, default):
         raw = read(name)
         if raw is None:
@@ -241,19 +269,12 @@ def build_settings_from_environment(
     schedule_path = path(
         "FACILITY_HOURS_JSON_PATH", SERVER_ROOT / "facility_hours.json"
     )
-    stale_name = (
-        "SCHEDULE_STALE_AFTER_SECONDS"
-        if read("SCHEDULE_STALE_AFTER_SECONDS") is not None
-        else "SCHEDULE_MAX_AGE_SECONDS"
-    )
-    try:
-        stale = int(read(stale_name, "21600"))
-    except ValueError:
-        raise RuntimeError(
-            f"Invalid positive integer for env var {stale_name}"
-        ) from None
-    if stale <= 0:
-        raise RuntimeError(f"Invalid positive integer for env var {stale_name}")
+    ingestion_stale = positive_integer("INGESTION_STALE_AFTER_SECONDS", 600)
+    forecast_stale = positive_integer("FORECAST_STALE_AFTER_SECONDS", 21_600)
+    if "SCHEDULE_STALE_AFTER_SECONDS" in values:
+        stale = positive_integer("SCHEDULE_STALE_AFTER_SECONDS", 21_600)
+    else:
+        stale = positive_integer("SCHEDULE_MAX_AGE_SECONDS", 21_600)
     push = PushSettings(
         table=read("PUSH_RULES_TABLE", "push_rules"),
         default_rule_ttl_seconds=integer("PUSH_RULE_DEFAULT_TTL_SECONDS", 86400),
@@ -299,6 +320,8 @@ def build_settings_from_environment(
         facility_section_config_path=section_path,
         capacity_config_path=capacity_path,
         actual_hour_min_coverage=coverage,
+        ingestion_stale_after_seconds=ingestion_stale,
+        forecast_stale_after_seconds=forecast_stale,
         schedule_stale_after_seconds=stale,
         cors_origins=origins,
         database=DatabaseSettings(

@@ -12,6 +12,7 @@ import pymysql
 
 from server.facility_capacities import load_facility_capacities
 from server.reclive.settings import Settings, validate_command_environment
+from server.reclive.observability import format_event
 
 
 def require_env(name: str) -> str:
@@ -503,23 +504,30 @@ def finish_ingestion_result(
     now: Callable[[], datetime],
     event_sink: Callable[[str], object],
 ) -> IngestionRunResult:
-    duration_ms = 0
+    _duration_ms = 0
     if started_at is not None:
         try:
             finished_at = require_aware_utc(now())
-            duration_ms = max(
+            _duration_ms = max(
                 0, int((finished_at - started_at).total_seconds() * 1000)
             )
         except Exception:
-            duration_ms = 0
-    category = result.error_category or "none"
-    line = (
-        f"status={result.status} received={result.received_count} "
-        f"valid={result.valid_count} history={result.history_inserted} "
-        f"snapshot={result.snapshot_updated} durationMs={duration_ms} "
-        f"category={category}"
-    )
+            _duration_ms = 0
     try:
+        if result.status == "succeeded":
+            line = format_event(
+                "ingestion.completed",
+                receivedCount=result.received_count,
+                historyInsertedCount=result.history_inserted,
+                unchangedCount=max(0, result.snapshot_updated - result.history_inserted),
+            )
+        else:
+            category = {
+                "network": "network_error", "http": "network_error",
+                "payload_not_list": "validation_error", "validation": "validation_error",
+                "database": "database_unavailable", "transaction": "database_unavailable",
+            }.get(result.error_category, "validation_error")
+            line = format_event("ingestion.failed", errorCategory=category)
         event_sink(line)
     except Exception:
         pass

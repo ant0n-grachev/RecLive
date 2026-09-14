@@ -7,6 +7,7 @@ from server.reclive import settings as _seam_settings
 
 import asyncio
 import importlib
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -34,6 +35,108 @@ def safe_values() -> dict[str, str]:
         "FORECAST_API_ALLOW_ORIGINS": "https://reclive.example",
         "PUSH_ADMIN_TOKEN": "a" * 32,
     }
+
+
+def test_backend_dotenv_guard_blocks_checkout_paths_after_loader_reset(monkeypatch):
+    from tests.fixtures.environment import guard_project_dotenv
+    calls = []
+    guarded = guard_project_dotenv(lambda *args, **kwargs: calls.append(args))
+    root = Path(__file__).resolve().parents[2]
+    for path in (root / ".env", root / "server/.env"):
+        assert guarded(path, override=False) is False
+    monkeypatch.setattr(env_loader, "load_dotenv", guarded)
+    monkeypatch.setattr(env_loader.os.path, "exists", lambda path: True)
+    monkeypatch.setenv("APP_ENV", "test")
+    for _ in range(2):
+        monkeypatch.setattr(env_loader._DOTENV_STATE, "loaded", False)
+        env_loader.load_project_dotenv()
+    assert calls == []
+
+
+def test_backend_dotenv_guard_allows_real_temporary_fixture(monkeypatch, tmp_path):
+    from dotenv import load_dotenv
+    from tests.fixtures import environment
+    from tests.fixtures.environment import guard_project_dotenv
+    monkeypatch.setattr(environment, "PROTECTED_DOTENV_PATHS", frozenset((tmp_path / "checkout/.env",)))
+    path = tmp_path / ".env"
+    path.write_text("RECLIVE_SYNTHETIC_DOTENV_CONTROL=fixture-value\n")
+    monkeypatch.delenv("RECLIVE_SYNTHETIC_DOTENV_CONTROL", raising=False)
+    assert guard_project_dotenv(load_dotenv)(path, override=False) is True
+    assert os.environ["RECLIVE_SYNTHETIC_DOTENV_CONTROL"] == "fixture-value"
+    monkeypatch.delenv("RECLIVE_SYNTHETIC_DOTENV_CONTROL")
+
+
+@pytest.mark.parametrize("spelling", ["lexical", "relative", "normalized", "target", "parent_alias"])
+@pytest.mark.parametrize("dangling", [False, True])
+def test_backend_dotenv_guard_protects_temporary_symlinks(monkeypatch, tmp_path, spelling, dangling):
+    from tests.fixtures import environment
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    target = tmp_path / "synthetic-private.env"
+    if not dangling:
+        target.write_text("SYNTHETIC_TEST_SECRET=fixture\n")
+    protected = checkout / ".env"
+    protected.symlink_to(target)
+    alias = tmp_path / "checkout-alias"
+    alias.symlink_to(checkout, target_is_directory=True)
+    monkeypatch.setattr(environment, "PROTECTED_DOTENV_PATHS", frozenset((protected,)))
+    monkeypatch.chdir(tmp_path)
+    calls = []
+    guarded = environment.guard_project_dotenv(lambda *args, **kwargs: calls.append(args))
+    paths = {
+        "lexical": protected,
+        "relative": Path("checkout/.env"),
+        "normalized": checkout / "../checkout/.env",
+        "target": target,
+        "parent_alias": alias / ".env",
+    }
+    assert guarded(paths[spelling], override=False) is False
+    assert calls == []
+
+
+def test_backend_dotenv_guard_tracks_temporary_symlink_target_changes(monkeypatch, tmp_path):
+    from tests.fixtures import environment
+    protected = tmp_path / ".env"
+    first, second = tmp_path / "first.env", tmp_path / "second.env"
+    first.write_text("FIRST_FIXTURE=one\n")
+    second.write_text("SECOND_FIXTURE=two\n")
+    protected.symlink_to(first)
+    monkeypatch.setattr(environment, "PROTECTED_DOTENV_PATHS", frozenset((protected,)))
+    calls = []
+    guarded = environment.guard_project_dotenv(lambda *args, **kwargs: calls.append(args))
+    assert guarded(protected) is False
+    protected.unlink()
+    protected.symlink_to(second)
+    assert guarded(protected) is False
+    assert guarded(second) is False
+    assert calls == []
+
+
+def test_installed_backend_guard_never_constructs_dotenv_for_checkout(monkeypatch):
+    import dotenv.main
+    def forbidden(*args, **kwargs):
+        raise AssertionError("checkout dotenv loader reached")
+    monkeypatch.setattr(dotenv.main, "DotEnv", forbidden)
+    monkeypatch.setattr(env_loader.os.path, "exists", lambda path: True)
+    monkeypatch.setenv("APP_ENV", "test")
+    env_loader.load_project_dotenv()
+    assert env_loader._DOTENV_STATE.loaded
+
+
+def test_backend_environment_seed_replaces_app_values_and_preserves_runner_inputs():
+    from tests.fixtures.environment import synthetic_application_environment
+    values = {"APP_ENV": "production", "GYM_DB_PASSWORD": "private-marker",
+              "MODEL_ETA": "private-marker", "PUSH_VAPID_PRIVATE_KEY": "private-marker",
+              "FORECAST_API_PORT": "private-marker", "TEST_MYSQL_PASSWORD": "test-control",
+              "PATH": "/fixture/bin", "UNRELATED_RUNNER_INPUT": "keep"}
+    seeded = synthetic_application_environment(values)
+    assert seeded["APP_ENV"] == "test"
+    assert seeded["GYM_DB_PASSWORD"] == env_loader.DEFAULT_ENV["GYM_DB_PASSWORD"]
+    assert "MODEL_ETA" not in seeded and "PUSH_VAPID_PRIVATE_KEY" not in seeded
+    assert "FORECAST_API_PORT" not in seeded
+    assert seeded["TEST_MYSQL_PASSWORD"] == "test-control"
+    assert seeded["PATH"] == "/fixture/bin"
+    assert seeded["UNRELATED_RUNNER_INPUT"] == "keep"
 
 
 @pytest.mark.parametrize(
@@ -152,7 +255,8 @@ def test_production_rejects_invalid_database_port_by_name_only(port: str) -> Non
 
     assert str(error.value) == "Unsafe production configuration: GYM_DB_PORT"
     assert port not in str(error.value)
-    assert port not in "".join(traceback.format_exception(error.value))
+    assert port not in "".join(traceback.format_exception_only(error.value))
+    assert error.value.__cause__ is None
 
 
 @pytest.mark.parametrize("port", ["1", "65535"])
@@ -581,7 +685,9 @@ def test_forecast_job_uses_fixed_safe_output_for_unexpected_failure(
     assert forecast_job.main() == 1
     captured = capsys.readouterr()
     output = captured.out + captured.err
-    assert "Forecast generation failed" in output
+    event = json.loads(captured.out)
+    assert event.pop("timestamp").endswith("Z")
+    assert event == {"event": "forecast.failed"}
     assert "private-upstream-marker" not in output
     assert "private-password-marker" not in output
     assert "Traceback" not in output
@@ -593,9 +699,11 @@ def test_direct_forecast_job_unknown_environment_is_name_only_without_trace() ->
     environment = "private-environment-marker"
 
     completed = subprocess.run(
-        [sys.executable, str(root / "server" / "forecast_job.py")],
+        [sys.executable, "-c", "from server import env_loader; "
+         "env_loader._DOTENV_STATE.loaded = True; import runpy; "
+         "runpy.run_path('server/forecast_job.py', run_name='__main__')"],
         cwd=root,
-        env={**os.environ, "APP_ENV": environment},
+        env={"PATH": os.defpath, **env_loader.DEFAULT_ENV, "APP_ENV": environment},
         check=False,
         capture_output=True,
         text=True,
@@ -603,9 +711,9 @@ def test_direct_forecast_job_unknown_environment_is_name_only_without_trace() ->
     )
 
     assert completed.returncode == 1
-    assert completed.stdout == (
-        "forecast_job: ERROR: Unsafe environment configuration: APP_ENV\n"
-    )
+    event = json.loads(completed.stdout)
+    assert event.pop("timestamp").endswith("Z")
+    assert event == {"event": "forecast.configuration_failed", "configurationName": "APP_ENV", "reason": "unsafe_configuration"}
     assert completed.stderr == ""
     assert environment not in completed.stdout + completed.stderr
     assert "Traceback" not in completed.stdout + completed.stderr
@@ -613,6 +721,7 @@ def test_direct_forecast_job_unknown_environment_is_name_only_without_trace() ->
 
 def test_facility_hours_fetch_validates_before_collecting_or_writing(
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setitem(
         sys.modules,
@@ -637,13 +746,13 @@ def test_facility_hours_fetch_validates_before_collecting_or_writing(
         lambda *_args: data_calls.append("write"),
     )
 
-    with pytest.raises(RuntimeError, match="FACILITY_HOURS_JSON_PATH") as error:
-        facility_hours_fetch.main()
-
+    assert facility_hours_fetch.main() == 1
     assert data_calls == []
-    assert str(error.value) == (
-        "Unsafe production configuration: FACILITY_HOURS_JSON_PATH"
-    )
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    event = json.loads(captured.err)
+    assert event.pop("timestamp").endswith("Z")
+    assert event == {"event": "schedules.failed", "errorCategory": "validation_error"}
 
 
 def test_forecast_api_validates_runtime_before_starting_evaluator(

@@ -1,0 +1,1718 @@
+[
+  {
+    "expression": "Call(func=Name(id='max', ctx=Load()), args=[Constant(value=5), Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='GYM_RESAMPLE_MINUTES'), Constant(value='15')])])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='15')",
+        "name": "GYM_RESAMPLE_MINUTES"
+      }
+    ],
+    "symbol": "RESAMPLE_MINUTES"
+  },
+  {
+    "expression": "Call(func=Name(id='max', ctx=Load()), args=[Constant(value=5), Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='GYM_WINDOW_RESAMPLE_MINUTES'), Constant(value='30')])])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='30')",
+        "name": "GYM_WINDOW_RESAMPLE_MINUTES"
+      }
+    ],
+    "symbol": "WINDOW_RESAMPLE_MINUTES"
+  },
+  {
+    "expression": "Call(func=Name(id='max', ctx=Load()), args=[Constant(value=0), Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='CROWD_BAND_BRIDGE_MIN'), Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='CROWD_BAND_MEDIUM_BRIDGE_MIN'), Constant(value='90')])])])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='CROWD_BAND_MEDIUM_BRIDGE_MIN'), Constant(value='90')])",
+        "name": "CROWD_BAND_BRIDGE_MIN"
+      }
+    ],
+    "symbol": "CROWD_BAND_BRIDGE_MIN"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='GYM_MODEL_HISTORY_DAYS'), Constant(value='0')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='0')",
+        "name": "GYM_MODEL_HISTORY_DAYS"
+      }
+    ],
+    "symbol": "HISTORY_DAYS"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MIN_SAMPLES_PER_LOC'), Constant(value='80')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='80')",
+        "name": "MIN_SAMPLES_PER_LOC"
+      }
+    ],
+    "symbol": "MIN_SAMPLES_PER_LOC"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MIN_TRAIN_SAMPLES'), Constant(value='300')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='300')",
+        "name": "MIN_TRAIN_SAMPLES"
+      }
+    ],
+    "symbol": "MIN_TRAIN_SAMPLES"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_TRAIN_SPLIT'), Constant(value='0.8')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.8')",
+        "name": "MODEL_TRAIN_SPLIT"
+      }
+    ],
+    "symbol": "TRAIN_SPLIT"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_EARLY_STOPPING'), Constant(value='50')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='50')",
+        "name": "MODEL_EARLY_STOPPING"
+      }
+    ],
+    "symbol": "EARLY_STOPPING_ROUNDS"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_MAX_DEPTH'), Constant(value='4')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='4')",
+        "name": "MODEL_MAX_DEPTH"
+      }
+    ],
+    "symbol": "MODEL_MAX_DEPTH"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_NUM_BOOST_ROUND'), Constant(value='500')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='500')",
+        "name": "MODEL_NUM_BOOST_ROUND"
+      }
+    ],
+    "symbol": "MODEL_NUM_BOOST_ROUND"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_NTHREAD'), Constant(value='2')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='2')",
+        "name": "MODEL_NTHREAD"
+      }
+    ],
+    "symbol": "MODEL_NTHREAD"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_ETA'), Constant(value='0.05')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.05')",
+        "name": "MODEL_ETA"
+      }
+    ],
+    "symbol": "MODEL_ETA"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_SUBSAMPLE'), Constant(value='0.9')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.9')",
+        "name": "MODEL_SUBSAMPLE"
+      }
+    ],
+    "symbol": "MODEL_SUBSAMPLE"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_COLSAMPLE_BYTREE'), Constant(value='0.9')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.9')",
+        "name": "MODEL_COLSAMPLE_BYTREE"
+      }
+    ],
+    "symbol": "MODEL_COLSAMPLE_BYTREE"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_MIN_CHILD_WEIGHT'), Constant(value='1.0')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='1.0')",
+        "name": "MODEL_MIN_CHILD_WEIGHT"
+      }
+    ],
+    "symbol": "MODEL_MIN_CHILD_WEIGHT"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_GAMMA'), Constant(value='0.0')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.0')",
+        "name": "MODEL_GAMMA"
+      }
+    ],
+    "symbol": "MODEL_GAMMA"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_REG_LAMBDA'), Constant(value='1.0')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='1.0')",
+        "name": "MODEL_REG_LAMBDA"
+      }
+    ],
+    "symbol": "MODEL_REG_LAMBDA"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_REG_ALPHA'), Constant(value='0.0')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.0')",
+        "name": "MODEL_REG_ALPHA"
+      }
+    ],
+    "symbol": "MODEL_REG_ALPHA"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_MAX_BIN'), Constant(value='256')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='256')",
+        "name": "MODEL_MAX_BIN"
+      }
+    ],
+    "symbol": "MODEL_MAX_BIN"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_RETRAIN_HOURS'), Constant(value='24')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='24')",
+        "name": "MODEL_RETRAIN_HOURS"
+      }
+    ],
+    "symbol": "MODEL_RETRAIN_HOURS"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_GUARDRAIL_MAX_MAE_DEGRADE'), Constant(value='0.05')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.05')",
+        "name": "MODEL_GUARDRAIL_MAX_MAE_DEGRADE"
+      }
+    ],
+    "symbol": "MODEL_GUARDRAIL_MAX_MAE_DEGRADE"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_GUARDRAIL_MIN_VAL_ROWS'), Constant(value='200')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='200')",
+        "name": "MODEL_GUARDRAIL_MIN_VAL_ROWS"
+      }
+    ],
+    "symbol": "MODEL_GUARDRAIL_MIN_VAL_ROWS"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_HOLDOUT_SPLIT'), Constant(value='0.12')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.12')",
+        "name": "MODEL_HOLDOUT_SPLIT"
+      }
+    ],
+    "symbol": "MODEL_HOLDOUT_SPLIT"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_HOLDOUT_MIN_ROWS'), Constant(value='120')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='120')",
+        "name": "MODEL_HOLDOUT_MIN_ROWS"
+      }
+    ],
+    "symbol": "MODEL_HOLDOUT_MIN_ROWS"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_GUARDRAIL_MAX_HOLDOUT_MAE_DEGRADE'), Constant(value='0.03')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.03')",
+        "name": "MODEL_GUARDRAIL_MAX_HOLDOUT_MAE_DEGRADE"
+      }
+    ],
+    "symbol": "MODEL_GUARDRAIL_MAX_HOLDOUT_MAE_DEGRADE"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_GUARDRAIL_MAX_HOLDOUT_INTERVAL_ERR_DEGRADE'), Constant(value='0.02')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.02')",
+        "name": "MODEL_GUARDRAIL_MAX_HOLDOUT_INTERVAL_ERR_DEGRADE"
+      }
+    ],
+    "symbol": "MODEL_GUARDRAIL_MAX_HOLDOUT_INTERVAL_ERR_DEGRADE"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_GUARDRAIL_MAX_VAL_INTERVAL_ERR_DEGRADE'), Constant(value='0.015')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.015')",
+        "name": "MODEL_GUARDRAIL_MAX_VAL_INTERVAL_ERR_DEGRADE"
+      }
+    ],
+    "symbol": "MODEL_GUARDRAIL_MAX_VAL_INTERVAL_ERR_DEGRADE"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_FEATURE_MISSING_MIN_ROWS'), Constant(value='240')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='240')",
+        "name": "MODEL_FEATURE_MISSING_MIN_ROWS"
+      }
+    ],
+    "symbol": "MODEL_FEATURE_MISSING_MIN_ROWS"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_MAX_FEATURE_MISSING_RATE'), Constant(value='0.45')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.45')",
+        "name": "MODEL_MAX_FEATURE_MISSING_RATE"
+      }
+    ],
+    "symbol": "MODEL_MAX_FEATURE_MISSING_RATE"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_MAX_LAG_MISSING_RATE'), Constant(value='0.55')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.55')",
+        "name": "MODEL_MAX_LAG_MISSING_RATE"
+      }
+    ],
+    "symbol": "MODEL_MAX_LAG_MISSING_RATE"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_MAX_WEATHER_MISSING_RATE'), Constant(value='0.65')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.65')",
+        "name": "MODEL_MAX_WEATHER_MISSING_RATE"
+      }
+    ],
+    "symbol": "MODEL_MAX_WEATHER_MISSING_RATE"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_FEATURE_CLIP_LOWER_Q'), Constant(value='0.002')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.002')",
+        "name": "MODEL_FEATURE_CLIP_LOWER_Q"
+      }
+    ],
+    "symbol": "MODEL_FEATURE_CLIP_LOWER_Q"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_FEATURE_CLIP_UPPER_Q'), Constant(value='0.998')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.998')",
+        "name": "MODEL_FEATURE_CLIP_UPPER_Q"
+      }
+    ],
+    "symbol": "MODEL_FEATURE_CLIP_UPPER_Q"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_FEATURE_CLIP_MIN_SPREAD'), Constant(value='0.01')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.01')",
+        "name": "MODEL_FEATURE_CLIP_MIN_SPREAD"
+      }
+    ],
+    "symbol": "MODEL_FEATURE_CLIP_MIN_SPREAD"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_FEATURE_ABS_MAX'), Constant(value='500.0')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='500.0')",
+        "name": "MODEL_FEATURE_ABS_MAX"
+      }
+    ],
+    "symbol": "MODEL_FEATURE_ABS_MAX"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_MIN_FEATURE_FINITE_RATIO'), Constant(value='0.30')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.30')",
+        "name": "MODEL_MIN_FEATURE_FINITE_RATIO"
+      }
+    ],
+    "symbol": "MODEL_MIN_FEATURE_FINITE_RATIO"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_ENSEMBLE_DEFAULT_PRIMARY_WEIGHT'), Constant(value='0.72')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.72')",
+        "name": "MODEL_ENSEMBLE_DEFAULT_PRIMARY_WEIGHT"
+      }
+    ],
+    "symbol": "MODEL_ENSEMBLE_DEFAULT_PRIMARY_WEIGHT"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_ENSEMBLE_MIN_PRIMARY_WEIGHT'), Constant(value='0.15')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.15')",
+        "name": "MODEL_ENSEMBLE_MIN_PRIMARY_WEIGHT"
+      }
+    ],
+    "symbol": "MODEL_ENSEMBLE_MIN_PRIMARY_WEIGHT"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_ENSEMBLE_MAX_PRIMARY_WEIGHT'), Constant(value='0.9')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.9')",
+        "name": "MODEL_ENSEMBLE_MAX_PRIMARY_WEIGHT"
+      }
+    ],
+    "symbol": "MODEL_ENSEMBLE_MAX_PRIMARY_WEIGHT"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_ENSEMBLE_FEATURE_QUALITY_ADJUST_STRENGTH'), Constant(value='0.45')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.45')",
+        "name": "MODEL_ENSEMBLE_FEATURE_QUALITY_ADJUST_STRENGTH"
+      }
+    ],
+    "symbol": "MODEL_ENSEMBLE_FEATURE_QUALITY_ADJUST_STRENGTH"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_ENSEMBLE_FEATURE_QUALITY_ADJUST_EXP'), Constant(value='1.6')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='1.6')",
+        "name": "MODEL_ENSEMBLE_FEATURE_QUALITY_ADJUST_EXP"
+      }
+    ],
+    "symbol": "MODEL_ENSEMBLE_FEATURE_QUALITY_ADJUST_EXP"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_ENSEMBLE_SAMPLE_SUPPORT_TARGET'), Constant(value='80')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='80')",
+        "name": "MODEL_ENSEMBLE_SAMPLE_SUPPORT_TARGET"
+      }
+    ],
+    "symbol": "MODEL_ENSEMBLE_SAMPLE_SUPPORT_TARGET"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_ENSEMBLE_SAMPLE_SUPPORT_MAX_SHIFT'), Constant(value='0.22')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.22')",
+        "name": "MODEL_ENSEMBLE_SAMPLE_SUPPORT_MAX_SHIFT"
+      }
+    ],
+    "symbol": "MODEL_ENSEMBLE_SAMPLE_SUPPORT_MAX_SHIFT"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_LIVE_BIAS_MAX_AGE_MIN'), Constant(value='45')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='45')",
+        "name": "MODEL_LIVE_BIAS_MAX_AGE_MIN"
+      }
+    ],
+    "symbol": "LIVE_BIAS_MAX_AGE_MIN"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_LIVE_BIAS_MAX_HORIZON_HOURS'), Constant(value='4')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='4')",
+        "name": "MODEL_LIVE_BIAS_MAX_HORIZON_HOURS"
+      }
+    ],
+    "symbol": "LIVE_BIAS_MAX_HORIZON_HOURS"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_LIVE_BIAS_BASE_WEIGHT'), Constant(value='0.55')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.55')",
+        "name": "MODEL_LIVE_BIAS_BASE_WEIGHT"
+      }
+    ],
+    "symbol": "LIVE_BIAS_BASE_WEIGHT"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_LIVE_BIAS_HORIZON_DECAY'), Constant(value='1.6')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='1.6')",
+        "name": "MODEL_LIVE_BIAS_HORIZON_DECAY"
+      }
+    ],
+    "symbol": "LIVE_BIAS_HORIZON_DECAY"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_LIVE_BIAS_AGE_DECAY_MIN'), Constant(value='35')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='35')",
+        "name": "MODEL_LIVE_BIAS_AGE_DECAY_MIN"
+      }
+    ],
+    "symbol": "LIVE_BIAS_AGE_DECAY_MIN"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_LOW_SAMPLE_TARGET_COUNT'), Constant(value='60')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='60')",
+        "name": "MODEL_LOW_SAMPLE_TARGET_COUNT"
+      }
+    ],
+    "symbol": "MODEL_LOW_SAMPLE_TARGET_COUNT"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_LOW_SAMPLE_MAX_BLEND'), Constant(value='0.35')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.35')",
+        "name": "MODEL_LOW_SAMPLE_MAX_BLEND"
+      }
+    ],
+    "symbol": "MODEL_LOW_SAMPLE_MAX_BLEND"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_MISSING_FEATURE_BLEND_START'), Constant(value='0.25')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.25')",
+        "name": "MODEL_MISSING_FEATURE_BLEND_START"
+      }
+    ],
+    "symbol": "MODEL_MISSING_FEATURE_BLEND_START"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_MISSING_FEATURE_BLEND_FULL'), Constant(value='0.60')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.60')",
+        "name": "MODEL_MISSING_FEATURE_BLEND_FULL"
+      }
+    ],
+    "symbol": "MODEL_MISSING_FEATURE_BLEND_FULL"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_MISSING_FEATURE_BLEND_MAX_WEIGHT'), Constant(value='0.45')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.45')",
+        "name": "MODEL_MISSING_FEATURE_BLEND_MAX_WEIGHT"
+      }
+    ],
+    "symbol": "MODEL_MISSING_FEATURE_BLEND_MAX_WEIGHT"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_MISSING_FEATURE_INTERVAL_WIDEN_START'), Constant(value='0.20')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.20')",
+        "name": "MODEL_MISSING_FEATURE_INTERVAL_WIDEN_START"
+      }
+    ],
+    "symbol": "MODEL_MISSING_FEATURE_INTERVAL_WIDEN_START"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_MISSING_FEATURE_INTERVAL_WIDEN_FULL'), Constant(value='0.60')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.60')",
+        "name": "MODEL_MISSING_FEATURE_INTERVAL_WIDEN_FULL"
+      }
+    ],
+    "symbol": "MODEL_MISSING_FEATURE_INTERVAL_WIDEN_FULL"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_MISSING_FEATURE_INTERVAL_WIDEN_MAX_MULT'), Constant(value='1.55')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='1.55')",
+        "name": "MODEL_MISSING_FEATURE_INTERVAL_WIDEN_MAX_MULT"
+      }
+    ],
+    "symbol": "MODEL_MISSING_FEATURE_INTERVAL_WIDEN_MAX_MULT"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_SAMPLE_SUPPORT_INTERVAL_TARGET'), Constant(value='80')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='80')",
+        "name": "MODEL_SAMPLE_SUPPORT_INTERVAL_TARGET"
+      }
+    ],
+    "symbol": "MODEL_SAMPLE_SUPPORT_INTERVAL_TARGET"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_SAMPLE_SUPPORT_INTERVAL_MAX_MULT'), Constant(value='1.28')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='1.28')",
+        "name": "MODEL_SAMPLE_SUPPORT_INTERVAL_MAX_MULT"
+      }
+    ],
+    "symbol": "MODEL_SAMPLE_SUPPORT_INTERVAL_MAX_MULT"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_ENSEMBLE_DISAGREEMENT_INTERVAL_MIN_DIFF'), Constant(value='0.03')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.03')",
+        "name": "MODEL_ENSEMBLE_DISAGREEMENT_INTERVAL_MIN_DIFF"
+      }
+    ],
+    "symbol": "MODEL_ENSEMBLE_DISAGREEMENT_INTERVAL_MIN_DIFF"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_ENSEMBLE_DISAGREEMENT_INTERVAL_SCALE'), Constant(value='0.75')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.75')",
+        "name": "MODEL_ENSEMBLE_DISAGREEMENT_INTERVAL_SCALE"
+      }
+    ],
+    "symbol": "MODEL_ENSEMBLE_DISAGREEMENT_INTERVAL_SCALE"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_ENSEMBLE_DISAGREEMENT_INTERVAL_MAX_MULT'), Constant(value='1.38')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='1.38')",
+        "name": "MODEL_ENSEMBLE_DISAGREEMENT_INTERVAL_MAX_MULT"
+      }
+    ],
+    "symbol": "MODEL_ENSEMBLE_DISAGREEMENT_INTERVAL_MAX_MULT"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_POINT_BIAS_MIN_POINTS_PER_SEGMENT'), Constant(value='30')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='30')",
+        "name": "MODEL_POINT_BIAS_MIN_POINTS_PER_SEGMENT"
+      }
+    ],
+    "symbol": "MODEL_POINT_BIAS_MIN_POINTS_PER_SEGMENT"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_POINT_BIAS_MAX_ABS'), Constant(value='0.25')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.25')",
+        "name": "MODEL_POINT_BIAS_MAX_ABS"
+      }
+    ],
+    "symbol": "MODEL_POINT_BIAS_MAX_ABS"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_POINT_BIAS_MIN_POINTS_PER_OCCUPANCY'), Constant(value='24')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='24')",
+        "name": "MODEL_POINT_BIAS_MIN_POINTS_PER_OCCUPANCY"
+      }
+    ],
+    "symbol": "MODEL_POINT_BIAS_MIN_POINTS_PER_OCCUPANCY"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_POINT_BIAS_SUPPORT_TARGET_MULT'), Constant(value='3.0')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='3.0')",
+        "name": "MODEL_POINT_BIAS_SUPPORT_TARGET_MULT"
+      }
+    ],
+    "symbol": "MODEL_POINT_BIAS_SUPPORT_TARGET_MULT"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_TUNING_INTERVAL_ERR_WEIGHT'), Constant(value='0.2')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.2')",
+        "name": "MODEL_TUNING_INTERVAL_ERR_WEIGHT"
+      }
+    ],
+    "symbol": "MODEL_TUNING_INTERVAL_ERR_WEIGHT"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_TUNING_TAIL_ERR_WEIGHT'), Constant(value='0.15')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.15')",
+        "name": "MODEL_TUNING_TAIL_ERR_WEIGHT"
+      }
+    ],
+    "symbol": "MODEL_TUNING_TAIL_ERR_WEIGHT"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_TUNING_TAIL_QUANTILE'), Constant(value='0.9')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.9')",
+        "name": "MODEL_TUNING_TAIL_QUANTILE"
+      }
+    ],
+    "symbol": "MODEL_TUNING_TAIL_QUANTILE"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_TUNING_COMPLEXITY_WEIGHT'), Constant(value='0.03')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.03')",
+        "name": "MODEL_TUNING_COMPLEXITY_WEIGHT"
+      }
+    ],
+    "symbol": "MODEL_TUNING_COMPLEXITY_WEIGHT"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_TUNING_COMPLEXITY_DEPTH_REF'), Constant(value='4')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='4')",
+        "name": "MODEL_TUNING_COMPLEXITY_DEPTH_REF"
+      }
+    ],
+    "symbol": "MODEL_TUNING_COMPLEXITY_DEPTH_REF"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_LONG_HORIZON_BLEND_START_HOURS'), Constant(value='4')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='4')",
+        "name": "MODEL_LONG_HORIZON_BLEND_START_HOURS"
+      }
+    ],
+    "symbol": "MODEL_LONG_HORIZON_BLEND_START_HOURS"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_LONG_HORIZON_BLEND_FULL_HOURS'), Constant(value='12')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='12')",
+        "name": "MODEL_LONG_HORIZON_BLEND_FULL_HOURS"
+      }
+    ],
+    "symbol": "MODEL_LONG_HORIZON_BLEND_FULL_HOURS"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_LONG_HORIZON_BLEND_MAX_WEIGHT'), Constant(value='0.28')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.28')",
+        "name": "MODEL_LONG_HORIZON_BLEND_MAX_WEIGHT"
+      }
+    ],
+    "symbol": "MODEL_LONG_HORIZON_BLEND_MAX_WEIGHT"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_DIRECT_HORIZON_MIN_PAIRS'), Constant(value='100')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='100')",
+        "name": "MODEL_DIRECT_HORIZON_MIN_PAIRS"
+      }
+    ],
+    "symbol": "MODEL_DIRECT_HORIZON_MIN_PAIRS"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_DIRECT_HORIZON_SEGMENT_MIN_PAIRS'), Constant(value='30')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='30')",
+        "name": "MODEL_DIRECT_HORIZON_SEGMENT_MIN_PAIRS"
+      }
+    ],
+    "symbol": "MODEL_DIRECT_HORIZON_SEGMENT_MIN_PAIRS"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_DIRECT_HORIZON_MAX_BLEND'), Constant(value='0.45')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.45')",
+        "name": "MODEL_DIRECT_HORIZON_MAX_BLEND"
+      }
+    ],
+    "symbol": "MODEL_DIRECT_HORIZON_MAX_BLEND"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_DIRECT_HORIZON_OCCUPANCY_SEGMENT_MIN_PAIRS'), Constant(value='18')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='18')",
+        "name": "MODEL_DIRECT_HORIZON_OCCUPANCY_SEGMENT_MIN_PAIRS"
+      }
+    ],
+    "symbol": "MODEL_DIRECT_HORIZON_OCCUPANCY_SEGMENT_MIN_PAIRS"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_TUNING_MIN_ROWS'), Constant(value='1200')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='1200')",
+        "name": "MODEL_TUNING_MIN_ROWS"
+      }
+    ],
+    "symbol": "MODEL_TUNING_MIN_ROWS"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_TUNING_CV_FOLDS'), Constant(value='3')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='3')",
+        "name": "MODEL_TUNING_CV_FOLDS"
+      }
+    ],
+    "symbol": "MODEL_TUNING_CV_FOLDS"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_TUNING_MAX_CANDIDATES'), Constant(value='16')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='16')",
+        "name": "MODEL_TUNING_MAX_CANDIDATES"
+      }
+    ],
+    "symbol": "MODEL_TUNING_MAX_CANDIDATES"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_TUNING_BOOST_ROUND'), Constant(value='250')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='250')",
+        "name": "MODEL_TUNING_BOOST_ROUND"
+      }
+    ],
+    "symbol": "MODEL_TUNING_BOOST_ROUND"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_TUNING_RANDOM_SEED'), Constant(value='7')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='7')",
+        "name": "MODEL_TUNING_RANDOM_SEED"
+      }
+    ],
+    "symbol": "MODEL_TUNING_RANDOM_SEED"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_PARALLEL_WORKERS'), Constant(value='2')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='2')",
+        "name": "MODEL_PARALLEL_WORKERS"
+      }
+    ],
+    "symbol": "MODEL_PARALLEL_WORKERS"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_CHAMPION_GATE_RECENT_DAYS'), Constant(value='14')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='14')",
+        "name": "MODEL_CHAMPION_GATE_RECENT_DAYS"
+      }
+    ],
+    "symbol": "CHAMPION_GATE_RECENT_DAYS"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_CHAMPION_GATE_MIN_ROWS'), Constant(value='240')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='240')",
+        "name": "MODEL_CHAMPION_GATE_MIN_ROWS"
+      }
+    ],
+    "symbol": "CHAMPION_GATE_MIN_ROWS"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_CHAMPION_GATE_MIN_MAE_IMPROVEMENT'), Constant(value='0.0015')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.0015')",
+        "name": "MODEL_CHAMPION_GATE_MIN_MAE_IMPROVEMENT"
+      }
+    ],
+    "symbol": "CHAMPION_GATE_MIN_MAE_IMPROVEMENT"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_CHAMPION_GATE_MAX_RMSE_DEGRADE'), Constant(value='0.01')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.01')",
+        "name": "MODEL_CHAMPION_GATE_MAX_RMSE_DEGRADE"
+      }
+    ],
+    "symbol": "CHAMPION_GATE_MAX_RMSE_DEGRADE"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_CHAMPION_GATE_MAX_INTERVAL_ERR_DEGRADE'), Constant(value='0.01')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.01')",
+        "name": "MODEL_CHAMPION_GATE_MAX_INTERVAL_ERR_DEGRADE"
+      }
+    ],
+    "symbol": "CHAMPION_GATE_MAX_INTERVAL_ERR_DEGRADE"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_CHAMPION_ROLLBACK_DRIFT_STREAK'), Constant(value='3')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='3')",
+        "name": "MODEL_CHAMPION_ROLLBACK_DRIFT_STREAK"
+      }
+    ],
+    "symbol": "CHAMPION_ROLLBACK_DRIFT_STREAK"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_OCCUPANCY_WEIGHT_ALPHA'), Constant(value='1.2')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='1.2')",
+        "name": "MODEL_OCCUPANCY_WEIGHT_ALPHA"
+      }
+    ],
+    "symbol": "OCCUPANCY_WEIGHT_ALPHA"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_OCCUPANCY_WEIGHT_GAMMA'), Constant(value='1.4')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='1.4')",
+        "name": "MODEL_OCCUPANCY_WEIGHT_GAMMA"
+      }
+    ],
+    "symbol": "OCCUPANCY_WEIGHT_GAMMA"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_LOCATION_BALANCE_WEIGHT_POWER'), Constant(value='0.5')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.5')",
+        "name": "MODEL_LOCATION_BALANCE_WEIGHT_POWER"
+      }
+    ],
+    "symbol": "LOCATION_BALANCE_WEIGHT_POWER"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_LOCATION_BALANCE_WEIGHT_MIN'), Constant(value='0.55')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.55')",
+        "name": "MODEL_LOCATION_BALANCE_WEIGHT_MIN"
+      }
+    ],
+    "symbol": "LOCATION_BALANCE_WEIGHT_MIN"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_LOCATION_BALANCE_WEIGHT_MAX'), Constant(value='1.8')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='1.8')",
+        "name": "MODEL_LOCATION_BALANCE_WEIGHT_MAX"
+      }
+    ],
+    "symbol": "LOCATION_BALANCE_WEIGHT_MAX"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_WEIGHT_CLIP_LOWER_Q'), Constant(value='0.02')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.02')",
+        "name": "MODEL_WEIGHT_CLIP_LOWER_Q"
+      }
+    ],
+    "symbol": "MODEL_WEIGHT_CLIP_LOWER_Q"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_WEIGHT_CLIP_UPPER_Q'), Constant(value='0.98')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.98')",
+        "name": "MODEL_WEIGHT_CLIP_UPPER_Q"
+      }
+    ],
+    "symbol": "MODEL_WEIGHT_CLIP_UPPER_Q"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_WEIGHT_CLIP_MIN'), Constant(value='0.08')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.08')",
+        "name": "MODEL_WEIGHT_CLIP_MIN"
+      }
+    ],
+    "symbol": "MODEL_WEIGHT_CLIP_MIN"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_WEIGHT_CLIP_MAX'), Constant(value='6.0')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='6.0')",
+        "name": "MODEL_WEIGHT_CLIP_MAX"
+      }
+    ],
+    "symbol": "MODEL_WEIGHT_CLIP_MAX"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_RECENCY_HALFLIFE_DAYS'), Constant(value='45')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='45')",
+        "name": "MODEL_RECENCY_HALFLIFE_DAYS"
+      }
+    ],
+    "symbol": "RECENCY_HALFLIFE_DAYS"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_RECENCY_MIN_WEIGHT'), Constant(value='0.2')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.2')",
+        "name": "MODEL_RECENCY_MIN_WEIGHT"
+      }
+    ],
+    "symbol": "RECENCY_MIN_WEIGHT"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_DRIFT_RECENT_DAYS'), Constant(value='14')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='14')",
+        "name": "MODEL_DRIFT_RECENT_DAYS"
+      }
+    ],
+    "symbol": "DRIFT_RECENT_DAYS"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_DRIFT_MIN_POINTS'), Constant(value='120')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='120')",
+        "name": "MODEL_DRIFT_MIN_POINTS"
+      }
+    ],
+    "symbol": "DRIFT_MIN_POINTS"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_DRIFT_ALERT_MULTIPLIER'), Constant(value='0.2')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.2')",
+        "name": "MODEL_DRIFT_ALERT_MULTIPLIER"
+      }
+    ],
+    "symbol": "DRIFT_ALERT_MULTIPLIER"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_DRIFT_ACTION_STREAK_FOR_RETRAIN'), Constant(value='2')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='2')",
+        "name": "MODEL_DRIFT_ACTION_STREAK_FOR_RETRAIN"
+      }
+    ],
+    "symbol": "DRIFT_ACTION_STREAK_FOR_RETRAIN"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_DRIFT_ACTION_FORCE_HOURS'), Constant(value='24')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='24')",
+        "name": "MODEL_DRIFT_ACTION_FORCE_HOURS"
+      }
+    ],
+    "symbol": "DRIFT_ACTION_FORCE_HOURS"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_DRIFT_ACTION_INTERVAL_MULTIPLIER_STEP'), Constant(value='0.15')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.15')",
+        "name": "MODEL_DRIFT_ACTION_INTERVAL_MULTIPLIER_STEP"
+      }
+    ],
+    "symbol": "DRIFT_ACTION_INTERVAL_MULTIPLIER_STEP"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_DRIFT_ACTION_INTERVAL_MAX_MULTIPLIER'), Constant(value='1.7')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='1.7')",
+        "name": "MODEL_DRIFT_ACTION_INTERVAL_MAX_MULTIPLIER"
+      }
+    ],
+    "symbol": "DRIFT_ACTION_INTERVAL_MAX_MULTIPLIER"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_RECENT_DRIFT_BIAS_MAX_ABS'), Constant(value='0.12')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.12')",
+        "name": "MODEL_RECENT_DRIFT_BIAS_MAX_ABS"
+      }
+    ],
+    "symbol": "RECENT_DRIFT_BIAS_MAX_ABS"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_RECENT_DRIFT_BIAS_MIN_POINTS_PER_HOUR'), Constant(value='20')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='20')",
+        "name": "MODEL_RECENT_DRIFT_BIAS_MIN_POINTS_PER_HOUR"
+      }
+    ],
+    "symbol": "RECENT_DRIFT_BIAS_MIN_POINTS_PER_HOUR"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_RECENT_DRIFT_BIAS_MIN_POINTS_PER_OCCUPANCY'), Constant(value='24')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='24')",
+        "name": "MODEL_RECENT_DRIFT_BIAS_MIN_POINTS_PER_OCCUPANCY"
+      }
+    ],
+    "symbol": "RECENT_DRIFT_BIAS_MIN_POINTS_PER_OCCUPANCY"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_RECENT_DRIFT_BIAS_HORIZON_DECAY_HOURS'), Constant(value='8')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='8')",
+        "name": "MODEL_RECENT_DRIFT_BIAS_HORIZON_DECAY_HOURS"
+      }
+    ],
+    "symbol": "RECENT_DRIFT_BIAS_HORIZON_DECAY_HOURS"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_RECENT_DRIFT_BIAS_BLEND'), Constant(value='0.6')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.6')",
+        "name": "MODEL_RECENT_DRIFT_BIAS_BLEND"
+      }
+    ],
+    "symbol": "RECENT_DRIFT_BIAS_BLEND"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_RECENT_DRIFT_BIAS_SUPPORT_TARGET_MULT'), Constant(value='3.0')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='3.0')",
+        "name": "MODEL_RECENT_DRIFT_BIAS_SUPPORT_TARGET_MULT"
+      }
+    ],
+    "symbol": "RECENT_DRIFT_BIAS_SUPPORT_TARGET_MULT"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_ADAPTIVE_HISTORY_MAX_POINTS'), Constant(value='60')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='60')",
+        "name": "MODEL_ADAPTIVE_HISTORY_MAX_POINTS"
+      }
+    ],
+    "symbol": "ADAPTIVE_HISTORY_MAX_POINTS"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_ADAPTIVE_RETRAIN_MIN_HOURS'), Constant(value='8')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='8')",
+        "name": "MODEL_ADAPTIVE_RETRAIN_MIN_HOURS"
+      }
+    ],
+    "symbol": "ADAPTIVE_RETRAIN_MIN_HOURS"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_ADAPTIVE_RETRAIN_MAX_HOURS'), Constant(value='72')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='72')",
+        "name": "MODEL_ADAPTIVE_RETRAIN_MAX_HOURS"
+      }
+    ],
+    "symbol": "ADAPTIVE_RETRAIN_MAX_HOURS"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_ADAPTIVE_DRIFT_DAYS_MIN'), Constant(value='7')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='7')",
+        "name": "MODEL_ADAPTIVE_DRIFT_DAYS_MIN"
+      }
+    ],
+    "symbol": "ADAPTIVE_DRIFT_DAYS_MIN"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_ADAPTIVE_DRIFT_DAYS_MAX'), Constant(value='21')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='21')",
+        "name": "MODEL_ADAPTIVE_DRIFT_DAYS_MAX"
+      }
+    ],
+    "symbol": "ADAPTIVE_DRIFT_DAYS_MAX"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_ADAPTIVE_DRIFT_MULT_MIN'), Constant(value='0.12')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.12')",
+        "name": "MODEL_ADAPTIVE_DRIFT_MULT_MIN"
+      }
+    ],
+    "symbol": "ADAPTIVE_DRIFT_MULT_MIN"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_ADAPTIVE_DRIFT_MULT_MAX'), Constant(value='0.35')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.35')",
+        "name": "MODEL_ADAPTIVE_DRIFT_MULT_MAX"
+      }
+    ],
+    "symbol": "ADAPTIVE_DRIFT_MULT_MAX"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_ADAPTIVE_ALERT_RATE_STABLE_MAX'), Constant(value='0.15')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.15')",
+        "name": "MODEL_ADAPTIVE_ALERT_RATE_STABLE_MAX"
+      }
+    ],
+    "symbol": "ADAPTIVE_ALERT_RATE_STABLE_MAX"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_ADAPTIVE_ALERT_RATE_UNSTABLE_MIN'), Constant(value='0.40')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.40')",
+        "name": "MODEL_ADAPTIVE_ALERT_RATE_UNSTABLE_MIN"
+      }
+    ],
+    "symbol": "ADAPTIVE_ALERT_RATE_UNSTABLE_MIN"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='INTERVAL_MIN_SAMPLES_PER_HOUR'), Constant(value='30')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='30')",
+        "name": "INTERVAL_MIN_SAMPLES_PER_HOUR"
+      }
+    ],
+    "symbol": "INTERVAL_MIN_SAMPLES_PER_HOUR"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='INTERVAL_Q_LOW'), Constant(value='0.10')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.10')",
+        "name": "INTERVAL_Q_LOW"
+      }
+    ],
+    "symbol": "INTERVAL_Q_LOW"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='INTERVAL_Q_HIGH'), Constant(value='0.90')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.90')",
+        "name": "INTERVAL_Q_HIGH"
+      }
+    ],
+    "symbol": "INTERVAL_Q_HIGH"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='INTERVAL_CONFORMAL_RECENT_DAYS'), Constant(value='21')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='21')",
+        "name": "INTERVAL_CONFORMAL_RECENT_DAYS"
+      }
+    ],
+    "symbol": "INTERVAL_CONFORMAL_RECENT_DAYS"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='INTERVAL_CONFORMAL_ALPHA'), Constant(value='0.20')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.20')",
+        "name": "INTERVAL_CONFORMAL_ALPHA"
+      }
+    ],
+    "symbol": "INTERVAL_CONFORMAL_ALPHA"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='INTERVAL_CONFORMAL_MIN_POINTS'), Constant(value='120')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='120')",
+        "name": "INTERVAL_CONFORMAL_MIN_POINTS"
+      }
+    ],
+    "symbol": "INTERVAL_CONFORMAL_MIN_POINTS"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='INTERVAL_CONFORMAL_MIN_POINTS_PER_HOUR'), Constant(value='20')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='20')",
+        "name": "INTERVAL_CONFORMAL_MIN_POINTS_PER_HOUR"
+      }
+    ],
+    "symbol": "INTERVAL_CONFORMAL_MIN_POINTS_PER_HOUR"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='INTERVAL_CONFORMAL_MAX_MARGIN'), Constant(value='0.35')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.35')",
+        "name": "INTERVAL_CONFORMAL_MAX_MARGIN"
+      }
+    ],
+    "symbol": "INTERVAL_CONFORMAL_MAX_MARGIN"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='INTERVAL_CONFORMAL_SEGMENT_BLEND_TARGET_MULT'), Constant(value='3.0')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='3.0')",
+        "name": "INTERVAL_CONFORMAL_SEGMENT_BLEND_TARGET_MULT"
+      }
+    ],
+    "symbol": "INTERVAL_CONFORMAL_SEGMENT_BLEND_TARGET_MULT"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='INTERVAL_SEGMENT_BLEND_TARGET_MULT'), Constant(value='3.0')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='3.0')",
+        "name": "INTERVAL_SEGMENT_BLEND_TARGET_MULT"
+      }
+    ],
+    "symbol": "INTERVAL_SEGMENT_BLEND_TARGET_MULT"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_FEATURE_ABLATION_MIN_VAL_ROWS'), Constant(value='120')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='120')",
+        "name": "MODEL_FEATURE_ABLATION_MIN_VAL_ROWS"
+      }
+    ],
+    "symbol": "FEATURE_ABLATION_MIN_VAL_ROWS"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='DATA_QUALITY_MAX_INVALID_ROW_RATE'), Constant(value='0.35')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.35')",
+        "name": "DATA_QUALITY_MAX_INVALID_ROW_RATE"
+      }
+    ],
+    "symbol": "DATA_QUALITY_MAX_INVALID_ROW_RATE"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='DATA_QUALITY_MAX_STALE_LOC_RATE'), Constant(value='0.6')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.6')",
+        "name": "DATA_QUALITY_MAX_STALE_LOC_RATE"
+      }
+    ],
+    "symbol": "DATA_QUALITY_MAX_STALE_LOC_RATE"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='DATA_QUALITY_MAX_FLATLINE_LOC_RATE'), Constant(value='0.4')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.4')",
+        "name": "DATA_QUALITY_MAX_FLATLINE_LOC_RATE"
+      }
+    ],
+    "symbol": "DATA_QUALITY_MAX_FLATLINE_LOC_RATE"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='DATA_QUALITY_MIN_LOCATIONS_MODELED'), Constant(value='6')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='6')",
+        "name": "DATA_QUALITY_MIN_LOCATIONS_MODELED"
+      }
+    ],
+    "symbol": "DATA_QUALITY_MIN_LOCATIONS_MODELED"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='CROWD_BASELINE_MIN_COVERAGE'), Constant(value='0.6')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.6')",
+        "name": "CROWD_BASELINE_MIN_COVERAGE"
+      }
+    ],
+    "symbol": "CROWD_BASELINE_MIN_COVERAGE"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='CROWD_BASELINE_MIN_POINTS'), Constant(value='120')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='120')",
+        "name": "CROWD_BASELINE_MIN_POINTS"
+      }
+    ],
+    "symbol": "CROWD_BASELINE_MIN_POINTS"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='CROWD_BASELINE_LOW_QUANTILE'), Constant(value='0.3')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.3')",
+        "name": "CROWD_BASELINE_LOW_QUANTILE"
+      }
+    ],
+    "symbol": "CROWD_BASELINE_LOW_QUANTILE"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='CROWD_BASELINE_PEAK_QUANTILE'), Constant(value='0.7')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.7')",
+        "name": "CROWD_BASELINE_PEAK_QUANTILE"
+      }
+    ],
+    "symbol": "CROWD_BASELINE_PEAK_QUANTILE"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='STALE_SENSOR_HOURS'), Constant(value='24')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='24')",
+        "name": "STALE_SENSOR_HOURS"
+      }
+    ],
+    "symbol": "STALE_SENSOR_HOURS"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='IMPOSSIBLE_JUMP_PCT'), Constant(value='0.60')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.60')",
+        "name": "IMPOSSIBLE_JUMP_PCT"
+      }
+    ],
+    "symbol": "IMPOSSIBLE_JUMP_PCT"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='IMPOSSIBLE_JUMP_MAX_GAP_MIN'), Constant(value='120')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='120')",
+        "name": "IMPOSSIBLE_JUMP_MAX_GAP_MIN"
+      }
+    ],
+    "symbol": "IMPOSSIBLE_JUMP_MAX_GAP_MIN"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='SENSOR_FLATLINE_MAX_GAP_MIN'), Constant(value='20')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='20')",
+        "name": "SENSOR_FLATLINE_MAX_GAP_MIN"
+      }
+    ],
+    "symbol": "SENSOR_FLATLINE_MAX_GAP_MIN"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='SENSOR_FLATLINE_MIN_DURATION_MIN'), Constant(value='360')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='360')",
+        "name": "SENSOR_FLATLINE_MIN_DURATION_MIN"
+      }
+    ],
+    "symbol": "SENSOR_FLATLINE_MIN_DURATION_MIN"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='SENSOR_FLATLINE_KEEP_INTERVAL_MIN'), Constant(value='60')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='60')",
+        "name": "SENSOR_FLATLINE_KEEP_INTERVAL_MIN"
+      }
+    ],
+    "symbol": "SENSOR_FLATLINE_KEEP_INTERVAL_MIN"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='SENSOR_FLATLINE_TOLERANCE_PCT'), Constant(value='0.01')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.01')",
+        "name": "SENSOR_FLATLINE_TOLERANCE_PCT"
+      }
+    ],
+    "symbol": "SENSOR_FLATLINE_TOLERANCE_PCT"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='SENSOR_WEIGHT_MIN'), Constant(value='0.25')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.25')",
+        "name": "SENSOR_WEIGHT_MIN"
+      }
+    ],
+    "symbol": "SENSOR_WEIGHT_MIN"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_FEATURE_QUALITY_WEIGHT_MIN'), Constant(value='0.35')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.35')",
+        "name": "MODEL_FEATURE_QUALITY_WEIGHT_MIN"
+      }
+    ],
+    "symbol": "MODEL_FEATURE_QUALITY_WEIGHT_MIN"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='MODEL_FEATURE_QUALITY_WEIGHT_POWER'), Constant(value='1.25')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='1.25')",
+        "name": "MODEL_FEATURE_QUALITY_WEIGHT_POWER"
+      }
+    ],
+    "symbol": "MODEL_FEATURE_QUALITY_WEIGHT_POWER"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='SPIKE_AWARE_MAX_AGE_MIN'), Constant(value='90')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='90')",
+        "name": "SPIKE_AWARE_MAX_AGE_MIN"
+      }
+    ],
+    "symbol": "SPIKE_AWARE_MAX_AGE_MIN"
+  },
+  {
+    "expression": "Call(func=Name(id='int', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='SPIKE_AWARE_HORIZON_HOURS'), Constant(value='6')])])",
+    "parsers": [
+      {
+        "converter": "int",
+        "default": "Constant(value='6')",
+        "name": "SPIKE_AWARE_HORIZON_HOURS"
+      }
+    ],
+    "symbol": "SPIKE_AWARE_HORIZON_HOURS"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='SPIKE_AWARE_DECAY'), Constant(value='0.55')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='0.55')",
+        "name": "SPIKE_AWARE_DECAY"
+      }
+    ],
+    "symbol": "SPIKE_AWARE_DECAY"
+  },
+  {
+    "expression": "Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='SPIKE_AWARE_MAX_CAP_MULTIPLIER'), Constant(value='1.35')])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='1.35')",
+        "name": "SPIKE_AWARE_MAX_CAP_MULTIPLIER"
+      }
+    ],
+    "symbol": "SPIKE_AWARE_MAX_CAP_MULTIPLIER"
+  },
+  {
+    "expression": "Call(func=Name(id='max', ctx=Load()), args=[Constant(value=1.0), Call(func=Name(id='float', ctx=Load()), args=[Call(func=Attribute(value=Name(id='os', ctx=Load()), attr='getenv', ctx=Load()), args=[Constant(value='SCHEDULE_TRANSITION_WEIGHT_MULTIPLIER'), Constant(value='1.35')])])])",
+    "parsers": [
+      {
+        "converter": "float",
+        "default": "Constant(value='1.35')",
+        "name": "SCHEDULE_TRANSITION_WEIGHT_MULTIPLIER"
+      }
+    ],
+    "symbol": "SCHEDULE_TRANSITION_WEIGHT_MULTIPLIER"
+  }
+]

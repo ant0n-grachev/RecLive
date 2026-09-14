@@ -14,6 +14,7 @@ from server.env_loader import (
 )
 
 from server.forecast_shared import normalize_section_key
+from server.reclive.observability import log_event, log_configuration_failure
 
 
 
@@ -794,7 +795,6 @@ def write_forecast(payload: Dict[str, object]) -> None:
 
 
 def main() -> int:
-    start = datetime.now(config.TZ).strftime("%Y-%m-%d %H:%M:%S")
     try:
         validate_production_environment(
             os.environ,
@@ -814,30 +814,13 @@ def main() -> int:
         payload = build_forecast()
         write_forecast(payload)
 
-        facilities_count = len(payload.get("facilities", []))
-        model_info = payload.get("modelInfo", {})
-        status = model_info.get("status")
-        metrics = model_info.get("metrics", {})
-        metric_part = ""
-        for name, label in (
-            ("maePeople", "MAE people"),
-            ("maeCapacityPercentagePoints", "MAE capacity percentage points"),
-            ("rmsePeople", "RMSE people"),
-            ("predictionIntervalCoverage", "interval coverage fraction"),
-            ("simpleBaselineMaePeople", "simple baseline MAE people"),
-        ):
-            value = metrics.get(name)
-            metric_part += f" | {label} {float(value):.4f}" if value is not None else f" | {label} n/a"
-
-        print(
-            f"{start} OK: facilities {facilities_count} | modelStatus {status}{metric_part}"
-        )
+        log_event("forecast.completed", generatedFacilities=len(payload.get("facilities", [])))
         return 0
     except EnvironmentConfigurationError as exc:
-        print(start, "ERROR:", str(exc))
+        log_configuration_failure(exc)
         return 1
     except Exception:
-        print(start, "ERROR: Forecast generation failed")
+        log_event("forecast.failed")
         return 1
 
 

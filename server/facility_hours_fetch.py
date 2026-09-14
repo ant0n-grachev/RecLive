@@ -10,6 +10,7 @@ if not __package__:
 
 from server.env_loader import load_project_dotenv, validate_production_environment
 from server.reclive.settings import Settings
+from server.reclive.observability import format_event, log_event
 from server.reclive.facility_schedule import (
     SCRIPT_DIR as SCRIPT_DIR,
     USER_AGENT as USER_AGENT,
@@ -99,25 +100,25 @@ from server.reclive.facility_schedule import (
 
 
 def main() -> int:
-    load_project_dotenv()
-    validate_production_environment(
-        os.environ,
-        required_names=("FACILITY_HOURS_JSON_PATH",),
-        cors_name=None,
-        admin_enabled=False,
-    )
-    parser = argparse.ArgumentParser(
-        description="Fetch and parse official RecWell hours for Nick and Bakke."
-    )
-    parser.add_argument(
-        "--output",
-        default=env_with_default("FACILITY_HOURS_JSON_PATH", DEFAULT_OUTPUT_FILE),
-        help="Output JSON file path relative to this script directory (default: facility_hours.json).",
-    )
-    args = parser.parse_args()
-
-    output_path = resolve_path(str(args.output))
     try:
+        load_project_dotenv()
+        validate_production_environment(
+            os.environ,
+            required_names=("FACILITY_HOURS_JSON_PATH",),
+            cors_name=None,
+            admin_enabled=False,
+        )
+        parser = argparse.ArgumentParser(
+            description="Fetch and parse official RecWell hours for Nick and Bakke."
+        )
+        parser.add_argument(
+            "--output",
+            default=env_with_default("FACILITY_HOURS_JSON_PATH", DEFAULT_OUTPUT_FILE),
+            help="Output JSON file path relative to this script directory (default: facility_hours.json).",
+        )
+        args = parser.parse_args()
+
+        output_path = resolve_path(str(args.output))
         settings = replace(
             Settings.for_commands(), facility_hours_json_path=output_path
         )
@@ -126,26 +127,29 @@ def main() -> int:
         if payload is None:
             raise ValueError("invalid schedule payload")
     except ScheduleFetchError as exc:
+        category = {
+            "io_error": "file_unavailable",
+            "anti_bot": "network_error",
+            "upstream_timeout": "network_error",
+            "upstream_http": "network_error",
+        }.get(exc.category, "validation_error")
         print(
-            f"facility_hours_fetch: failed category={exc.category}",
+            format_event("schedules.failed", errorCategory=category),
             file=sys.stderr,
         )
         return 1
     except Exception:
         print(
-            "facility_hours_fetch: failed category=schema_invalid",
+            format_event("schedules.failed", errorCategory="validation_error"),
             file=sys.stderr,
         )
         return 1
 
     facility_payloads = payload["facilities"]
-    ok_count = sum(1 for row in facility_payloads if row.get("status") == "ok")
-    stale_count = sum(1 for row in facility_payloads if row.get("status") == "stale")
-    error_count = sum(1 for row in facility_payloads if row.get("status") == "error")
-    print(
-        "facility_hours_fetch: published"
-        f" ok={ok_count} stale={stale_count} error={error_count}"
-        f" total={len(facility_payloads)}"
+    log_event(
+        "schedules.completed",
+        facilityCount=len(facility_payloads),
+        failedFacilityCount=sum(row.get("status") != "ok" for row in facility_payloads),
     )
     return exit_code
 

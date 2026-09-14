@@ -18,17 +18,13 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: env -u NODE_OPTIONS node --test tests/frontend/isolation.test.mjs tests/frontend/vitest-mocker-security.test.mjs
       - run: npm run lint
-      - run: npm run build
-        env:
-          VITE_API_BASE_URL: http://127.0.0.1:8000
-          VITE_SITE_URL: http://127.0.0.1:4173
-      - run: npm run test:run
+      - run: env -u NODE_OPTIONS node tests/frontend/run-isolated.cjs build
+      - run: env -u NODE_OPTIONS node tests/frontend/run-isolated.cjs test:run
+      - run: env -u NODE_OPTIONS node tests/frontend/run-isolated.cjs test:coverage
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e -- tests/e2e/route-smoke.spec.ts
-        env:
-          VITE_API_BASE_URL: http://127.0.0.1:8000
-          VITE_SITE_URL: http://127.0.0.1:4173
+      - run: env -u NODE_OPTIONS node tests/frontend/run-isolated.cjs test:e2e
 
   backend:
     runs-on: ubuntu-latest

@@ -1,9 +1,21 @@
+# ruff: noqa: E402 -- isolate environment before importing application owners.
+import os
+from server import env_loader as _test_env_loader
+from tests.fixtures.environment import guard_project_dotenv, synthetic_application_environment
+
+# Install before collection can import compatibility apps or forecasting config.
+_test_environment = synthetic_application_environment(os.environ)
+for _test_name in tuple(os.environ):
+    if _test_name not in _test_environment:
+        del os.environ[_test_name]
+os.environ.update(_test_environment)
+_test_env_loader.load_dotenv = guard_project_dotenv(_test_env_loader.load_dotenv)
+
 from server.reclive.api import forecasts as _seam_api_forecasts
 from server.reclive import db as _seam_db
 from dataclasses import replace as _settings_replace
 from server.reclive import runtime as _seam_runtime
 
-import os
 import re
 from collections.abc import Iterator
 from datetime import datetime, timezone

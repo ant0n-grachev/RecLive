@@ -3,7 +3,7 @@
 import sys as _sys
 from server.reclive.forecasting import config, data, features, reporting
 import math
-import traceback
+from server.reclive.observability import best_effort_event
 from datetime import date, datetime, timedelta
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
@@ -681,7 +681,7 @@ def apply_drift_actions(
                     try:
                         data.save_model_meta_only(restored_meta, model_key=model_key)
                     except Exception:
-                        traceback.print_exc()
+                        best_effort_event("forecast.model_metadata_write_failed", stderr=True, errorCategory="file_unavailable")
                     model_meta_by_key[model_key] = restored_meta
                     interval_multiplier_by_key[model_key] = 1.0
                     summary["modelsEvaluated"] += 1
@@ -725,7 +725,7 @@ def apply_drift_actions(
         try:
             data.save_model_meta_only(updated, model_key=model_key)
         except Exception:
-            traceback.print_exc()
+            best_effort_event("forecast.model_metadata_write_failed", stderr=True, errorCategory="file_unavailable")
 
         summary["modelsEvaluated"] += 1
         summary["byModel"][model_key] = {

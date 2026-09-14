@@ -2,8 +2,16 @@ import {defineConfig} from "vitest/config";
 import react from "@vitejs/plugin-react";
 import {VitePWA} from "vite-plugin-pwa";
 
+const noCheckoutDotenvPresent = Object.prototype.hasOwnProperty.call(
+    process.env, "RECLIVE_TEST_NO_DOTENV",
+);
+if (noCheckoutDotenvPresent && process.env.RECLIVE_TEST_NO_DOTENV !== "1") {
+    throw new Error("Unsafe test environment configuration: RECLIVE_TEST_NO_DOTENV");
+}
+
 // https://vite.dev/config/
 export default defineConfig({
+    envDir: noCheckoutDotenvPresent ? false : undefined,
     plugins: [
         react(),
         VitePWA({
@@ -19,6 +27,8 @@ export default defineConfig({
         }),
     ],
     test: {
+        // Bound isolated verification resource use; ordinary runs keep Vitest's default.
+        maxWorkers: noCheckoutDotenvPresent ? 1 : undefined,
         environment: "jsdom",
         globals: true,
         setupFiles: ["./src/test/setup.ts"],

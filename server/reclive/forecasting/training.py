@@ -4,7 +4,7 @@ import sys as _sys
 from server.reclive.forecasting import config, data, features, metrics, prediction
 import math
 import random
-import traceback
+from server.reclive.observability import best_effort_event
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -2176,7 +2176,7 @@ def prepare_model(
                     try:
                         data.save_model_meta_only(updated_saved, model_key=model_key)
                     except Exception:
-                        traceback.print_exc()
+                        best_effort_event("forecast.model_metadata_write_failed", stderr=True, errorCategory="file_unavailable")
                     saved_meta = updated_saved
                 return saved_bundle, saved_meta, status, run_metrics
 
@@ -2282,9 +2282,9 @@ def prepare_models(
                 feature_core_cache=feature_core_cache,
             )
             return key, model_bundle, meta, status, run_metrics
-        except Exception as exc:
-            traceback.print_exc()
-            return key, None, None, "error", {"error": str(exc)}
+        except Exception:
+            best_effort_event("forecast.model_unit_failed", stderr=True)
+            return key, None, None, "error", {}
 
     use_parallel = max(1, int(config.MODEL_PARALLEL_WORKERS)) > 1 and len(unit_specs) > 1
     if use_parallel:

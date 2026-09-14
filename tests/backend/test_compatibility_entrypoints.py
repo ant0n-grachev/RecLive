@@ -1,4 +1,5 @@
 import importlib
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -8,6 +9,62 @@ from dataclasses import replace
 from datetime import datetime, timezone
 
 import pytest
+
+
+@pytest.mark.parametrize(
+    "first", ["reclive.migrations", "server.reclive.migrations"]
+)
+def test_migration_imports_share_module_types_runner_and_connector(first, tmp_path):
+    root = Path(__file__).resolve().parents[2]
+    second = (
+        "server.reclive.migrations"
+        if first == "reclive.migrations"
+        else "reclive.migrations"
+    )
+    code = textwrap.dedent(
+        f"""
+        import importlib
+        import sys
+        import tempfile
+        from pathlib import Path
+
+        sys.path[:0] = [{str(root)!r}, {str(root / "server")!r}]
+        first = importlib.import_module({first!r})
+        second = importlib.import_module({second!r})
+        assert first is second
+        assert first.MigrationSettings is second.MigrationSettings
+        assert first.MigrationError is second.MigrationError
+        assert first.run_migrations is second.run_migrations
+
+        class ConnectorReached(RuntimeError):
+            pass
+
+        def fake_connect(_settings):
+            raise ConnectorReached("connector reached")
+
+        first.connect = fake_connect
+        assert second.run_migrations.__globals__["connect"] is fake_connect
+        with tempfile.TemporaryDirectory() as directory:
+            migration_dir = Path(directory)
+            (migration_dir / "0001_fixture.sql").write_text("SELECT 1;\\n")
+            try:
+                second.run_migrations(None, migration_dir)
+            except ConnectorReached:
+                pass
+            else:
+                raise AssertionError("runner did not use the patched connector")
+        print("migration-owner-ok")
+        """
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "migration-owner-ok\n"
 
 
 @pytest.mark.parametrize("first", ["forecast_job", "server.forecast_job"])
@@ -89,10 +146,9 @@ def test_schedule_main_delegates_with_script_relative_output(monkeypatch, capsys
     assert calls[0].facility_hours_json_path == str(
         Path(__file__).resolve().parents[2] / "server/result.json"
     )
-    assert (
-        capsys.readouterr().out
-        == "facility_hours_fetch: published ok=1 stale=1 error=0 total=2\n"
-    )
+    event = json.loads(capsys.readouterr().out)
+    assert event.pop("timestamp").endswith("Z")
+    assert event == {"event": "schedules.completed", "facilityCount": 2, "failedFacilityCount": 1}
 
 
 def test_collector_and_normalizer_have_service_owners():
@@ -222,12 +278,14 @@ def test_direct_collectors_use_configured_service_from_another_cwd(command, tmp_
         timeout=10,
     )
     assert result.returncode == 0, result.stderr
-    expected = (
-        "facility_hours_fetch: published ok=1 stale=1 error=0 total=2\n"
-        if command == "facility_hours_fetch"
-        else ""
-    )
-    assert result.stdout == expected + "direct-ok\n"
+    lines = result.stdout.splitlines()
+    assert lines.pop() == "direct-ok"
+    if command == "facility_hours_fetch":
+        assert len(lines) == 1
+        event = json.loads(lines.pop())
+        assert event.pop("timestamp").endswith("Z")
+        assert event == {"event": "schedules.completed", "facilityCount": 2, "failedFacilityCount": 1}
+    assert lines == []
     assert result.stderr == ""
 
 
@@ -291,6 +349,13 @@ def test_configured_ingestion_retains_transactions_and_optional_seams(fails):
     assert factory.all_connections_closed
     assert len(factory.event_lines) == 1
     assert "private-source-marker" not in factory.event_lines[0]
+    event = json.loads(factory.event_lines[0])
+    assert event.pop("timestamp").endswith("Z")
+    assert event == (
+        {"event": "ingestion.failed", "errorCategory": "network_error"}
+        if fails else
+        {"event": "ingestion.completed", "receivedCount": 1, "historyInsertedCount": 1, "unchangedCount": 0}
+    )
     if fails:
         assert factory.failure_events == ["complete_failure", "commit", "close"]
 
@@ -491,10 +556,9 @@ def test_initialized_dotenv_gym_command_rejects_blank_environment_before_io(
     assert calls == []
     captured = capsys.readouterr()
     assert captured.err == ""
-    assert captured.out == (
-        "status=failed received=0 valid=0 history=0 snapshot=0 "
-        "durationMs=0 category=validation\n"
-    )
+    event = json.loads(captured.out)
+    assert event.pop("timestamp").endswith("Z")
+    assert event == {"event": "ingestion.failed", "errorCategory": "validation_error"}
 
 
 @pytest.mark.parametrize("raw_environment", ["", " \t "])

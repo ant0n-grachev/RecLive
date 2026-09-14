@@ -7,12 +7,13 @@ except ModuleNotFoundError:
     from server import reclive  # noqa: F401
 
 from server.env_loader import EnvironmentConfigurationError
+from server.reclive.observability import log_configuration_failure
 
 try:
     from server.reclive.forecasting import config as _config  # noqa: F401
 except EnvironmentConfigurationError as exc:
     if __name__ == "__main__":
-        print(f"forecast_job: ERROR: {exc}")
+        log_configuration_failure(exc)
         raise SystemExit(1) from None
     raise
 

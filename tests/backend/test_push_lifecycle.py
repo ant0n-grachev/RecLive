@@ -4853,6 +4853,7 @@ def test_evaluator_loop_emits_only_fixed_allowlisted_error(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     async def stop_after_error(_seconds: float) -> None:
+        assert _seconds >= 30
         raise asyncio.CancelledError
 
     monkeypatch.setattr(
@@ -4866,7 +4867,9 @@ def test_evaluator_loop_emits_only_fixed_allowlisted_error(
         asyncio.run(api.evaluator_loop())
 
     output = capsys.readouterr()
-    assert output.out.strip() == "[push-evaluator] error=push_evaluation_failed"
+    event = json.loads(output.out)
+    assert event.pop("timestamp").endswith("Z")
+    assert event == {"event": "push.evaluator_failed", "errorCategory": "push_unavailable"}
     assert "evaluator-secret-sentinel" not in output.out + output.err
 
 
@@ -5604,6 +5607,8 @@ from pathlib import Path
 project_root = Path.cwd()
 server_path = str(project_root / "server")
 assert server_path not in sys.path
+from server import env_loader
+env_loader._DOTENV_STATE.loaded = True
 import server.prune_push_rate_limits as prune
 before = list(sys.path)
 open_connection, window_seconds = prune._load_runtime_dependencies()
@@ -5642,6 +5647,8 @@ def test_prune_package_module_reaches_database_and_sanitizes_failure(
         "import os\n"
         "from pathlib import Path\n"
         "import pymysql\n"
+        "from server import env_loader\n"
+        "env_loader._DOTENV_STATE.loaded = True\n"
         "def fail_connect(*_args, **_kwargs):\n"
         "    Path(os.environ['PRUNE_TEST_DB_MARKER']).write_text('attempted')\n"
         "    raise RuntimeError('package-db-secret-sentinel')\n"

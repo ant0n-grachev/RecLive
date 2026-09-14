@@ -487,12 +487,15 @@ def test_main_logs_explicit_units_through_owner_seams(monkeypatch, capsys):
     monkeypatch.setattr(job, "write_forecast", lambda payload: writes.append(payload))
     assert forecast_job.main() == 0
     output = capsys.readouterr().out
-    assert "MAE people 15.0000" in output
-    assert "MAE capacity percentage points 12.5000" in output
-    assert "RMSE people 15.8114" in output
-    assert "simple baseline MAE people 10.0000" in output
-    assert "precision" not in output and "valMAE" not in output
+    event = json.loads(output)
+    assert event.pop("timestamp").endswith("Z")
+    assert event == {"event": "forecast.completed", "generatedFacilities": 0}
     assert len(writes) == 1
+    metrics = writes[0]["modelInfo"]["metrics"]
+    assert metrics["maePeople"] == 15.0
+    assert metrics["maeCapacityPercentagePoints"] == 12.5
+    assert metrics["rmsePeople"] == pytest.approx(math.sqrt(250.0))
+    assert metrics["simpleBaselineMaePeople"] == 10.0
 
 
 def test_saved_artifact_loader_preserves_ratio_metadata_and_legacy_paths(monkeypatch, tmp_path):

@@ -1,5 +1,5 @@
 import {ThemeProvider} from "@mui/material";
-import {fireEvent, render, screen, waitFor} from "@testing-library/react";
+import {act, fireEvent, render, screen, waitFor} from "@testing-library/react";
 import type {PaletteMode} from "@mui/material/styles";
 import {createAppTheme} from "../../app/theme";
 import type {FacilityScheduleResponse} from "../../lib/api/schemas";
@@ -30,6 +30,11 @@ const renderPage = (props: DashboardPageProps = createPageProps()) => render(
         <DashboardPage {...props}/>
     </ThemeProvider>
 );
+
+// Await real lazy imports without advancing the fixture's fake clock or relying on test order.
+const settlePageImports = () => act(async () => {
+    await vi.dynamicImportSettled();
+});
 
 const expectTextOrder = (container: HTMLElement, labels: string[]) => {
     let previousIndex = -1;
@@ -79,13 +84,14 @@ it("shows the lazy heatmap fallback before the page card resolves", async () => 
     const {container} = renderPage();
 
     expect(container.querySelector(".MuiCircularProgress-root")).toBeInTheDocument();
+    await settlePageImports();
     expect(await screen.findByText("Floor Heat Map")).toBeVisible();
 });
 
 it.each([
     [1186, "Nick"],
     [1656, "Bakke"],
-] as const)("renders facility %s with its route content and controls", (facility, label) => {
+] as const)("renders facility %s with its route content and controls", async (facility, label) => {
     vi.useFakeTimers();
     vi.setSystemTime("2026-08-31T13:15:00Z");
     renderPage(createPageProps({
@@ -93,6 +99,7 @@ it.each([
         data: fixtureLiveByFacility[facility],
         activeSchedule: fixtureScheduleByFacility[facility],
     }));
+    await settlePageImports();
 
     expect(screen.getByRole("main")).toBeVisible();
     expect(screen.getByRole("button", {name: label})).toHaveAttribute("aria-pressed", "true");
@@ -105,10 +112,11 @@ it.each([
     expect(screen.getByText("Floor Heat Map")).toBeVisible();
 });
 
-it("preserves the open dashboard card order inside the main landmark", () => {
+it("preserves the open dashboard card order inside the main landmark", async () => {
     vi.useFakeTimers();
     vi.setSystemTime("2026-08-31T13:15:00Z");
     renderPage();
+    await settlePageImports();
     const main = screen.getByRole("main");
 
     expectTextOrder(main, [
@@ -157,6 +165,7 @@ it("keeps closed-mode copy, tomorrow forecast controls, and theme control", () =
 it("announces live status while preserving an open alert draft across live refresh", async () => {
     const initialProps = createPageProps({isCrowdAlertOpen: true, liveStatus: "refreshing"});
     const {rerender} = renderPage(initialProps);
+    await settlePageImports();
     const threshold = await screen.findByRole("spinbutton", {name: "Alert threshold (%)"});
     fireEvent.change(threshold, {target: {value: "7"}});
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys as _import_sys
+from server.reclive.observability import best_effort_event
 import asyncio
 import base64
 import binascii
@@ -1049,7 +1050,7 @@ async def evaluator_loop() -> None:
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, evaluate_captured)
         except Exception:
-            print("[push-evaluator] error=push_evaluation_failed")
+            best_effort_event("push.evaluator_failed", errorCategory="push_unavailable")
         await asyncio.sleep(
             max(30, current_runtime().settings.push.evaluator_interval_seconds)
         )

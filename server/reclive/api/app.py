@@ -3,12 +3,16 @@
 import sys as _import_sys
 
 import threading
+from pathlib import Path
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from server.env_loader import load_project_dotenv
 from server.reclive import push as push_service, runtime as runtime_owner, sections
+from server.reclive import settings as settings_owner
+from server.reclive.health_repository import HealthRepository
+from server.reclive.repositories import push_rules as push_rules_owner
 from server.reclive.runtime import Runtime, runtime_scope
 from server.reclive.settings import Settings, app_environment
 from . import forecasts, health, live_counts, push, schedules
@@ -35,6 +39,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_origins=list(effective_settings.cors_origins),
         allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
         allow_headers=["*"],
+    )
+    app.include_router(
+        health.create_health_router(
+            repository=HealthRepository(
+                connect=lambda: runtime.connect(autocommit=False),
+                migration_dir=Path(__file__).resolve().parents[2] / "migrations",
+                forecast_path=Path(runtime.settings.forecast_json_path),
+                schedule_path=Path(runtime.settings.facility_hours_json_path),
+                push_status=lambda: (
+                    "ready"
+                    if push_rules_owner.push_db_available()
+                    and settings_owner.push_vapid_configured()
+                    and push_service.push_identity_configured()
+                    else "unavailable"
+                ),
+            ),
+            now=lambda: runtime.clock(),
+            ingestion_stale_after_seconds=runtime.settings.ingestion_stale_after_seconds,
+            forecast_stale_after_seconds=runtime.settings.forecast_stale_after_seconds,
+            schedule_stale_after_seconds=runtime.settings.schedule_stale_after_seconds,
+        )
     )
     for router in (
         health.router,

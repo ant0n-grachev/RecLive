@@ -1,13 +1,13 @@
 from __future__ import annotations
-from server.reclive.api import forecasts as _seam_api_forecasts
 from dataclasses import replace as _settings_replace
 from server.reclive import runtime as _seam_runtime
-from server.reclive import settings as _seam_settings
 
 
 import builtins
 import importlib
 import json
+import os
+import subprocess
 import sys
 import traceback
 from datetime import datetime, timedelta, timezone
@@ -152,19 +152,19 @@ def schedule_test_client(
     def build(payload: Mapping[str, object], now: datetime) -> TestClient:
         schedule_path = tmp_path / "facility_hours.json"
         schedule_path.write_text(json.dumps(payload), encoding="utf-8")
-        monkeypatch.setattr(_seam_runtime.current_runtime(), "settings", _settings_replace(_seam_runtime.current_runtime().settings, facility_hours_json_path=str(schedule_path)))
-        monkeypatch.setattr(_seam_runtime, "now_utc", lambda: now, raising=False)
-        monkeypatch.setattr(
-            _seam_api_forecasts,
-            "load_forecast",
-            lambda: {
-                "generatedAt": facility_hours_fetch.iso_utc(now),
-                "facilities": [],
-                "modelInfo": {"status": "fixture"},
-            },
+        forecast_path = tmp_path / "forecast.json"
+        forecast_path.write_text(
+            json.dumps({"generatedAt": facility_hours_fetch.iso_utc(now)}),
+            encoding="utf-8",
         )
-        monkeypatch.setattr(_seam_settings, "evaluator_enabled", lambda: False)
-        return TestClient(forecast_api.app)
+        settings = _settings_replace(
+            _seam_runtime.current_runtime().settings,
+            forecast_json_path=str(forecast_path),
+            facility_hours_json_path=str(schedule_path),
+        )
+        app = forecast_api.create_app(settings)
+        app.state.runtime.clock = lambda: now
+        return TestClient(app)
 
     return build
 
@@ -195,10 +195,12 @@ def test_health_marks_old_or_stale_schedule_without_paths(
     response = schedule_test_client(payload, now).get("/health")
 
     assert response.status_code == 200
-    assert response.json()["schedule"] == {
-        "state": "stale",
-        "ageSeconds": 21_601,
-        "facilities": {"1186": "stale", "1656": "ok"},
+    assert "schedule" not in response.json()
+    assert response.json()["components"]["schedules"] == {
+        "status": "stale",
+        "observedAt": "2026-09-01T11:00:00Z",
+        "ageSeconds": 25_201,
+        "detail": None,
     }
     assert "facility_hours.json" not in response.text
 
@@ -237,30 +239,33 @@ def test_schedule_artifact_failures_share_stable_503_category(
     assert str(path) not in response.text
 
 
-def test_health_reports_unavailable_schedule_without_throwing(
+def test_health_reports_missing_schedule_without_throwing(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     missing_path = tmp_path / "facility_hours.json"
-    monkeypatch.setattr(_seam_runtime.current_runtime(), "settings", _settings_replace(_seam_runtime.current_runtime().settings, facility_hours_json_path=str(missing_path)))
-    monkeypatch.setattr(_seam_runtime, "now_utc", lambda: FIXED_NOW, raising=False)
-    monkeypatch.setattr(
-        _seam_api_forecasts,
-        "load_forecast",
-        lambda: {
-            "generatedAt": "2026-09-01T12:00:00Z",
-            "facilities": [],
-            "modelInfo": {"status": "fixture"},
-        },
+    forecast_path = tmp_path / "forecast.json"
+    forecast_path.write_text(
+        json.dumps({"generatedAt": facility_hours_fetch.iso_utc(FIXED_NOW)}),
+        encoding="utf-8",
     )
+    settings = _settings_replace(
+        _seam_runtime.current_runtime().settings,
+        forecast_json_path=str(forecast_path),
+        facility_hours_json_path=str(missing_path),
+    )
+    app = forecast_api.create_app(settings)
+    app.state.runtime.clock = lambda: FIXED_NOW
 
-    response = TestClient(forecast_api.app).get("/health")
+    response = TestClient(app).get("/health")
 
     assert response.status_code == 200
-    assert response.json()["schedule"] == {
-        "state": "unavailable",
+    assert "schedule" not in response.json()
+    assert response.json()["components"]["schedules"] == {
+        "status": "missing",
+        "observedAt": None,
         "ageSeconds": None,
-        "facilities": {},
+        "detail": None,
     }
     assert str(missing_path) not in response.text
 
@@ -1450,6 +1455,7 @@ def test_atomic_failure_does_not_create_an_absent_target(
 
 def test_main_validates_environment_before_loading_or_collecting(
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     events: list[str] = []
     monkeypatch.setattr(
@@ -1484,10 +1490,92 @@ def test_main_validates_environment_before_loading_or_collecting(
         lambda *_args, **_kwargs: events.append("write"),
     )
 
-    with pytest.raises(RuntimeError, match="environment rejected"):
-        schedule_command.main()
-
+    assert schedule_command.main() == 1
     assert events == ["dotenv", "validate"]
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    event = json.loads(captured.err)
+    assert event.pop("timestamp").endswith("Z")
+    assert event == {"event": "schedules.failed", "errorCategory": "validation_error"}
+
+
+def isolated_schedule_command(overrides=None, *, dotenv_failure=False, arguments=()):
+    from server.env_loader import DEFAULT_ENV
+    code = """
+import runpy, sys
+from server import env_loader
+env_loader._DOTENV_STATE.loaded = True
+import pymysql, requests
+from server.reclive import facility_schedule
+calls = []
+def forbidden(*args, **kwargs):
+    calls.append('unexpected I/O')
+    raise AssertionError('unexpected I/O')
+pymysql.connect = forbidden
+requests.get = forbidden
+requests.Session.request = forbidden
+facility_schedule.collect_facility_hours = forbidden
+facility_schedule.collect_facility_candidate = forbidden
+facility_schedule.atomic_write_json = forbidden
+facility_schedule.write_json = forbidden
+facility_schedule.load_previous_schedule = forbidden
+"""
+    if dotenv_failure:
+        code += """
+def broken_dotenv():
+    raise OSError('private-dotenv-marker')
+env_loader.load_project_dotenv = broken_dotenv
+"""
+    code += f"""
+sys.argv = ['facility_hours_fetch.py', *{list(arguments)!r}]
+try:
+    runpy.run_path('server/facility_hours_fetch.py', run_name='__main__')
+except SystemExit:
+    assert calls == [], 'I/O occurred before configuration rejection'
+    raise
+"""
+    values = {"PATH": os.defpath, **DEFAULT_ENV, "APP_ENV": "test"}
+    for name, value in (overrides or {}).items():
+        if value is None:
+            values.pop(name, None)
+        else:
+            values[name] = value
+    return subprocess.run(
+        [sys.executable, "-c", code], cwd=ROOT, env=values,
+        capture_output=True, text=True, timeout=15,
+    )
+
+
+@pytest.mark.parametrize("overrides,dotenv_failure", [
+    ({"APP_ENV": "private-environment-marker"}, False),
+    ({"APP_ENV": ""}, False),
+    ({"APP_ENV": " \t "}, False),
+    ({"APP_ENV": "production", "FACILITY_HOURS_JSON_PATH": None}, False),
+    ({"APP_ENV": "production", "FACILITY_HOURS_JSON_PATH": "change_me"}, False),
+    ({}, True),
+])
+def test_schedule_executable_sanitizes_bootstrap_and_configuration(overrides, dotenv_failure):
+    result = isolated_schedule_command(overrides, dotenv_failure=dotenv_failure)
+    assert result.returncode == 1
+    assert result.stdout == ""
+    event = json.loads(result.stderr)
+    assert event.pop("timestamp").endswith("Z")
+    assert event == {"event": "schedules.failed", "errorCategory": "validation_error"}
+    assert "private-" not in result.stderr
+    assert "change_me" not in result.stderr and "Traceback" not in result.stderr
+
+
+@pytest.mark.parametrize("arguments,exit_code,stream", [
+    (("--help",), 0, "stdout"),
+    (("--unknown-option",), 2, "stderr"),
+    (("--output",), 2, "stderr"),
+])
+def test_schedule_executable_keeps_argparse_exits(arguments, exit_code, stream):
+    result = isolated_schedule_command(arguments=arguments)
+    assert result.returncode == exit_code
+    assert "usage:" in getattr(result, stream)
+    assert "schedules.failed" not in result.stdout + result.stderr
+    assert "Traceback" not in result.stdout + result.stderr
 
 
 def test_fetch_cli_publishes_valid_two_facility_payload_and_preserves_phase_five_predicate(
@@ -1561,20 +1649,23 @@ def test_main_failure_output_contains_only_safe_category(
     assert schedule_command.main() == 1
     captured = capsys.readouterr()
     rendered = captured.out + captured.err
-    assert "schema_invalid" in rendered
+    assert json.loads(captured.err)["errorCategory"] == "validation_error"
     assert marker not in rendered
     assert str(target) not in rendered
 
 
+@pytest.mark.parametrize("partial", [False, True])
 def test_main_publishes_only_sanitized_status_counts(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
+    partial: bool,
 ) -> None:
     target = tmp_path / "private-output-marker.json"
     payload = valid_schedule_payload()
-    mark_facility_stale(payload["facilities"][0])
-    payload["okCount"] = 1
+    if partial:
+        mark_facility_stale(payload["facilities"][0])
+        payload["okCount"] = 1
     monkeypatch.setattr(sys, "argv", ["facility_hours_fetch.py", "--output", str(target)])
     monkeypatch.setattr(schedule_command, "load_project_dotenv", lambda: None)
     monkeypatch.setattr(
@@ -1588,12 +1679,12 @@ def test_main_publishes_only_sanitized_status_counts(
         lambda *_args, **_kwargs: payload,
     )
 
-    assert schedule_command.main() == 1
+    assert schedule_command.main() == int(partial)
     captured = capsys.readouterr()
     assert captured.err == ""
-    assert captured.out == (
-        "facility_hours_fetch: published ok=1 stale=1 error=0 total=2\n"
-    )
+    event = json.loads(captured.out)
+    assert event.pop("timestamp").endswith("Z")
+    assert event == {"event": "schedules.completed", "facilityCount": 2, "failedFacilityCount": int(partial)}
     assert json.loads(target.read_text(encoding="utf-8")) == payload
 
 
@@ -1633,7 +1724,10 @@ def test_main_atomic_failure_reports_only_io_error_category(
     assert schedule_command.main() == 1
     captured = capsys.readouterr()
     rendered = captured.out + captured.err
-    assert rendered == "facility_hours_fetch: failed category=io_error\n"
+    assert captured.out == ""
+    event = json.loads(captured.err)
+    assert event.pop("timestamp").endswith("Z")
+    assert event == {"event": "schedules.failed", "errorCategory": "file_unavailable"}
     assert marker not in rendered
     assert str(target) not in rendered
 

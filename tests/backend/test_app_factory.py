@@ -119,8 +119,12 @@ def test_live_counts_and_forecast_age_use_each_apps_single_clock_sample(tmp_path
     path.write_text(
         json.dumps({"generatedAt": generated.isoformat(), "facilities": []})
     )
-    first = create_app(Settings.for_test(forecast_json_path=str(path)))
-    second = create_app(Settings.for_test(forecast_json_path=str(path)))
+    settings = replace(
+        Settings.for_test(forecast_json_path=str(path)),
+        facility_hours_json_path=str(tmp_path / "missing-facility-hours.json"),
+    )
+    first = create_app(settings)
+    second = create_app(settings)
     samples = []
 
     class Repository:
@@ -149,7 +153,10 @@ def test_live_counts_and_forecast_age_use_each_apps_single_clock_sample(tmp_path
         assert (
             client.get("/api/live-counts").json()["ingestion"]["ageSeconds"] == seconds
         )
-        assert client.get("/health").json()["generatedAgeSeconds"] == seconds
+        assert (
+            client.get("/health").json()["components"]["forecast"]["ageSeconds"]
+            == seconds
+        )
     assert samples == [generated + timedelta(seconds=delta) for delta in (10, 20, 10)]
 
 
@@ -165,7 +172,7 @@ import env_loader
 env_loader._DOTENV_STATE.loaded = True
 first = {first_prefix!r}
 second = 'reclive.' if first == 'server.reclive.' else 'server.reclive.'
-for name in ('settings', 'runtime', 'push', 'api.dependencies', 'api.app', 'repositories.push_rules'):
+for name in ('settings', 'runtime', 'push', 'api.dependencies', 'api.health', 'api.app', 'repositories.push_rules'):
     assert importlib.import_module(first + name) is importlib.import_module(second + name), name
 import server.reclive, reclive, server.env_loader
 assert server.reclive is reclive
@@ -175,10 +182,12 @@ package = importlib.import_module('server.forecast_api')
 assert bare is package
 assert server.forecast_api is bare
 from server.reclive import push
-from server.reclive.api import dependencies
+from server.reclive.api import dependencies, health as health_owner
 assert bare.PushRuleRequest is push.PushRuleRequest
 assert bare.PushRuleRecord is push.PushRuleRecord
 assert bare.get_snapshot_repository is dependencies.get_snapshot_repository
+assert bare.health is health_owner.health
+assert bare.push_health is health_owner.push_health
 assert bare.app is package.app
 print('canonical-imports-ok')
 """

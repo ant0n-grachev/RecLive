@@ -1,4 +1,5 @@
 import os
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -90,10 +91,10 @@ def test_exception_sanitization_emits_only_fixed_safe_fields() -> None:
     )
 
     assert result.error_category == "network"
-    assert factory.event_lines == [
-        "status=failed received=0 valid=0 history=0 snapshot=0 "
-        "durationMs=0 category=network"
-    ]
+    assert len(factory.event_lines) == 1
+    event = json.loads(factory.event_lines[0])
+    assert event.pop("timestamp").endswith("Z")
+    assert event == {"event": "ingestion.failed", "errorCategory": "network_error"}
     event_output = " ".join(factory.event_lines)
     assert all(
         token not in event_output
@@ -117,10 +118,10 @@ def test_success_emits_the_same_fixed_field_schema() -> None:
     result = run_lifecycle(factory, lambda: LIVE_ROWS)
 
     assert result == IngestionRunResult("succeeded", 1, 1, 1, 1, None)
-    assert factory.event_lines == [
-        "status=succeeded received=1 valid=1 history=1 snapshot=1 "
-        "durationMs=0 category=none"
-    ]
+    assert len(factory.event_lines) == 1
+    event = json.loads(factory.event_lines[0])
+    assert event.pop("timestamp").endswith("Z")
+    assert event == {"event": "ingestion.completed", "receivedCount": 1, "historyInsertedCount": 1, "unchangedCount": 0}
 
 
 def test_non_list_payload_uses_a_sanitized_payload_category() -> None:
@@ -310,10 +311,10 @@ def test_default_repository_factory_failure_is_a_sanitized_database_result(
     )
 
     assert result.error_category == "database"
-    assert event_lines == [
-        "status=failed received=0 valid=0 history=0 snapshot=0 "
-        "durationMs=0 category=database"
-    ]
+    assert len(event_lines) == 1
+    event = json.loads(event_lines[0])
+    assert event.pop("timestamp").endswith("Z")
+    assert event == {"event": "ingestion.failed", "errorCategory": "database_unavailable"}
     assert "credential-like" not in " ".join(event_lines)
 
 
@@ -461,19 +462,23 @@ def test_direct_script_bootstrap_failure_is_fixed_safe_output_only() -> None:
         f"""
         import runpy
         import sys
-        import types
 
         sys.path.insert(0, {str(root / 'server')!r})
-        env_loader = types.ModuleType("env_loader")
-        env_loader.load_project_dotenv = lambda: None
-        capacities = types.ModuleType("facility_capacities")
+        import env_loader
+        env_loader._DOTENV_STATE.loaded = True
+        from server.reclive import ingestion
+        import pymysql
+        import requests
 
-        def fail_capacity_bootstrap():
+        def fail_capacity_bootstrap(*args, **kwargs):
             raise RuntimeError("bootstrap-path-marker")
 
-        capacities.load_facility_capacities = fail_capacity_bootstrap
-        sys.modules["env_loader"] = env_loader
-        sys.modules["facility_capacities"] = capacities
+        def unexpected_io(*args, **kwargs):
+            raise AssertionError("unexpected database/provider access")
+
+        ingestion.load_facility_capacities = fail_capacity_bootstrap
+        pymysql.connect = unexpected_io
+        requests.get = unexpected_io
         runpy.run_path({str(root / 'server' / 'gym_fetch.py')!r}, run_name="__main__")
         """
     )
@@ -493,10 +498,9 @@ def test_direct_script_bootstrap_failure_is_fixed_safe_output_only() -> None:
     )
 
     assert completed.returncode == 1
-    assert completed.stdout == (
-        "status=failed received=0 valid=0 history=0 snapshot=0 "
-        "durationMs=0 category=validation\n"
-    )
+    event = json.loads(completed.stdout)
+    assert event.pop("timestamp").endswith("Z")
+    assert event == {"event": "ingestion.failed", "errorCategory": "validation_error"}
     assert completed.stderr == ""
     assert "bootstrap-path-marker" not in completed.stdout + completed.stderr
     assert "Traceback" not in completed.stdout + completed.stderr

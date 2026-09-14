@@ -561,3 +561,7 @@ def inject_fault(
 ) -> None:
     if fault_injector is not None:
         fault_injector(checkpoint)
+
+
+sys.modules.setdefault("server.reclive.migrations", sys.modules[__name__])
+sys.modules.setdefault("reclive.migrations", sys.modules[__name__])
