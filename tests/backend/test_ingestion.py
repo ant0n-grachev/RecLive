@@ -518,6 +518,59 @@ def test_blank_source_timestamp_first_observation_is_valid() -> None:
     assert result.rows[0].current_capacity == 47
 
 
+@pytest.mark.parametrize("timestamp", [
+    "2026-09-21T14:23:45",
+    "2026-09-21T14:23:45.123",
+    "2026-09-21T14:23:45.123456789",
+    "2026-11-01T01:30:00",
+    "2024-02-29T12:00:00",
+])
+def test_valid_naive_source_timestamp_retains_count_without_guessing_timezone(timestamp) -> None:
+    result = validate_and_deduplicate_rows(
+        [{"LocationId": 5761, "IsClosed": False, "LastCount": 47, "LastUpdatedDateAndTime": timestamp}],
+        {5761: 100},
+    )
+    assert result.invalid_count == 0
+    assert result.rows == (NormalizedLiveRow(5761, False, 47, 100, None),)
+
+
+@pytest.mark.parametrize("timestamp", [
+    "2026-02-30T12:00:00", "2026-02-29T12:00:00", "2026-09-21T24:00:00",
+    "2026-09-21T12:60:00", "2026-09-21T12:00:60", "2026-09-21",
+    "20260921T120000", "2026-W39-1T12:00:00", "2026-09-21 12:00:00",
+    "2026-09-21T12:00", "2026-09-21T12:00:00.1234567890", "not-a-date",
+    " 2026-09-21T12:00:00 ",
+])
+def test_malformed_or_noncanonical_naive_timestamp_still_invalidates_its_row(timestamp) -> None:
+    result = validate_and_deduplicate_rows(
+        [{"LocationId": 5761, "IsClosed": False, "LastCount": 47, "LastUpdatedDateAndTime": timestamp}],
+        {5761: 100},
+    )
+    assert result.invalid_count == 1
+    assert result.rows == ()
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_aware_duplicate_outranks_valid_naive_source_in_either_order(reverse) -> None:
+    rows = [
+        {"LocationId": 5761, "IsClosed": False, "LastCount": 11, "LastUpdatedDateAndTime": "2026-09-21T10:00:00Z"},
+        {"LocationId": 5761, "IsClosed": False, "LastCount": 99, "LastUpdatedDateAndTime": "2099-09-21T10:00:00"},
+    ]
+    result = validate_and_deduplicate_rows(list(reversed(rows)) if reverse else rows, {5761: 100})
+    assert result.invalid_count == 0
+    assert result.rows[0].current_capacity == 11
+    assert result.rows[0].source_updated_at == datetime(2026, 9, 21, 10, tzinfo=timezone.utc)
+
+
+def test_unknown_source_duplicates_use_last_valid_observation_not_naive_clock_order() -> None:
+    result = validate_and_deduplicate_rows([
+        {"LocationId": 5761, "IsClosed": False, "LastCount": 11, "LastUpdatedDateAndTime": "2099-09-21T10:00:00"},
+        {"LocationId": 5761, "IsClosed": False, "LastCount": 12, "LastUpdatedDateAndTime": "2026-09-21T10:00:00"},
+    ], {5761: 100})
+    assert result.invalid_count == 0
+    assert result.rows == (NormalizedLiveRow(5761, False, 12, 100, None),)
+
+
 def test_offset_source_timestamp_normalizes_and_persists_as_naive_utc(
     fake_db, fixed_utc_clock
 ) -> None:
@@ -540,7 +593,7 @@ def test_offset_source_timestamp_normalizes_and_persists_as_naive_utc(
     )
 
     assert result.received_count == 2
-    assert result.invalid_count == 1
+    assert result.invalid_count == 0
     assert len(result.rows) == 1
     assert result.rows[0].source_updated_at == datetime(
         2026, 8, 31, 12, 0, tzinfo=timezone.utc
@@ -1078,3 +1131,54 @@ def assert_observer_counts(connection, *, runs: int, snapshots: int, history: in
         assert cursor.fetchone()[0] == snapshots
         cursor.execute("SELECT COUNT(*) FROM location_history")
         assert cursor.fetchone()[0] == history
+
+
+@pytest.mark.mysql
+def test_naive_source_poll_persists_null_source_and_real_utc_heartbeat_without_false_history(
+    clean_test_database,
+) -> None:
+    from reclive.database_dialect import detect_database_dialect
+    from reclive.migrations import execution_snapshot, snapshot_migration, split_statements
+
+    migration_dir = Path(__file__).resolve().parents[2] / "server" / "migrations"
+    connection = pymysql.connect(**clean_test_database)
+    try:
+        dialect = detect_database_dialect(connection)
+        with connection.cursor() as cursor:
+            for name in ("0001_core_history.sql", "0002_snapshot_and_ingestion.sql"):
+                sql = execution_snapshot(snapshot_migration(migration_dir / name), dialect).sql_bytes.decode()
+                for statement in split_statements(sql):
+                    cursor.execute(statement)
+    finally:
+        connection.close()
+
+    settings = {**clean_test_database, "autocommit": False}
+    for index, (count, naive_time, expected_history) in enumerate([
+        (47, "2026-09-21T01:30:00.123", 1),
+        (47, "2026-09-21T01:31:00.456", 0),
+        (48, "2026-09-21T01:32:00.789", 1),
+    ]):
+        started = datetime(2026, 9, 21, 20, index, tzinfo=timezone.utc)
+        fetch_time = started + timedelta(seconds=2)
+        clock = iter([started, fetch_time, fetch_time + timedelta(seconds=1), fetch_time + timedelta(seconds=2)])
+        result = run_ingestion(
+            lambda: [{"LocationId": 5761, "IsClosed": False, "LastCount": count, "LastUpdatedDateAndTime": naive_time}],
+            lambda: pymysql.connect(**settings), {5761: 100}, lambda: next(clock),
+            event_sink=lambda _event: None,
+        )
+        assert result == IngestionRunResult("succeeded", 1, 1, expected_history, 1, None)
+
+    connection = pymysql.connect(**clean_test_database)
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT current_capacity, source_updated_at, fetched_at FROM location_snapshot")
+            assert cursor.fetchall() == ((48, None, datetime(2026, 9, 21, 20, 2, 2)),)
+            cursor.execute("SELECT current_capacity, source_updated_at, last_updated, fetched_at FROM location_history ORDER BY id")
+            assert cursor.fetchall() == (
+                (47, None, None, datetime(2026, 9, 21, 20, 0, 2)),
+                (48, None, None, datetime(2026, 9, 21, 20, 2, 2)),
+            )
+            cursor.execute("SELECT status, valid_count FROM ingestion_runs ORDER BY id")
+            assert cursor.fetchall() == (("succeeded", 1),) * 3
+    finally:
+        connection.close()

@@ -249,6 +249,9 @@ def is_positive_integer(value: object) -> bool:
 
 
 _INVALID_TIMESTAMP = object()
+NAIVE_SOURCE_TIMESTAMP_PATTERN = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?"
+)
 
 
 def parse_source_timestamp(value: object) -> datetime | None | object:
@@ -264,6 +267,10 @@ def parse_source_timestamp(value: object) -> datetime | None | object:
     except ValueError:
         return _INVALID_TIMESTAMP
     if parsed.tzinfo is None or parsed.utcoffset() is None:
+        # A valid local clock value cannot establish an instant. Preserve the
+        # observation with an unknown source time; fetched_at records receipt.
+        if NAIVE_SOURCE_TIMESTAMP_PATTERN.fullmatch(value):
+            return None
         return _INVALID_TIMESTAMP
     return parsed.astimezone(timezone.utc)
 
