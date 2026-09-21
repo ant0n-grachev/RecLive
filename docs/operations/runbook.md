@@ -43,6 +43,21 @@ This runbook describes actions for a future explicitly authorized operator. It i
    ```
 
    This is not a read-only diagnostic: the migration runner can apply missing migrations. Run it once before starting application processes that need the resulting tables or columns. It must stop on missing, additional, reordered, or checksum-mismatched history; never edit `schema_migrations`, migration files, frozen helpers, or cutover-attempt rows by hand.
+
+   The runner identifies MySQL 8.0/8.4 or MariaDB 10.11 before schema changes;
+   other engines and versions are refused. MySQL keeps the original SQL and
+   checksums. MariaDB executes the existing migrations with
+   `utf8mb4_unicode_ci` in place of `utf8mb4_0900_ai_ci`, without editing the
+   frozen SQL or Python helpers. These collations have different Unicode
+   comparison semantics; MariaDB support is an explicit execution variant,
+   not a claim that they are identical. Its versioned checksum includes the
+   original effective checksum, translated SQL, and exact hook statement
+   mapping. The frozen endpoint-hash finalization uses `ALGORITHM=COPY` on
+   MariaDB while retaining `LOCK=EXCLUSIVE`; the existing cutover barrier and
+   operator gate remain required. Allow space for the table copy. Attempt recovery and
+   read-only migration health use that same checksum. Moving an existing
+   migration ledger between engines therefore requires a separate reviewed
+   data migration; never rewrite ledger checksums to bypass the mismatch.
 5. Start or restart the backend with the target host's process manager. This compatibility command is available for an authorized local or host-managed process:
 
    ```bash

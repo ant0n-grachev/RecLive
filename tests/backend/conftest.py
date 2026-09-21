@@ -31,6 +31,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from reclive.ingestion import validate_and_deduplicate_rows  # noqa: E402
+from reclive.database_dialect import detect_database_dialect  # noqa: E402
 from reclive.migrations import MigrationSettings, run_migrations  # noqa: E402
 from tests.fixtures.live_counts import LIVE_ROWS  # noqa: E402
 from tests.fixtures.reclive_fakes import (  # noqa: E402
@@ -176,10 +177,11 @@ def clean_test_database() -> Iterator[dict[str, object]]:
     }
     connection = pymysql.connect(**admin_settings)
     try:
+        collation = detect_database_dialect(connection).collation
         with connection.cursor() as cursor:
             cursor.execute(f"DROP DATABASE IF EXISTS `{database}`")
             cursor.execute(
-                f"CREATE DATABASE `{database}` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"
+                f"CREATE DATABASE `{database}` CHARACTER SET utf8mb4 COLLATE {collation}"
             )
         yield settings
     finally:
@@ -240,11 +242,12 @@ def migrated_push_database() -> Iterator[dict[str, object]]:
     )
     connection = pymysql.connect(**admin_settings)
     try:
+        collation = detect_database_dialect(connection).collation
         with connection.cursor() as cursor:
             cursor.execute(f"DROP DATABASE IF EXISTS `{database}`")
             cursor.execute(
                 f"CREATE DATABASE `{database}` CHARACTER SET utf8mb4 "
-                "COLLATE utf8mb4_0900_ai_ci"
+                f"COLLATE {collation}"
             )
         run_migrations(
             MigrationSettings(

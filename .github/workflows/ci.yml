@@ -28,9 +28,17 @@ jobs:
 
   backend:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: mysql:8.4
+            health_command: mysqladmin ping -h 127.0.0.1 -uroot -proot-ci-password
+          - image: mariadb:10.11
+            health_command: healthcheck.sh --connect --innodb_initialized
     services:
       mysql:
-        image: mysql:8.4
+        image: ${{ matrix.image }}
         env:
           MYSQL_DATABASE: reclive_test
           MYSQL_USER: reclive
@@ -39,7 +47,7 @@ jobs:
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot-ci-password"
+          --health-cmd="${{ matrix.health_command }}"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10

@@ -46,9 +46,24 @@ def test_ci_workflows_enforce_phase_one_required_gates() -> None:
 
     backend = ci_jobs["backend"]
     assert backend["runs-on"] == "ubuntu-latest"
+    assert backend["strategy"] == {
+        "fail-fast": "false",
+        "matrix": {
+            "include": [
+                {
+                    "image": "mysql:8.4",
+                    "health_command": "mysqladmin ping -h 127.0.0.1 -uroot -proot-ci-password",
+                },
+                {
+                    "image": "mariadb:10.11",
+                    "health_command": "healthcheck.sh --connect --innodb_initialized",
+                },
+            ],
+        },
+    }
     assert backend["services"] == {
         "mysql": {
-            "image": "mysql:8.4",
+            "image": "${{ matrix.image }}",
             "env": {
                 "MYSQL_DATABASE": "reclive_test",
                 "MYSQL_USER": "reclive",
@@ -56,7 +71,7 @@ def test_ci_workflows_enforce_phase_one_required_gates() -> None:
                 "MYSQL_ROOT_PASSWORD": "root-ci-password",
             },
             "ports": ["3306:3306"],
-            "options": '--health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot-ci-password" --health-interval=10s --health-timeout=5s --health-retries=10',
+            "options": '--health-cmd="${{ matrix.health_command }}" --health-interval=10s --health-timeout=5s --health-retries=10',
         }
     }
     assert backend["steps"] == [

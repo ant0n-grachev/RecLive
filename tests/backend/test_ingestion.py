@@ -836,14 +836,19 @@ def test_mysql_snapshot_repository_persists_cutover_contract(clean_test_database
 
     import pymysql
 
-    from reclive.migrations import split_statements
+    from reclive.database_dialect import detect_database_dialect
+    from reclive.migrations import execution_snapshot, snapshot_migration, split_statements
 
     migrations = Path(__file__).resolve().parents[2] / "server" / "migrations"
     connection = pymysql.connect(**clean_test_database)
     try:
+        dialect = detect_database_dialect(connection)
         with connection.cursor() as cursor:
             for migration_name in ("0001_core_history.sql", "0002_snapshot_and_ingestion.sql"):
-                for statement in split_statements((migrations / migration_name).read_text()):
+                migration = execution_snapshot(
+                    snapshot_migration(migrations / migration_name), dialect
+                ).sql_bytes.decode("utf-8")
+                for statement in split_statements(migration):
                     cursor.execute(statement)
         connection.commit()
     finally:

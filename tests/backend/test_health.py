@@ -748,7 +748,9 @@ class HealthCursor:
         migration_rows: list[tuple[object, ...]],
         ingestion_row: tuple[object, ...] | None,
         failing_queries: frozenset[str] = frozenset(),
+        server_identity: tuple[str, str] = ("8.4.7", "MySQL Community Server - GPL"),
     ) -> None:
+        self.server_identity = server_identity
         self.migration_rows = migration_rows
         self.ingestion_row = ingestion_row
         self.failing_queries = failing_queries
@@ -757,7 +759,9 @@ class HealthCursor:
 
     def execute(self, sql: str, params: object = None) -> None:
         self.executed.append((sql, params))
-        if "schema_migrations" in sql:
+        if sql == "SELECT VERSION(), @@version_comment":
+            self.active_query = "version"
+        elif "schema_migrations" in sql:
             self.active_query = "migrations"
         elif "ingestion_runs" in sql:
             self.active_query = "ingestion"
@@ -767,6 +771,8 @@ class HealthCursor:
             raise RuntimeError("private query failure must not escape")
 
     def fetchone(self) -> tuple[object, ...] | None:
+        if self.active_query == "version":
+            return self.server_identity
         assert self.active_query == "ingestion"
         return self.ingestion_row
 
@@ -847,6 +853,37 @@ def test_repository_collects_only_sanitized_aggregate_health_evidence(
         for sql, _ in cursor.executed
     )
     assert connection.closed is True
+
+
+def test_migration_health_matches_mariadb_execution_ledger_and_rejects_engine_switch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tests.backend.test_migrate import FakeConnection, fake_settings
+    from server.reclive import migrations
+
+    forecast, schedule, migration_dir, _checksum = write_repository_artifacts(tmp_path)
+    migration = migration_dir / "0001_core_history.sql"
+    migration.write_text("CREATE TABLE example (id INT) COLLATE=utf8mb4_0900_ai_ci;\n")
+    writer = FakeConnection(server_identity=("10.11.11-MariaDB", "Source distribution"))
+    monkeypatch.setattr(migrations, "connect", lambda _: writer)
+    migrations.run_migrations(fake_settings(), migration_dir)
+    assert writer.recorded_checksum != snapshot_migration(migration).checksum
+
+    cursor = HealthCursor(
+        migration_rows=[(migration.name, writer.recorded_checksum)],
+        ingestion_row=None,
+        server_identity=("10.11.11-MariaDB", "Source distribution"),
+    )
+    repository = HealthRepository(
+        connect=lambda: HealthConnection(cursor), migration_dir=migration_dir,
+        forecast_path=forecast, schedule_path=schedule, push_status=lambda: "ready",
+    )
+    assert repository.collect(NOW).migrations == "ready"
+    cursor.server_identity = ("8.4.7", "MySQL Community Server - GPL")
+    assert repository.collect(NOW).migrations == "stale"
+    cursor.server_identity = ("11.4.4-MariaDB", "Source distribution")
+    assert repository.collect(NOW).migrations == "unavailable"
+    assert all(sql.startswith("SELECT ") for sql, _ in cursor.executed)
 
 
 def test_repository_keeps_database_migrations_ingestion_and_push_probes_independent(

@@ -18,7 +18,8 @@ from reclive.actual_hours import (
     build_chicago_hour_windows,
     calculate_actual_hour,
 )
-from reclive.migrations import split_statements
+from reclive.database_dialect import detect_database_dialect
+from reclive.migrations import execution_snapshot, snapshot_migration, split_statements
 from reclive.occupancy_repository import SnapshotRepository
 from tests.fixtures.reclive_fakes import ActualHourSqlConnection
 
@@ -872,12 +873,15 @@ def test_mysql_repository_loads_only_deterministic_postcutover_actual_inputs(
     migrations = Path(__file__).resolve().parents[2] / "server" / "migrations"
     schema_connection = pymysql.connect(**clean_test_database)
     try:
+        dialect = detect_database_dialect(schema_connection)
         with schema_connection.cursor() as cursor:
             for migration_name in (
                 "0001_core_history.sql",
                 "0002_snapshot_and_ingestion.sql",
             ):
-                migration = (migrations / migration_name).read_text()
+                migration = execution_snapshot(
+                    snapshot_migration(migrations / migration_name), dialect
+                ).sql_bytes.decode("utf-8")
                 for statement in split_statements(migration):
                     cursor.execute(statement)
     finally:

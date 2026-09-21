@@ -6,17 +6,26 @@ import os
 import re
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import ModuleType
 
 import pymysql
+
+from .database_dialect import (
+    MARIADB_HOOK_REWRITES,
+    DatabaseDialect,
+    UnsupportedDatabaseError,
+    detect_database_dialect,
+    migration_hook_connection,
+)
 
 MIGRATION_NAME = re.compile(r"^\d{4}_[a-z0-9_]+\.sql$")
 LOCK_NAME = "reclive_schema_migrations"
 EFFECTIVE_MIGRATION_DOMAIN = b"reclive:effective-migration:v1\x00"
 PUSH_MIGRATION_NAME = "0003_push_rule_lifecycle.sql"
 PUSH_ARTIFACT_NAMES = ("push_rule_backfill.py", "push_identity.py")
+MARIADB_MIGRATION_DOMAIN = b"reclive:mariadb-10.11:utf8mb4-unicode-ci:v1\x00"
 
 FaultInjector = Callable[[str], None]
 
@@ -187,6 +196,30 @@ def load_snapshot_hooks(snapshot: MigrationSnapshot) -> MigrationHooks:
         backfill_path=backfill_path,
         effective_checksum=snapshot.checksum,
     )
+
+
+def execution_snapshot(
+    snapshot: MigrationSnapshot, dialect: DatabaseDialect,
+) -> MigrationSnapshot:
+    """Bind the executed SQL and immutable source artifacts to the dialect."""
+    if dialect is DatabaseDialect.MYSQL8:
+        return snapshot
+    if dialect is not DatabaseDialect.MARIADB1011:
+        raise MigrationError("Unsupported database migration dialect")
+    sql_bytes = snapshot.sql_bytes.replace(
+        b"COLLATE=utf8mb4_0900_ai_ci", b"COLLATE=utf8mb4_unicode_ci"
+    )
+    if b"utf8mb4_0900" in sql_bytes.lower():
+        raise MigrationError("Unsupported MariaDB migration collation")
+    digest = hashlib.sha256(
+        MARIADB_MIGRATION_DOMAIN + bytes.fromhex(snapshot.checksum) + sql_bytes
+    )
+    for source, target in sorted(MARIADB_HOOK_REWRITES.items()):
+        for statement in (source, target):
+            encoded = statement.encode("utf-8")
+            digest.update(len(encoded).to_bytes(8, "big"))
+            digest.update(encoded)
+    return replace(snapshot, sql_bytes=sql_bytes, checksum=digest.hexdigest())
 
 
 def load_push_migration_hooks(
@@ -399,14 +432,22 @@ def run_migrations(
     primary_error: BaseException | None = None
     cleanup_error: BaseException | None = None
     try:
+        try:
+            dialect = detect_database_dialect(connection)
+        except UnsupportedDatabaseError as exc:
+            raise MigrationError(str(exc)) from None
+        hook_connection = migration_hook_connection(connection, dialect)
         snapshots = [
-            snapshot_migration(
-                path,
-                artifact_paths=(
-                    artifact_paths
-                    if path.name == PUSH_MIGRATION_NAME
-                    else None
+            execution_snapshot(
+                snapshot_migration(
+                    path,
+                    artifact_paths=(
+                        artifact_paths
+                        if path.name == PUSH_MIGRATION_NAME
+                        else None
+                    ),
                 ),
+                dialect,
             )
             for path in migration_files(migration_dir)
         ]
@@ -477,7 +518,7 @@ def run_migrations(
                                 "bound to incomplete 0003 migration attempt"
                             )
                 preflight_identifier = run_pre_sql_hook(
-                    path.name, connection, settings, hooks
+                    path.name, hook_connection, settings, hooks
                 )
                 started_at = None
                 if path.name == PUSH_MIGRATION_NAME:
@@ -513,7 +554,7 @@ def run_migrations(
 
                 run_post_sql_hook(
                     path.name,
-                    connection,
+                    hook_connection,
                     settings,
                     hooks,
                     started_at,

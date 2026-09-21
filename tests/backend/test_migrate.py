@@ -13,6 +13,7 @@ import pymysql
 import pytest
 
 from reclive import migrations as migration_module
+from reclive.database_dialect import DatabaseDialect, detect_database_dialect
 from reclive.migrations import (
     LOCK_NAME,
     MigrationError,
@@ -44,7 +45,9 @@ class FakeCursor:
         return None
 
     def execute(self, statement: str, params=None) -> None:
-        if statement.startswith("SELECT GET_LOCK"):
+        if statement == "SELECT VERSION(), @@version_comment":
+            self.result = self.connection.server_identity
+        elif statement.startswith("SELECT GET_LOCK"):
             self.connection.events.append("lock")
             self.result = (1,)
         elif statement.startswith("SELECT RELEASE_LOCK"):
@@ -117,7 +120,9 @@ class FakeConnection:
         attempt_key_identifier: bytes | None = None,
         release_error: Exception | None = None,
         applied_filenames: tuple[str, ...] = (),
+        server_identity: tuple[str, str] = ("8.4.7", "MySQL Community Server - GPL"),
     ) -> None:
+        self.server_identity = server_identity
         self.existing_checksum = existing_checksum
         self.existing_checksums = existing_checksums or {}
         self.attempt_checksum = attempt_checksum
@@ -153,6 +158,122 @@ def fake_settings() -> MigrationSettings:
         database="reclive_test",
         lock_timeout_seconds=1,
     )
+
+
+@pytest.mark.parametrize("version", [
+    "10.11.11-MariaDB",
+    "10.11.11-MariaDB-0+deb12u1",
+    "5.5.5-10.11.11-MariaDB",
+])
+def test_mariadb_executes_compatible_sql_and_binds_ledger_to_dialect(
+    version: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    migration = tmp_path / "0001_example.sql"
+    original = b"CREATE TABLE example (id INT) COLLATE=utf8mb4_0900_ai_ci;\n"
+    migration.write_bytes(original)
+    connection = FakeConnection(server_identity=(version, "Source distribution"))
+    monkeypatch.setattr(migration_module, "connect", lambda _: connection)
+
+    assert run_migrations(fake_settings(), tmp_path) == [migration.name]
+    assert connection.executed_statements == [
+        "CREATE TABLE example (id INT) COLLATE=utf8mb4_unicode_ci"
+    ]
+    assert migration.read_bytes() == original
+    assert connection.recorded_checksum != hashlib.sha256(original).hexdigest()
+    assert len(connection.recorded_checksum) == 64
+
+    mysql = FakeConnection(existing_checksum=connection.recorded_checksum)
+    monkeypatch.setattr(migration_module, "connect", lambda _: mysql)
+    with pytest.raises(MigrationError, match="checksum mismatch"):
+        run_migrations(fake_settings(), tmp_path)
+    assert mysql.executed_statements == []
+
+
+def test_mariadb_execution_checksum_binds_unchanged_frozen_artifacts(tmp_path: Path) -> None:
+    migration = tmp_path / "0003_push_rule_lifecycle.sql"
+    migration.write_bytes(b"SELECT 'COLLATE=utf8mb4_0900_ai_ci';\n")
+    artifact_paths = tuple(
+        (name, tmp_path / name) for name in migration_module.PUSH_ARTIFACT_NAMES
+    )
+    for _name, path in artifact_paths:
+        path.write_bytes(b"# frozen original\n")
+    original = migration_module.snapshot_migration(migration, artifact_paths=artifact_paths)
+    translated = migration_module.execution_snapshot(original, DatabaseDialect.MARIADB1011)
+    assert translated.artifacts == original.artifacts
+    assert translated.sql_bytes == b"SELECT 'COLLATE=utf8mb4_unicode_ci';\n"
+    assert translated.checksum != original.checksum
+    assert migration_module.execution_snapshot(original, DatabaseDialect.MYSQL8) is original
+
+    for _name, path in artifact_paths:
+        path.write_bytes(b"# edited frozen helper\n")
+        edited = migration_module.snapshot_migration(migration, artifact_paths=artifact_paths)
+        assert migration_module.execution_snapshot(
+            edited, DatabaseDialect.MARIADB1011
+        ).checksum != translated.checksum
+        path.write_bytes(b"# frozen original\n")
+
+
+def test_homebrew_mysql84_preserves_original_execution_and_checksum(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = b"CREATE TABLE example (id INT) COLLATE=utf8mb4_0900_ai_ci;\n"
+    (tmp_path / "0001_example.sql").write_bytes(original)
+    connection = FakeConnection(server_identity=("8.4.11", "Homebrew"))
+    monkeypatch.setattr(migration_module, "connect", lambda _: connection)
+    assert run_migrations(fake_settings(), tmp_path) == ["0001_example.sql"]
+    assert connection.executed_statements == [original.decode().strip().rstrip(";")]
+    assert connection.recorded_checksum == hashlib.sha256(original).hexdigest()
+
+
+@pytest.mark.parametrize("table", ["push_rules", "_reclive_push_rules_cutover"])
+def test_mariadb_hook_adapter_preserves_exclusive_lock_for_frozen_alter(table: str) -> None:
+    from reclive import database_dialect
+
+    connection = FakeConnection()
+    adapter = database_dialect.migration_hook_connection
+    wrapped = adapter(connection, DatabaseDialect.MARIADB1011)
+    with wrapped.cursor() as cursor:
+        cursor.execute(
+            f"ALTER TABLE `{table}` MODIFY endpoint_hash BINARY(32) NOT NULL, "
+            "ALGORITHM=INPLACE, LOCK=EXCLUSIVE"
+        )
+    assert connection.executed_statements == [
+        f"ALTER TABLE `{table}` MODIFY endpoint_hash BINARY(32) NOT NULL, "
+        "ALGORITHM=COPY, LOCK=EXCLUSIVE"
+    ]
+    assert adapter(connection, DatabaseDialect.MYSQL8) is connection
+
+
+@pytest.mark.parametrize("identity", [
+    ("10.6.20-MariaDB", "Source distribution"),
+    ("11.4.4-MariaDB", "Source distribution"),
+    ("5.7.44", "MySQL Community Server - GPL"),
+    ("8.0.30-TiDB-v7.5.0", "TiDB Server"),
+    ("8.4.7", "unexpected vendor"),
+    ("", ""),
+])
+def test_unsupported_database_fails_before_any_migration_writes(
+    identity: tuple[str, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "0001_example.sql").write_text("SELECT 1;\n")
+    connection = FakeConnection(server_identity=identity)
+    monkeypatch.setattr(migration_module, "connect", lambda _: connection)
+    with pytest.raises(MigrationError, match="Unsupported database"):
+        run_migrations(fake_settings(), tmp_path)
+    assert connection.events == ["close"]
+
+
+def test_mariadb_rejects_unrecognized_mysql_collation_before_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "0001_example.sql").write_text(
+        "CREATE TABLE example (id INT) COLLATE=utf8mb4_0900_as_cs;\n"
+    )
+    connection = FakeConnection(server_identity=("10.11.11-MariaDB", "Source distribution"))
+    monkeypatch.setattr(migration_module, "connect", lambda _: connection)
+    with pytest.raises(MigrationError, match="Unsupported MariaDB migration collation"):
+        run_migrations(fake_settings(), tmp_path)
+    assert connection.events == ["close"]
 
 
 def write_applied_prior_migration_stubs(
@@ -370,7 +491,9 @@ def normalized_push_rule_contract(settings: dict[str, object]) -> dict[str, obje
     }
 
 
-def table_column_contract(cursor, table: str) -> dict[str, tuple[object, ...]]:
+def table_column_contract(
+    cursor, table: str, *, mariadb: bool = False,
+) -> dict[str, tuple[object, ...]]:
     cursor.execute(
         "SELECT column_name, LOWER(column_type), is_nullable, "
         "LOWER(COALESCE(column_default, '<null>')), LOWER(extra), "
@@ -379,7 +502,16 @@ def table_column_contract(cursor, table: str) -> dict[str, tuple[object, ...]]:
         "ORDER BY ordinal_position",
         (table,),
     )
-    return {str(row[0]): tuple(row[1:]) for row in cursor.fetchall()}
+    result = {}
+    for name, column_type, nullable, default, extra, precision in cursor.fetchall():
+        if mariadb:
+            # MariaDB retains integer display widths and represents a SQL NULL
+            # default as text. Neither changes the stored value contract.
+            column_type = re.sub(r"\b(bigint|int)\(\d+\)", r"\1", column_type)
+            if default == "null":
+                default = "<null>"
+        result[str(name)] = (column_type, nullable, default, extra, precision)
+    return result
 
 
 def table_index_contract(cursor, table: str) -> dict[str, tuple[str, ...]]:
@@ -606,6 +738,7 @@ def test_0003_creates_finalized_clean_push_rule_contract(
     assert result.returncode == 0, result.stderr
     connection = pymysql.connect(**clean_test_database)
     try:
+        maria = detect_database_dialect(connection) is DatabaseDialect.MARIADB1011
         with connection.cursor() as cursor:
             cursor.execute("SHOW COLUMNS FROM push_rules")
             columns = {row[0]: row for row in cursor.fetchall()}
@@ -627,7 +760,7 @@ def test_0003_creates_finalized_clean_push_rule_contract(
             } <= set(columns)
             assert columns["endpoint_hash"][2] == "NO"
             assert columns["threshold"][1:6] == (
-                "tinyint unsigned",
+                "tinyint(3) unsigned" if maria else "tinyint unsigned",
                 "NO",
                 "",
                 None,
@@ -658,6 +791,7 @@ def test_0003_backfills_legacy_rows_cancels_deterministic_duplicates_and_removes
     assert result.returncode == 0, result.stderr
     connection = pymysql.connect(**clean_test_database)
     try:
+        maria = detect_database_dialect(connection) is DatabaseDialect.MARIADB1011
         with connection.cursor() as cursor:
             cursor.execute(
                 "SELECT id, endpoint_hash, subscription_json, status, finalized_at "
@@ -685,7 +819,7 @@ def test_0003_backfills_legacy_rows_cancels_deterministic_duplicates_and_removes
             assert rules[3][3] == "cancelled" and rules[4][3] == "cancelled"
             cursor.execute("SHOW COLUMNS FROM push_rules LIKE 'threshold'")
             assert cursor.fetchone()[1:6] == (
-                "tinyint unsigned",
+                "tinyint(3) unsigned" if maria else "tinyint unsigned",
                 "NO",
                 "",
                 None,
@@ -1731,8 +1865,14 @@ def test_0002_creates_exact_snapshot_and_ingestion_contract(
 
     connection = pymysql.connect(**clean_test_database)
     try:
+        maria = detect_database_dialect(connection) is DatabaseDialect.MARIADB1011
+        generated = "" if maria else "default_generated"
+        on_update = (
+            "on update current_timestamp(6)" if maria
+            else "default_generated on update current_timestamp(6)"
+        )
         with connection.cursor() as cursor:
-            snapshot_columns = table_column_contract(cursor, "location_snapshot")
+            snapshot_columns = table_column_contract(cursor, "location_snapshot", mariadb=maria)
             assert snapshot_columns == {
                 "location_id": ("int", "NO", "<null>", "", None),
                 "is_closed": ("tinyint(1)", "YES", "<null>", "", None),
@@ -1750,18 +1890,18 @@ def test_0002_creates_exact_snapshot_and_ingestion_contract(
                     "datetime(6)",
                     "NO",
                     "current_timestamp(6)",
-                    "default_generated",
+                    generated,
                     6,
                 ),
                 "updated_at": (
                     "datetime(6)",
                     "NO",
                     "current_timestamp(6)",
-                    "default_generated on update current_timestamp(6)",
+                    on_update,
                     6,
                 ),
             }
-            run_columns = table_column_contract(cursor, "ingestion_runs")
+            run_columns = table_column_contract(cursor, "ingestion_runs", mariadb=maria)
             assert run_columns == {
                 "id": ("bigint unsigned", "NO", "<null>", "auto_increment", None),
                 "started_at": ("datetime(6)", "NO", "<null>", "", 6),
@@ -1784,10 +1924,10 @@ def test_0002_creates_exact_snapshot_and_ingestion_contract(
                     None,
                 ),
                 "observed_location_ids": (
-                    "json",
+                    "longtext" if maria else "json",
                     "NO",
                     "json_array()",
-                    "default_generated",
+                    generated,
                     None,
                 ),
                 "error_category": ("varchar(64)", "YES", "<null>", "", None),
@@ -1805,18 +1945,18 @@ def test_0002_creates_exact_snapshot_and_ingestion_contract(
                 ),
             }
             cursor.execute(
-                "SELECT enforced FROM information_schema.table_constraints "
+                "SELECT constraint_type FROM information_schema.table_constraints "
                 "WHERE table_schema = DATABASE() "
                 "AND table_name = 'ingestion_runs' "
                 "AND constraint_name = 'chk_ingestion_runs_status'"
             )
-            assert cursor.fetchone() == ("YES",)
+            assert cursor.fetchone() == ("CHECK",)
             with pytest.raises(pymysql.MySQLError) as invalid_status:
                 cursor.execute(
                     "INSERT INTO ingestion_runs (started_at, status) "
                     "VALUES (UTC_TIMESTAMP(6), 'unsafe')"
                 )
-            assert invalid_status.value.args[0] == 3819
+            assert invalid_status.value.args[0] == (4025 if maria else 3819)
             cursor.execute(
                 "INSERT INTO ingestion_runs (started_at, status) "
                 "VALUES (UTC_TIMESTAMP(6), 'running')"
@@ -1840,8 +1980,9 @@ def test_0004_creates_exact_hashed_rate_limit_counter(
 
     connection = pymysql.connect(**clean_test_database)
     try:
+        maria = detect_database_dialect(connection) is DatabaseDialect.MARIADB1011
         with connection.cursor() as cursor:
-            assert table_column_contract(cursor, "push_rate_limits") == {
+            assert table_column_contract(cursor, "push_rate_limits", mariadb=maria) == {
                 "subject_hash": ("binary(32)", "NO", "<null>", "", None),
                 "window_started_at": (
                     "datetime(6)",
@@ -1861,7 +2002,8 @@ def test_0004_creates_exact_hashed_rate_limit_counter(
                     "datetime(6)",
                     "NO",
                     "current_timestamp(6)",
-                    "default_generated on update current_timestamp(6)",
+                    "on update current_timestamp(6)" if maria
+                    else "default_generated on update current_timestamp(6)",
                     6,
                 ),
             }

@@ -8,8 +8,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, Protocol
 
+from server.reclive.database_dialect import detect_database_dialect
 from server.reclive.facility_schedule import validate_schedule_payload
-from server.reclive.migrations import migration_files, snapshot_migration
+from server.reclive.migrations import (
+    execution_snapshot,
+    migration_files,
+    snapshot_migration,
+)
 
 
 MAX_HEALTH_ARTIFACT_BYTES = 16 * 1024 * 1024
@@ -224,8 +229,9 @@ def _migration_evidence(connection: Connection, migration_dir: Path) -> str:
                 return "unavailable"
             recorded[row[0]] = row[1]
 
+        dialect = detect_database_dialect(connection)
         expected = {
-            path.name: snapshot_migration(path).checksum
+            path.name: execution_snapshot(snapshot_migration(path), dialect).checksum
             for path in migration_files(migration_dir)
         }
     except Exception:
