@@ -32,3 +32,19 @@ it.each(["light", "dark"] as const)("all populated crowd captions meet 4.5:1 in 
         expect((lights[0] + 0.05) / (lights[1] + 0.05), level).toBeGreaterThanOrEqual(4.5);
     }
 });
+
+it("renders nothing when no forecast windows are available", () => {
+    render(
+        <ForecastWindowsList
+            workingHoursBands={[]}
+            displayBands={[]}
+            filteredBestWindows={[]}
+            filteredAvoidWindows={[]}
+            nowTs={0}
+            isDark={false}
+        />,
+    );
+
+    expect(screen.queryByLabelText("Forecast windows unavailable")).not.toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent("—");
+});

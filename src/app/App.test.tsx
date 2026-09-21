@@ -14,6 +14,7 @@ const liveHookState = vi.hoisted(() => ({
     liveOutageState: "none" as const,
     hasPendingLiveRetry: false,
     cacheTimestampMs: null,
+    acceptedAtMs: null as number | null,
     prepareRefresh: vi.fn(),
 }));
 
@@ -201,6 +202,7 @@ beforeEach(() => {
     liveHookState.liveOutageState = "none";
     liveHookState.hasPendingLiveRetry = false;
     liveHookState.cacheTimestampMs = null;
+    liveHookState.acceptedAtMs = null;
     window.matchMedia = vi.fn().mockImplementation((query: string) => ({
         matches: false,
         media: query,
@@ -214,6 +216,18 @@ beforeEach(() => {
 });
 
 describe("App occupancy clock", () => {
+    it("removes expired occupancy on a clock tick even when no new response arrives", async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime("2026-08-31T12:00:00Z");
+        liveHookState.data = canonicalPayload("2026-08-31T12:00:00Z");
+        render(appTree({initialFacility: 1186, themeMode: "light", onThemeModeChange: vi.fn()}));
+        expect(screen.getByTestId("occupancy-hero")).toHaveTextContent("live");
+
+        await act(async () => { await vi.advanceTimersByTimeAsync(630_000); });
+        expect(screen.queryByTestId("occupancy-hero")).not.toBeInTheDocument();
+        expect(screen.getByRole("heading", {name: "RecLive is unavailable."})).toBeVisible();
+    });
+
     it("ticks the live clock and removes its timer and debug handlers on unmount", async () => {
         vi.useFakeTimers();
         vi.setSystemTime("2026-08-31T12:00:00Z");
@@ -283,6 +297,7 @@ describe("App occupancy clock", () => {
 
         vi.setSystemTime("2026-08-31T12:00:10Z");
         liveHookState.data = canonicalPayload("2026-08-31T12:00:10Z");
+        liveHookState.acceptedAtMs = Date.parse("2026-08-31T12:00:10Z");
         rerender(appTree(props));
         await act(async () => {
             await Promise.resolve();
@@ -307,15 +322,20 @@ describe("App occupancy clock", () => {
             onThemeModeChange: vi.fn(),
         }));
 
-        expect(screen.getByTestId("occupancy-hero")).toHaveTextContent("insufficient");
-        expect(screen.getByTestId("occupancy-hero")).toHaveAttribute(
-            "data-now-ts",
-            String(Date.parse("2026-08-31T12:00:00Z"))
-        );
+        expect(screen.queryByTestId("occupancy-hero")).not.toBeInTheDocument();
+        expect(screen.getByRole("heading", {name: "RecLive is unavailable."})).toBeVisible();
+        expect(window.recliveDebugDashboardState?.()).toMatchObject({
+            nowTs: Date.parse("2026-08-31T12:00:00Z"), occupancyStatus: "insufficient",
+        });
     });
 });
 
 describe("App refresh coordination", () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime("2026-08-31T12:00:00Z");
+        liveHookState.data = canonicalPayload("2026-08-31T11:59:00Z");
+    });
     it("enforces manual-refresh cooldown and clears it when selecting another facility", () => {
         vi.useFakeTimers();
         vi.setSystemTime("2026-08-31T12:00:00Z");
@@ -434,7 +454,8 @@ describe("App refresh coordination", () => {
         expect(screen.getByRole("status")).toHaveTextContent("Refreshing live occupancy");
 
         fireEvent.click(screen.getByRole("button", {name: "Bakke"}));
-        expect(screen.queryByRole("status")).not.toBeInTheDocument();
+        expect(screen.queryByText("Refreshing live occupancy")).not.toBeInTheDocument();
+        expect(screen.getByRole("status")).toHaveTextContent("Loading...");
     });
 
     it("wires independent live, forecast, and schedule polling keys", () => {
@@ -523,5 +544,21 @@ describe("App refresh coordination", () => {
         act(() => latestPollingCall(90_000).onRefresh());
 
         expect(screen.getByRole("button", {name: "Alert draft 1"})).toBeInTheDocument();
+    });
+
+    it("keeps the active dashboard mounted when a new observation arrives between clock ticks", async () => {
+        const props = {initialFacility: 1186 as const, themeMode: "light" as const, onThemeModeChange: vi.fn()};
+        const {rerender} = render(appTree(props));
+        await act(async () => { await Promise.resolve(); });
+        fireEvent.click(screen.getByRole("button", {name: "Alert draft 0"}));
+
+        vi.setSystemTime("2026-08-31T12:00:10Z");
+        liveHookState.data = canonicalPayload("2026-08-31T12:00:10Z");
+        liveHookState.acceptedAtMs = Date.parse("2026-08-31T12:00:10Z");
+        rerender(appTree(props));
+        await act(async () => { await Promise.resolve(); });
+
+        expect(screen.getByRole("button", {name: "Alert draft 1"})).toBeInTheDocument();
+        expect(screen.queryByText("RecLive is unavailable.")).not.toBeInTheDocument();
     });
 });

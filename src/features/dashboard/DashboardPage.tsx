@@ -33,7 +33,7 @@ export function DashboardPage({state, view, themeMode, onThemeModeChange}: Dashb
     const theme = useTheme();
     const useDesktopAlertsModal = useMediaQuery(theme.breakpoints.up("md"));
     const {
-        facility, nowTs, data, isLoading, error, forecastLocationOccupancyThresholds,
+        facility, nowTs, isLoading, error, forecastLocationOccupancyThresholds,
         forecastError, isForecastLoading, activeSchedule, isFacilityHoursLoading,
         facilityHoursError, liveStatus, isCrowdAlertOpen, isInstallGuideOpen,
         isStandalonePwa, isTouchCapable, enablePullToRefresh, pullDistance,
@@ -100,6 +100,36 @@ export function DashboardPage({state, view, themeMode, onThemeModeChange}: Dashb
         ? "Refreshing..."
         : (isReadyToRefresh ? "Release to refresh" : "Pull down to refresh");
     const sectionBlockGap = {xs: 2, sm: 2.5} as const;
+    const hasUsableOccupancy = facilitySummary.status === "live" || facilitySummary.status === "closed";
+    if (!hasUsableOccupancy) {
+        const waitingForFirstReading = !activeData && (isLoading || !error);
+        return (
+            <Box component="main" sx={{minHeight: "100vh", bgcolor: "background.default", py: {xs: 3.5, sm: 5}}}>
+                <Container maxWidth="sm">
+                    <FacilitySelector facility={facility} onSelect={handleFacilitySelect}/>
+                    <Stack spacing={2} alignItems="center" justifyContent="center" sx={{minHeight: "60vh", textAlign: "center"}}>
+                        {waitingForFirstReading ? (
+                            <>
+                                <CircularProgress size={28} aria-label="Loading occupancy"/>
+                                <Typography role="status" color="text.secondary">Loading...</Typography>
+                            </>
+                        ) : (
+                            <>
+                                <Typography component="h1" variant="h5" sx={{fontWeight: 700}}>
+                                    RecLive is unavailable.
+                                </Typography>
+                                <Button variant="outlined" onClick={manualRefresh} disabled={isLoading}
+                                    sx={{minHeight: 44, borderRadius: 999, textTransform: "none",
+                                        color: "text.primary", borderColor: "text.secondary"}}>
+                                    Try again
+                                </Button>
+                            </>
+                        )}
+                    </Stack>
+                </Container>
+            </Box>
+        );
+    }
     return (
         <Box
             component="main"
@@ -147,33 +177,6 @@ export function DashboardPage({state, view, themeMode, onThemeModeChange}: Dashb
 
                 <FacilitySelector facility={facility} onSelect={handleFacilitySelect}/>
 
-                {isLoading && !data && (
-                    <Box
-                        sx={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            gap: 2,
-                            py: 5,
-                        }}
-                    >
-                        <CircularProgress size={28} thickness={5}/>
-                        <Typography color="text.secondary" fontWeight={600}>
-                            Loading...
-                        </Typography>
-                    </Box>
-                )}
-
-                {error && !activeData && (
-                    <Stack spacing={1}>
-                        <OccupancyHero summary={facilitySummary} nowTs={nowTs} facilityId={facility}
-                            headerAction={<ThemeModeToggle themeMode={themeMode} onThemeModeChange={onThemeModeChange}/>}/>
-                        <Button onClick={manualRefresh} sx={{alignSelf: "center", minHeight: 44, textTransform: "none"}}>
-                            Try again
-                        </Button>
-                    </Stack>
-                )}
-
                 <AnimatePresence mode="wait" initial={false}>
                     {activeData && (
                         <Box
@@ -183,7 +186,8 @@ export function DashboardPage({state, view, themeMode, onThemeModeChange}: Dashb
                             initial="hidden"
                             animate="show"
                             exit="exit"
-                            sx={{display: "flex", flexDirection: "column", gap: sectionBlockGap}}
+                            sx={{display: "flex", flexDirection: "column", gap: sectionBlockGap,
+                                "& > :empty, & > * > :empty": {display: "none"}}}
                         >
                             {!showClosedFacilityMode && (
                                 <Box component={motion.div} variants={facilityItemVariants}>
@@ -280,6 +284,7 @@ export function DashboardPage({state, view, themeMode, onThemeModeChange}: Dashb
                                     component={motion.div}
                                     variants={facilityItemVariants}
                                     spacing={sectionBlockGap}
+                                    useFlexGap
                                     sx={{mt: sectionBlockGap, mb: sectionBlockGap}}
                                 >
                                     {sectionConfigs.map((section) => (

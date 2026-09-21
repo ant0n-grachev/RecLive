@@ -36,17 +36,17 @@ describe("ForecastCard", () => {
         vi.setSystemTime(new Date("2026-08-31T13:15:00Z"));
     });
 
-    it("keeps a failed forecast neutral without rendering diagnostics or old forecast values", () => {
+    it("hides a failed forecast without rendering diagnostics or old forecast values", () => {
         renderCard({error: "Forecast service temporarily unavailable."});
-        expect(screen.getByRole("img", {name: "Forecast unavailable"})).toHaveTextContent("—");
+        expect(screen.queryByText("Forecast Today")).not.toBeInTheDocument();
         expect(screen.queryByRole("alert")).not.toBeInTheDocument();
         expect(screen.queryByText(/Forecast service/)).not.toBeInTheDocument();
         expect(screen.queryByRole("button", {name: "Show hourly chart"})).not.toBeInTheDocument();
     });
 
-    it("keeps empty crowd windows quiet without a diagnostic notice", () => {
+    it("hides a forecast day with no usable forecast information", () => {
         renderCard({day: {...fixtureForecastDays[0], totalHours: [], categories: [], crowdBands: [], bestWindows: [], avoidWindows: []}});
-        expect(screen.getByRole("img", {name: "Forecast windows unavailable"})).toHaveTextContent("—");
+        expect(screen.queryByText("Forecast Today")).not.toBeInTheDocument();
         expect(screen.queryByText(/crowd bands are unavailable/)).not.toBeInTheDocument();
     });
 

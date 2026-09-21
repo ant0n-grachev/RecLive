@@ -43,9 +43,10 @@ export default function AlertRuleForm({
     const subscribeErrorId = idPrefix + "-subscribe-error";
 
     const orderedSections = useMemo(() => {
-        const overall = sections.find((section) => section.key === "overall");
-        const rest = sections.filter((section) => section.key !== "overall");
-        return overall ? [overall, ...rest] : sections;
+        const visibleSections = sections.filter((section) => hasUsableSummary(section) || section.summary.status === "closed");
+        const overall = visibleSections.find((section) => section.key === "overall");
+        const rest = visibleSections.filter((section) => section.key !== "overall");
+        return overall ? [overall, ...rest] : visibleSections;
     }, [sections]);
     const initialSectionKey = useMemo(
         () => resolveInitialSectionKey(facility, orderedSections),

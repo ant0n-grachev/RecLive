@@ -60,12 +60,12 @@ const isCalendarDateTime = (value: string, explicitZone: boolean): boolean => {
     return Number.isFinite(Date.parse(parseTarget));
 };
 
-const explicitIsoDateTimeSchema = z.string()
+export const explicitIsoDateTimeSchema = z.string()
     .min(20)
     .max(64)
     .refine((value) => isCalendarDateTime(value, true), "timestamp must include a valid explicit offset");
 
-const localIsoDateTimeSchema = z.string()
+export const localIsoDateTimeSchema = z.string()
     .min(19)
     .max(48)
     .refine((value) => isCalendarDateTime(value, false), "timestamp must be a valid local datetime");
@@ -616,7 +616,7 @@ const facilityPayloadSchema = z.object({
     facilityName: z.string().trim().min(1).max(160),
     floors: z.record(floorKeySchema, z.array(locationSchema)),
     locations: z.array(locationSchema),
-    liveDataSource: z.enum(["facility_api", "fallback_api", "cache"]).optional(),
+    liveDataSource: z.enum(["official_api", "facility_api", "fallback_api", "cache"]).optional(),
 }).strict().superRefine((payload, context) => {
     const flattenedIds: number[] = [];
     for (const [floorKey, locations] of Object.entries(payload.floors)) {

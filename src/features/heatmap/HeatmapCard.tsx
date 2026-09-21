@@ -24,6 +24,7 @@ import {
     HEATMAP_ZONE_DIALOG_ID,
     HEATMAP_ZONE_DIALOG_TITLE_ID,
 } from "./heatmapModel";
+import {FLOOR_MAPS} from "./floorMaps";
 
 declare global {
     interface Window {
@@ -53,8 +54,9 @@ export default function HeatmapCard({
     const isDark = theme.palette.mode === "dark";
     const floors = useMemo(() => (
         [...new Set(locations.map((loc) => loc.floor))]
+            .filter((floor) => Boolean(FLOOR_MAPS[facilityId][floor]))
             .sort((a, b) => a - b)
-    ), [locations]);
+    ), [facilityId, locations]);
 
     const [showDebugCoords, setShowDebugCoords] = useState(DEFAULT_DEBUG_COORDS);
     const [expanded, setExpanded] = useState(false);
@@ -146,6 +148,10 @@ export default function HeatmapCard({
         document.addEventListener("keydown", handleKeyDown);
         return () => document.removeEventListener("keydown", handleKeyDown);
     }, [closeSelectedZone, selectedZoneInfo]);
+
+    if (floors.length === 0) {
+        return null;
+    }
 
     return (
         <ModernCard disableMinHeight>

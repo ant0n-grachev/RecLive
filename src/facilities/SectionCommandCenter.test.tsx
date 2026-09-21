@@ -1,4 +1,4 @@
-import {render, screen} from "@testing-library/react";
+import {fireEvent, render, screen} from "@testing-library/react";
 import type {Location} from "../lib/types/facility";
 import SectionCommandCenter from "./SectionCommandCenter";
 
@@ -43,11 +43,10 @@ describe("SectionCommandCenter trusted tuple transitions", () => {
 
     it("shows the truthful tuple immediately when occupancy recovers", () => {
         const {rerender} = render(section(location(null, 100, null)));
-        expect(screen.getByLabelText("Current count unavailable")).toHaveTextContent("—");
+        expect(screen.queryByText("Running Track")).not.toBeInTheDocument();
 
         rerender(section(location(30, 100)));
 
-        expect(screen.queryByLabelText("Current count unavailable")).not.toBeInTheDocument();
         expectTuple(30, 100, 30);
     });
 
@@ -58,5 +57,28 @@ describe("SectionCommandCenter trusted tuple transitions", () => {
         rerender(section(location(30, 200)));
 
         expectTuple(30, 200, 15);
+    });
+
+    it("omits an unavailable row while preserving a healthy row in the section", () => {
+        const fresh = location(30, 100);
+        const unavailable: Location = {
+            ...location(null, 100, null),
+            locationId: 9999,
+            locationName: "Unavailable Room",
+        };
+
+        render(
+            <SectionCommandCenter
+                title="Rooms"
+                ids={[fresh.locationId, unavailable.locationId]}
+                locations={[fresh, unavailable]}
+                nowTs={NOW_TS}
+            />,
+        );
+        fireEvent.click(screen.getByRole("button", {name: /Rooms/}));
+
+        expect(screen.getByText("Running Track")).toBeVisible();
+        expect(screen.queryByText("Unavailable Room")).not.toBeInTheDocument();
+        expect(screen.queryByLabelText("Current count unavailable")).not.toBeInTheDocument();
     });
 });

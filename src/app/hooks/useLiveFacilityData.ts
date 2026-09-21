@@ -24,6 +24,7 @@ export interface LiveFacilityDataState {
     liveOutageState: LiveOutageState;
     hasPendingLiveRetry: boolean;
     cacheTimestampMs: number | null;
+    acceptedAtMs: number | null;
     prepareRefresh: () => void;
 }
 
@@ -39,6 +40,7 @@ export const useLiveFacilityData = ({
     const [liveOutageState, setLiveOutageState] = useState<LiveOutageState>("none");
     const [hasPendingLiveRetry, setHasPendingLiveRetry] = useState(false);
     const [cacheTimestampMs, setCacheTimestampMs] = useState<number | null>(null);
+    const [acceptedAtMs, setAcceptedAtMs] = useState<number | null>(null);
     const latestLiveSnapshotRef = useRef<LatestLiveSnapshot>({
         payload: null,
         source: null,
@@ -66,6 +68,7 @@ export const useLiveFacilityData = ({
 
         if (!hasCurrentFacilityData && cached) {
             setData(cached.payload);
+            setAcceptedAtMs(Date.now());
             setLiveDataSource("cache");
             setLiveOutageState("cache");
             setCacheTimestampMs(cached.cachedAt);
@@ -108,6 +111,9 @@ export const useLiveFacilityData = ({
                 if (isCancelled || controller.signal.aborted) return;
 
                 setData(payload);
+                // Publish the local clock with the payload so a just-received observation
+                // cannot look future-dated until the dashboard's next clock tick.
+                setAcceptedAtMs(Date.now());
                 setError(null);
                 setLiveDataSource(payload.liveDataSource ?? "facility_api");
                 setLiveOutageState("none");
@@ -142,6 +148,7 @@ export const useLiveFacilityData = ({
                 const fallback = getFacilityCache(facility);
                 if (fallback) {
                     setData(fallback.payload);
+                    setAcceptedAtMs(Date.now());
                     setLiveDataSource("cache");
                     setLiveOutageState("cache");
                     setCacheTimestampMs(fallback.cachedAt);
@@ -183,6 +190,7 @@ export const useLiveFacilityData = ({
         liveOutageState,
         hasPendingLiveRetry,
         cacheTimestampMs,
+        acceptedAtMs,
         prepareRefresh,
     };
 };

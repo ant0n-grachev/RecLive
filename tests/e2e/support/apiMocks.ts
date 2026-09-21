@@ -8,28 +8,77 @@ const vapidPublicKey =
 const nickLocationIds = [5761, 5764, 5760, 7089, 5762, 5758, 7090, 5766, 5753, 5754, 5763];
 const bakkeLocationIds = [8718, 8717, 8720, 8698, 8716, 10550, 8705, 8712, 8700, 8714, 8701, 8699, 8696, 8694, 8695];
 const partialFreshLocationIds = new Set([5761, 5764, 5760, 5762, 8717, 8700, 10550, 8716]);
-type LiveCountsMode = "fresh" | "partial" | "missing";
+const optionalMissingLocationIds = new Set([5753, 5754]);
+const staleObservedAt = "2026-08-31T11:49:59Z";
+const officialHostname = "goboardapi.azurewebsites.net";
+const officialPathname = "/api/FacilityCount/GetCountsByAccount";
+
+export type LiveCountsMode = "fresh" | "partial" | "missing" | "stale" | "failed";
+export type OfficialCountsMode = "fresh" | "coverage" | "partial" | "missing" | "invalid" | "closed" | "failed";
+
+export interface DashboardApiMockController {
+    readonly officialRequests: string[];
+    readonly backupRequests: string[];
+    readonly liveRequestOrder: Array<"official" | "backup">;
+    setOfficialMode: (mode: OfficialCountsMode) => void;
+    setLiveCountsMode: (mode: LiveCountsMode) => void;
+}
 
 const liveRow = (locationId: number, mode: LiveCountsMode, liveObservedAt: string) => ({
     LocationId: locationId,
     IsClosed: false,
     LastCount: mode === "missing" ? null : locationId === 5761 ? 30 : locationId === 8717 ? 24 : 0,
     LastUpdatedDateAndTime: mode === "missing" ? null : liveObservedAt,
-    FetchedAt: mode === "fresh" || (mode === "partial" && partialFreshLocationIds.has(locationId))
+    FetchedAt: mode === "fresh" || mode === "stale" || (mode === "partial" && partialFreshLocationIds.has(locationId))
         ? liveObservedAt
         : null,
 });
 
 const liveCounts = (mode: LiveCountsMode, liveObservedAt: string) => ({
     ingestion: {
-        lastSuccessfulFetchAt: liveObservedAt,
-        ageSeconds: 0,
-        status: "healthy",
+        lastSuccessfulFetchAt: mode === "stale" ? staleObservedAt : liveObservedAt,
+        ageSeconds: mode === "stale" ? 601 : 0,
+        status: mode === "stale" ? "stale" : "healthy",
     },
     rows: [...nickLocationIds, ...bakkeLocationIds].map(
-        (locationId) => liveRow(locationId, mode, liveObservedAt)
+        (locationId) => liveRow(locationId, mode, mode === "stale" ? staleObservedAt : liveObservedAt)
     ),
 });
+
+const officialRow = (locationId: number, mode: OfficialCountsMode) => ({
+    FacilityId: bakkeLocationIds.includes(locationId) ? 1656 : 1186,
+    FacilityName: bakkeLocationIds.includes(locationId)
+        ? "Bakke Recreation & Wellbeing Center"
+        : "Nicholas Recreation Center",
+    LocationId: locationId,
+    LocationName: `Location ${locationId}`,
+    IsClosed: mode === "closed",
+    LastCount: mode === "closed" ? null : locationId === 5761 ? 30 : locationId === 8717 ? 24 : 0,
+    CountOfParticipants: mode === "closed" ? 0 : locationId === 5761 ? 30 : locationId === 8717 ? 24 : 0,
+    LastUpdatedDateAndTime: mode === "closed" ? null : observedAt,
+    CountCapacityColorEnabled: true,
+    MaxCapacityRange: 100,
+    MaxColor: "#000000",
+    MidColor: "#000000",
+    MinCapacityRange: 0,
+    MinColor: "#000000",
+    PercetageCapacity: 0,
+    SubLocations: null,
+    TotalCapacity: 100,
+});
+
+const officialCounts = (mode: OfficialCountsMode): unknown => {
+    if (mode === "invalid") return [{LocationId: "not-a-number"}];
+    if (mode === "missing") return [];
+
+    const allLocationIds = [...nickLocationIds, ...bakkeLocationIds];
+    const includedLocationIds = mode === "coverage"
+        ? allLocationIds.filter((locationId) => !optionalMissingLocationIds.has(locationId))
+        : mode === "partial"
+            ? allLocationIds.filter((locationId) => [5761, 5764, 5760, 8717, 8700].includes(locationId))
+            : allLocationIds;
+    return includedLocationIds.map((locationId) => officialRow(locationId, mode));
+};
 
 const facilityName = (id: 1186 | 1656) => id === 1656
     ? "Bakke Recreation & Wellbeing Center"
@@ -107,8 +156,13 @@ const facilityIdFromPath = (pathname: string): 1186 | 1656 | null => {
 
 export async function installDashboardApiMocks(
     page: Page,
-    options: {forecastExpectedPct?: number; liveCountsMode?: LiveCountsMode; observedAt?: string} = {}
-): Promise<void> {
+    options: {
+        forecastExpectedPct?: number;
+        liveCountsMode?: LiveCountsMode;
+        observedAt?: string;
+        officialCountsMode?: OfficialCountsMode;
+    } = {}
+): Promise<DashboardApiMockController> {
     const context = page.context();
     const previousApiHandler = apiHandlers.get(context);
     if (previousApiHandler) await context.unroute("**/api/**", previousApiHandler);
@@ -130,14 +184,44 @@ export async function installDashboardApiMocks(
         await context.route("**/*", externalHandler);
     }
 
+    let officialMode = options.officialCountsMode
+        ?? (options.liveCountsMode === undefined ? "fresh" : "missing");
+    let serverMode = options.liveCountsMode ?? "fresh";
+    const officialRequests: string[] = [];
+    const backupRequests: string[] = [];
+    const liveRequestOrder: Array<"official" | "backup"> = [];
+
     const apiHandler: RouteHandler = async (route) => {
         const request = route.request();
-        const pathname = new URL(request.url()).pathname;
+        const requestUrl = new URL(request.url());
+        const pathname = requestUrl.pathname;
         const method = request.method();
 
+        if (
+            method === "GET"
+            && requestUrl.protocol === "https:"
+            && requestUrl.hostname === officialHostname
+            && pathname.startsWith(officialPathname)
+        ) {
+            officialRequests.push(request.url());
+            liveRequestOrder.push("official");
+            if (officialMode === "failed") {
+                await route.fulfill({status: 503, json: {detail: "official fixture unavailable"}});
+                return;
+            }
+            await route.fulfill({json: officialCounts(officialMode)});
+            return;
+        }
+
         if (method === "GET" && pathname === "/api/live-counts") {
+            backupRequests.push(request.url());
+            liveRequestOrder.push("backup");
+            if (serverMode === "failed") {
+                await route.fulfill({status: 503, json: {detail: "backup fixture unavailable"}});
+                return;
+            }
             await route.fulfill({
-                json: liveCounts(options.liveCountsMode ?? "fresh", options.observedAt ?? observedAt),
+                json: liveCounts(serverMode, options.observedAt ?? observedAt),
             });
             return;
         }
@@ -216,6 +300,18 @@ export async function installDashboardApiMocks(
 
     apiHandlers.set(context, apiHandler);
     await context.route("**/api/**", apiHandler);
+
+    return {
+        officialRequests,
+        backupRequests,
+        liveRequestOrder,
+        setOfficialMode: (mode) => {
+            officialMode = mode;
+        },
+        setLiveCountsMode: (mode) => {
+            serverMode = mode;
+        },
+    };
 }
 
 export async function removeDashboardApiMocks(page: Page): Promise<void> {

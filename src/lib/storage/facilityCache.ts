@@ -36,7 +36,8 @@ const writeCache = (map: CacheMap) => {
 };
 
 const hasUpstreamProvenance = (entry: CacheEntry): boolean => (
-    entry.payload.liveDataSource === "facility_api"
+    entry.payload.liveDataSource === "official_api"
+    || entry.payload.liveDataSource === "facility_api"
     || entry.payload.liveDataSource === "fallback_api"
 );
 

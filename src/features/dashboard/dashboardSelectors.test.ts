@@ -8,6 +8,25 @@ import {
 import {facilityScheduleSchema} from "../../lib/api/schemas";
 
 describe("dashboard selection", () => {
+    it("skips empty forecast days without hiding populated later days or using them for today's chips", () => {
+        const view = buildDashboardViewModel({...fixtureDashboardInput, forecastDays: [
+            {...fixtureForecastDays[0], totalHours: [], categories: [], crowdBands: [], bestWindows: [], avoidWindows: []},
+            fixtureForecastDays[1], fixtureForecastDays[2],
+        ]});
+        expect(view.visibleForecastDays.map((day) => day.date)).toEqual(["2026-09-01", "2026-09-02"]);
+        expect(view.selectedForecastDay?.date).toBe("2026-09-01");
+        expect(view.sectionForecastMap).toEqual({});
+    });
+
+    it("skips days whose forecast information falls entirely outside opening hours", () => {
+        const view = buildDashboardViewModel({...fixtureDashboardInput, forecastDays: [
+            {...fixtureForecastDays[0], totalHours: [], categories: [], crowdBands: [], avoidWindows: [],
+                bestWindows: [{start: "2026-08-31T01:00:00-05:00", end: "2026-08-31T02:00:00-05:00", expectedAvg: 10}]},
+            fixtureForecastDays[1],
+        ]});
+        expect(view.visibleForecastDays.map((day) => day.date)).toEqual(["2026-09-01"]);
+    });
+
     it("never averages tomorrow's same hour into today's section chips", () => {
         const day = {date: "2026-08-31", dayName: "Monday", categories: [{key: "fitness floors", title: "Fitness Floors", hours: [
             {hourStart: "2026-08-31T09:00:00-05:00", expectedCount: 20},

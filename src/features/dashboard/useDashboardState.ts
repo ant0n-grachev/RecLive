@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState} from "react";
+import {useCallback, useEffect, useMemo, useReducer, useRef, useState} from "react";
 import type {FacilityId} from "../../lib/types/facility";
 import type {LiveStatus} from "../../facilities/LiveStatusAnnouncer";
 import {getChicagoTimestampMs} from "../../shared/utils/chicagoTime";
@@ -96,6 +96,7 @@ export function useDashboardState({
         liveOutageState,
         hasPendingLiveRetry,
         cacheTimestampMs,
+        acceptedAtMs,
         prepareRefresh,
     } = useLiveFacilityData({facility, refreshKey: liveRefreshKey, isOffline});
     const {
@@ -148,7 +149,7 @@ export function useDashboardState({
         parseDebugNowMs(initialDebugOverrides.debugNowValue)
     ));
     const [clockTickTs, setClockTickTs] = useState(() => Date.now());
-    const nowTs = debugNowMs ?? clockTickTs;
+    const nowTs = debugNowMs ?? Math.max(clockTickTs, acceptedAtMs ?? 0);
     const [predictionOverrideEnabled, setPredictionOverrideEnabled] = useState(false);
     const [closureOverrideEnabled, setClosureOverrideEnabled] = useState(
         initialDebugOverrides.closureOverrideEnabled
@@ -206,22 +207,6 @@ export function useDashboardState({
         };
     }, [error, facility, hasPendingLiveRetry, isLoading, liveOutageState]);
 
-    const activeData = data?.facilityId === facility ? data : null;
-    useLayoutEffect(() => {
-        if (debugNowMs !== null || !activeData) return;
-
-        let isCancelled = false;
-        // Sample the clock when a new live snapshot is accepted without making render impure.
-        void Promise.resolve().then(() => {
-            if (!isCancelled) {
-                setClockTickTs(Date.now());
-            }
-        });
-
-        return () => {
-            isCancelled = true;
-        };
-    }, [activeData, debugNowMs]);
     const view = useMemo(() => buildDashboardViewModel({
         facility,
         nowTs,

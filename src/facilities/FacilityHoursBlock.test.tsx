@@ -29,6 +29,11 @@ const staleSchedule: FacilityHoursFacilityPayload = {
 };
 
 describe("FacilityHoursBlock", () => {
+    it("does not show an empty hours accordion while its first request is pending", () => {
+        renderWithApp(<FacilityHoursBlock facilityName="Nick" isLoading error={null} schedule={null}/>);
+        expect(screen.queryByRole("button", {name: /official hours, closures & notices/i})).not.toBeInTheDocument();
+    });
+
     it("keeps preserved hours without an automatic stale-data notice", () => {
         renderWithApp(
             <FacilityHoursBlock
@@ -53,11 +58,37 @@ describe("FacilityHoursBlock", () => {
         expect(screen.queryByText("anti_bot")).not.toBeInTheDocument();
     });
 
-    it.each([null, {...staleSchedule, sections: []}])("keeps missing hours neutral", (schedule) => {
+    it.each([null, {...staleSchedule, sections: []}])("hides the hours card when no official information is available", (schedule) => {
         renderWithApp(<FacilityHoursBlock facilityName="Nick" isLoading={false} error="Internal failure" schedule={schedule}/>);
-        fireEvent.click(screen.getByRole("button", {name: /official hours, closures & notices/i}));
-        expect(screen.getByRole("img", {name: "Opening hours unavailable"})).toHaveTextContent("—");
+
+        expect(screen.queryByRole("button", {name: /official hours, closures & notices/i})).not.toBeInTheDocument();
         expect(screen.queryByText(/schedule is unavailable|No schedule rows|Internal failure/i)).not.toBeInTheDocument();
+    });
+
+    it("omits incomplete rows while keeping valid hours and notices", () => {
+        renderWithApp(
+            <FacilityHoursBlock
+                facilityName="Nick"
+                isLoading={false}
+                error={null}
+                schedule={{
+                    ...staleSchedule,
+                    sections: [{
+                        title: "Building Hours",
+                        rows: [
+                            {label: "Mon", hours: "6:00 am - 10:00 pm"},
+                            {label: "Tue", hours: ""},
+                        ],
+                        note: "Closed on university holidays.",
+                    }],
+                }}
+            />,
+        );
+        fireEvent.click(screen.getByRole("button", {name: /official hours, closures & notices/i}));
+
+        expect(screen.getByText("6:00 am - 10:00 pm")).toBeVisible();
+        expect(screen.queryByText("Tue")).not.toBeInTheDocument();
+        expect(screen.getByText("Closed on university holidays.")).toBeVisible();
     });
 
     it("does not label a fresh official schedule as stale", () => {

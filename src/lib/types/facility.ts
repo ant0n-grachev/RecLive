@@ -1,5 +1,5 @@
 export type FacilityId = 1186 | 1656;
-export type LiveDataSource = "facility_api" | "fallback_api" | "cache";
+export type LiveDataSource = "official_api" | "facility_api" | "fallback_api" | "cache";
 
 export interface Location {
     facilityId: FacilityId;

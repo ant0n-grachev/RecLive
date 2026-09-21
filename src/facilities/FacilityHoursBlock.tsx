@@ -36,8 +36,16 @@ export default function FacilityHoursBlock({
     facilityName,
     schedule,
     isLoading,
-    error,
 }: FacilityHoursBlockProps) {
+    const visibleSections = (schedule?.sections ?? []).map((section) => ({
+        ...section,
+        rows: section.rows.filter((row) => row.label.trim() !== "" && row.hours.trim() !== ""),
+    })).filter((section) => section.rows.length > 0 || Boolean(section.note?.trim()));
+
+    if (visibleSections.length === 0) {
+        return null;
+    }
+
     return (
         <Box
             sx={{
@@ -92,21 +100,9 @@ export default function FacilityHoursBlock({
                             </Box>
                         )}
 
-                        {!isLoading && error && !schedule && (
-                            <Typography variant="body2" role="img" color="text.secondary" aria-label="Opening hours unavailable">
-                                —
-                            </Typography>
-                        )}
-
-                        {schedule && (
+                        {visibleSections.length > 0 && (
                             <Stack spacing={2}>
-                                {schedule.sections.length === 0 && (
-                                    <Typography variant="body2" role="img" color="text.secondary" aria-label="Opening hours unavailable">
-                                        —
-                                    </Typography>
-                                )}
-
-                                {schedule.sections.map((section, index) => (
+                                {visibleSections.map((section, index) => (
                                     <Box key={`${section.title}-${index}`}>
                                         {index > 0 && <Divider sx={{mb: 1.75}}/>}
                                         <Stack spacing={1.1}>

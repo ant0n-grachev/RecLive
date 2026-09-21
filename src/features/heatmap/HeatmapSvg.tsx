@@ -1,4 +1,4 @@
-import {Box, Typography} from "@mui/material";
+import {Box} from "@mui/material";
 import {alpha} from "@mui/material/styles";
 import type {FacilityId} from "../../lib/types/facility";
 import {OCCUPANCY_MAIN_HEX, type OccupancyThresholds} from "../../shared/utils/styles";
@@ -30,11 +30,7 @@ export function HeatmapSvg({
     onSelectZone,
 }: HeatmapSvgProps) {
     if (!data.floorMap) {
-        return (
-            <Typography variant="body2" color="text.secondary">
-                No map configured for this floor yet.
-            </Typography>
-        );
+        return null;
     }
 
     const isNickMap = facilityId === 1186;
@@ -189,6 +185,9 @@ export function HeatmapSvg({
                         .map((point) => `${(point.x / 100) * data.gridCols},${(point.y / 100) * data.gridRows}`)
                         .join(" ");
                     const presentation = getZonePresentation(zoneSummary, occupancyThresholds);
+                    if (!presentation) {
+                        return null;
+                    }
                     const isSelected = selectedZoneKey === zoneSummary.key;
 
                     return (

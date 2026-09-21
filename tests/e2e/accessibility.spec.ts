@@ -79,8 +79,16 @@ const expectNoHorizontalOverflow = async (page: Page) => {
 };
 
 const expectQuietUnavailableOccupancy = async (page: Page) => {
-    await expect(page.getByLabel("Current count unavailable").first()).toHaveText("—");
+    await expect(page.getByRole("heading", {name: "RecLive is unavailable."})).toHaveCount(1);
+    await expect(page.getByRole("button", {name: "Try again", exact: true})).toBeVisible();
+    await expect(page.getByLabel("Current count unavailable")).toHaveCount(0);
     await expect(page.getByRole("progressbar", {name: "Current occupancy percentage"})).toHaveCount(0);
+    await expect(page.getByText("Live Occupancy", {exact: true})).toHaveCount(0);
+    await expect(page.getByText("Forecast Today", {exact: true})).toHaveCount(0);
+    await expect(page.getByText("Floor Heat Map", {exact: true})).toHaveCount(0);
+    await expect(page.getByRole("button", {name: "Alerts", exact: true})).toHaveCount(0);
+    await expect(page.getByText("Train smarter. Skip the crowd.", {exact: true})).toHaveCount(0);
+    await expect(page.getByText("—", {exact: true})).toHaveCount(0);
     await expect(page.getByText(automaticDiagnosticCopy)).toHaveCount(0);
     await expect(page.getByRole("alert")).toHaveCount(0);
 };
@@ -143,7 +151,7 @@ for (const stateCase of [
     {name: "partial", liveCountsMode: "partial" as const, viewport: viewportCases[1]},
     {name: "missing", liveCountsMode: "missing" as const, viewport: viewportCases[0]},
 ]) {
-    test(`Nick ${stateCase.name} occupancy stays quiet at ${stateCase.viewport.name} size`, async ({page}, testInfo) => {
+    test(`Nick ${stateCase.name} facility becomes one quiet unavailable view at ${stateCase.viewport.name} size`, async ({page}, testInfo) => {
         const consoleProblems: string[] = [];
         const pageErrors: string[] = [];
         page.on("console", (message) => {
@@ -161,9 +169,6 @@ for (const stateCase of [
         await expect(page.locator("main")).toBeVisible();
         await expect(page.locator("main")).not.toBeEmpty();
         await expect(page.getByRole("button", {name: "Nick", exact: true})).toHaveAttribute("aria-pressed", "true");
-        await expect(page.getByRole("button", {name: "Alerts", exact: true})).toBeVisible();
-        await expect(page.getByRole("button", {name: "Show map", exact: true})).toBeVisible();
-        await expect(page.getByText("Forecast Today", {exact: true})).toBeVisible();
         await expectQuietUnavailableOccupancy(page);
         await expect(page.locator("vite-error-overlay")).toHaveCount(0);
         await expect(page.getByText(/Internal Server Error|Failed to fetch dynamically imported module/)).toHaveCount(0);

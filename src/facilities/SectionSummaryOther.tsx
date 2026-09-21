@@ -42,6 +42,17 @@ export default function SectionSummaryOther({
         location,
         summary: computeOccupancySummary([location], {nowMs: nowTs}),
     }));
+    const visibleLocationModels = locationModels.filter(({summary: locationSummary}) => (
+        locationSummary.status === "closed"
+        || (
+            locationSummary.status === "live"
+            && locationSummary.count !== null
+            && locationSummary.percent !== null
+        )
+    ));
+    if (visibleLocationModels.length === 0) {
+        return null;
+    }
     const hasObservedOccupancy = (
         summary.status === "live"
         && summary.count !== null
@@ -89,18 +100,14 @@ export default function SectionSummaryOther({
                 </Typography>
             ) : hasObservedOccupancy && summary.count !== null ? (
                 <Typography variant="h5">{summary.count} / {summary.observedCapacity}</Typography>
-            ) : (
-                <Typography variant="h6" aria-label="Current count unavailable" color="text.secondary" sx={{fontWeight: 800}}>
-                    —
-                </Typography>
-            )}
+            ) : null}
 
             {hasObservedOccupancy && (
                 <Typography sx={{color, fontWeight: 600}}>{percent}% full</Typography>
             )}
 
             <Stack spacing={1} sx={{mt: 1}}>
-                {locationModels.map(({location: loc, summary: locationSummary}) => {
+                {visibleLocationModels.map(({location: loc, summary: locationSummary}) => {
                     const isClosed = locationSummary.status === "closed";
 
                     if (isClosed) {
@@ -168,11 +175,7 @@ export default function SectionSummaryOther({
                                             ({Math.round(locationSummary.percent)}%)
                                         </Typography>
                                     </>
-                                ) : (
-                                    <Typography variant="body2" role="img" aria-label="Current count unavailable" color="text.secondary" fontWeight={700}>
-                                        —
-                                    </Typography>
-                                )}
+                                ) : null}
                             </Stack>
                         </Box>
                     );

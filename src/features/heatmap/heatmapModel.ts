@@ -67,12 +67,12 @@ export const HEATMAP_BASE_FILL = "rgba(100, 116, 139, 0.18)";
 export const HEATMAP_ZONE_DIALOG_ID = "heatmap-zone-dialog";
 export const HEATMAP_ZONE_DIALOG_TITLE_ID = "heatmap-zone-dialog-title";
 
-export function zoneAccessibleLabel(zone: HeatmapZonePresentation): string {
+export function zoneAccessibleLabel(zone: HeatmapZonePresentation): string | null {
     if (zone.status === "closed") {
         return `${zone.label}: CLOSED`;
     }
     if (zone.status !== "live" || zone.percent === null) {
-        return `${zone.label}: occupancy unavailable`;
+        return null;
     }
 
     return `${zone.label}: ${Math.round(zone.percent)}% full`;
@@ -196,7 +196,7 @@ export function buildFloorRenderData(
 export const getZonePresentation = (
     zoneSummary: ZoneSummaryModel,
     fallbackThresholds?: OccupancyThresholds | null
-): ZonePresentation => {
+): ZonePresentation | null => {
     const {summary, zone} = zoneSummary;
     const presentation = {
         id: zoneSummary.key,
@@ -209,7 +209,7 @@ export const getZonePresentation = (
     if (summary.status === "closed") {
         return {
             ...presentation,
-            ariaLabel: zoneAccessibleLabel(presentation),
+            ariaLabel: zoneAccessibleLabel(presentation) ?? zone.label,
             value: "CLOSED",
             valueColor: "error.main",
         };
@@ -217,18 +217,13 @@ export const getZonePresentation = (
 
     const isObserved = summary.status === "live" && summary.percent !== null;
     if (!isObserved || summary.percent === null) {
-        return {
-            ...presentation,
-            ariaLabel: zoneAccessibleLabel(presentation),
-            value: "—",
-            valueColor: "text.secondary",
-        };
+        return null;
     }
 
     const percentText = `${Math.round(summary.percent)}% full`;
     return {
         ...presentation,
-        ariaLabel: zoneAccessibleLabel(presentation),
+        ariaLabel: zoneAccessibleLabel(presentation) ?? zone.label,
         value: percentText,
         valueColor: getOccupancyColor(
             summary.percent,

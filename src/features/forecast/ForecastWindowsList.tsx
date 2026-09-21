@@ -103,26 +103,22 @@ export default function ForecastWindowsList({
         return <ForecastBands bands={displayBands} nowTs={nowTs} isDark={isDark}/>;
     }
 
+    if (filteredBestWindows.length === 0 && filteredAvoidWindows.length === 0) {
+        return null;
+    }
+
     return (
         <Stack spacing={0.5}>
-            {filteredBestWindows.length === 0 && filteredAvoidWindows.length === 0 ? (
-                <Typography variant="body2" role="img" aria-label="Forecast windows unavailable" color="text.secondary" sx={{fontWeight: 600}}>
-                    —
+            {filteredBestWindows.map((window, index) => (
+                <Typography key={`low-${index}`} variant="body2" sx={{fontWeight: 600}}>
+                    {formatWindow(window)} (LOW CROWD)
                 </Typography>
-            ) : (
-                <>
-                    {filteredBestWindows.map((window, index) => (
-                        <Typography key={`low-${index}`} variant="body2" sx={{fontWeight: 600}}>
-                            {formatWindow(window)} (LOW CROWD)
-                        </Typography>
-                    ))}
-                    {filteredAvoidWindows.map((window, index) => (
-                        <Typography key={`peak-${index}`} variant="body2" sx={{fontWeight: 600}}>
-                            {formatWindow(window)} (PEAK CROWD)
-                        </Typography>
-                    ))}
-                </>
-            )}
+            ))}
+            {filteredAvoidWindows.map((window, index) => (
+                <Typography key={`peak-${index}`} variant="body2" sx={{fontWeight: 600}}>
+                    {formatWindow(window)} (PEAK CROWD)
+                </Typography>
+            ))}
         </Stack>
     );
 }

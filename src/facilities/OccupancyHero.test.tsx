@@ -47,7 +47,7 @@ describe("OccupancyHero trusted tuple transitions", () => {
 
     it("shows the truthful tuple immediately when occupancy recovers", () => {
         const {rerender} = render(hero(summary("insufficient", null, 0)));
-        expect(screen.getByLabelText("Current count unavailable")).toHaveTextContent("—");
+        expect(screen.queryByText("Live Occupancy")).not.toBeInTheDocument();
 
         rerender(hero(summary("live", 30, 100)));
 

@@ -8,6 +8,7 @@ import {combineOccupancyThresholds, type OccupancyThresholds} from "../../shared
 import {computeOccupancySummary} from "../../shared/occupancy/computeOccupancySummary";
 import {resolveDashboardWarning} from "../../app/warningStatus";
 import {getFacilityNextOpenTimestamp, getFacilityOpenStatus, getFacilityOpenWindowsForDate, type FacilityOpenWindow} from "../../shared/utils/facilityScheduleStatus";
+import {buildForecastDisplaySlots, clipBandsToWorkingHours, filterWindowsToWorkingHours} from "../forecast/forecastTime";
 
 const FORECAST_VISIBLE_SECTIONS = new Set(["fitness floors", "basketball courts"]);
 const MS_PER_HOUR = 60 * 60 * 1000;
@@ -438,11 +439,16 @@ export function buildDashboardViewModel(input: DashboardSelectorInput): Dashboar
         return [overall, ...bySection];
     })();
     const visibleForecastDays = (() => {
-        const isOpenForecastDay = (forecastDay: ForecastDay) => (
-            !hasResolvedSchedule
-            || getFacilityOpenWindowsForDate(activeSchedule, forecastDay.date).length > 0
-        );
-        const openForecastDays = forecastDays.filter(isOpenForecastDay);
+        const isDisplayableForecastDay = (forecastDay: ForecastDay) => {
+            const windows = getFacilityOpenWindowsForDate(activeSchedule, forecastDay.date);
+            const enforceHours = Boolean(activeSchedule && forecastDay.date);
+            const bands = forecastDay.crowdBands ?? [];
+            return buildForecastDisplaySlots(forecastDay, windows, enforceHours, forecastOccupancyThresholds, bands, nowTs).length > 0
+                || clipBandsToWorkingHours(bands, windows, enforceHours, forecastDay.date).length > 0
+                || filterWindowsToWorkingHours(forecastDay.bestWindows ?? [], windows, enforceHours, forecastDay.date).length > 0
+                || filterWindowsToWorkingHours(forecastDay.avoidWindows ?? [], windows, enforceHours, forecastDay.date).length > 0;
+        };
+        const openForecastDays = forecastDays.filter(isDisplayableForecastDay);
 
         if (showClosedFacilityMode) {
             if (!tomorrowDateKey || !isExpectedOpenTomorrow) {
@@ -453,18 +459,13 @@ export function buildDashboardViewModel(input: DashboardSelectorInput): Dashboar
             const daysFromTomorrow = tomorrowIndex >= 0
                 ? forecastDays.slice(tomorrowIndex)
                 : forecastDays.slice(1);
-            const openDaysFromTomorrow = daysFromTomorrow.filter(isOpenForecastDay);
-            if (openDaysFromTomorrow.length > 0) {
-                return openDaysFromTomorrow.slice(0, 4);
-            }
-
-            return daysFromTomorrow.slice(0, 4);
+            return daysFromTomorrow.filter(isDisplayableForecastDay).slice(0, 4);
         }
 
         return openForecastDays.slice(0, 4);
     })();
     const forecastDisplayKey = `${showClosedFacilityMode ? "closed" : "active"}:${visibleForecastDays.map((day) => day.date).join("|")}`;
-    const todayForecastDay = visibleForecastDays[0] ?? null;
+    const todayForecastDay = forecastDays.find((day) => day.date === todayDateKey) ?? null;
     const activeForecastDayOffset = forecastDaySelection.key === forecastDisplayKey
         ? forecastDaySelection.offset
         : 0;
@@ -473,7 +474,7 @@ export function buildDashboardViewModel(input: DashboardSelectorInput): Dashboar
         Math.max(0, visibleForecastDays.length - 1)
     );
     const selectedForecastDay =
-        visibleForecastDays[resolvedForecastDayOffset] ?? todayForecastDay;
+        visibleForecastDays[resolvedForecastDayOffset] ?? null;
     const canShowClosedTomorrowForecast = showClosedFacilityMode
         && isExpectedOpenTomorrow
         && !forecastError

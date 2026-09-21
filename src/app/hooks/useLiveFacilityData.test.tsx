@@ -79,6 +79,15 @@ describe("useLiveFacilityData", () => {
         mockedFetchFacility.mockReset();
     });
 
+    it("publishes the local acceptance time together with a new observation", async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime("2026-08-31T12:05:00Z");
+        mockedFetchFacility.mockResolvedValue(freshPayload);
+        const {result} = renderHook(() => useLiveFacilityData({facility: 1186, refreshKey: 0, isOffline: false}));
+        await act(async () => { await Promise.resolve(); });
+        expect(result.current).toMatchObject({data: freshPayload, acceptedAtMs: Date.parse("2026-08-31T12:05:00Z")});
+    });
+
     it("retains a schema-valid cached snapshot while offline and labels its source", async () => {
         setFacilityCache(1186, livePayload);
 

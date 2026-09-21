@@ -17,9 +17,9 @@ const locations: Location[] = [
 ];
 
 it.each(["partial", "insufficient", "unknown"] as const)(
-    "keeps %s facility counts neutral without presenting incomplete numbers as live", (status) => {
+    "hides %s facility counts without presenting incomplete numbers as live", (status) => {
         renderWithApp(<OccupancyHero summary={{...partialSummary, status}} nowTs={nowTs} facilityId={1186}/>);
-        expect(screen.getByLabelText("Current count unavailable")).toHaveTextContent("—");
+        expect(screen.queryByText("Live Occupancy")).not.toBeInTheDocument();
         expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
         expect(screen.queryByText(/% full|Coverage:|Live occupancy unavailable|Updated/i)).not.toBeInTheDocument();
     },
@@ -30,8 +30,8 @@ it.each(["primary", "other"])("keeps a partial %s section neutral but preserves 
         ? <SectionCommandCenter title="Rooms" ids={[1, 2]} locations={locations} nowTs={nowTs}/>
         : <SectionSummaryOther title="Rooms" exclude={[]} locations={locations} nowTs={nowTs}/>);
     if (section === "primary") fireEvent.click(screen.getByRole("button", {name: /Rooms/}));
-    expect(screen.getAllByLabelText("Current count unavailable")).toHaveLength(2);
-    expect(screen.getAllByRole("img", {name: "Current count unavailable"})).toHaveLength(section === "primary" ? 2 : 1);
+    expect(screen.queryByLabelText("Current count unavailable")).not.toBeInTheDocument();
+    expect(screen.queryByText("Room B")).not.toBeInTheDocument();
     expect(screen.getByText(/30 \/ 60/)).toBeVisible();
     expect(screen.queryByText(/20 \/ 40/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Coverage:|Live occupancy unavailable/)).not.toBeInTheDocument();
@@ -39,7 +39,7 @@ it.each(["primary", "other"])("keeps a partial %s section neutral but preserves 
 
 it("keeps unknown opening hours neutral without inventing an open status", () => {
     renderWithApp(<ScheduleStatusCard status={{state: "unknown", matchedRule: null}}/>);
-    expect(screen.getByRole("img", {name: "Opening hours unavailable"})).toHaveTextContent("—");
+    expect(screen.queryByText("Schedule Status")).not.toBeInTheDocument();
     expect(screen.queryByText(/UNKNOWN|temporarily unavailable|Open now/)).not.toBeInTheDocument();
 });
 

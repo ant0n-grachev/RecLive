@@ -391,6 +391,15 @@ export default function ForecastWindowsCard({
         });
     };
 
+    const hasForecastContent = workingHoursBands.length > 0
+        || filteredBestWindows.length > 0
+        || filteredAvoidWindows.length > 0
+        || histogram !== null;
+
+    if (!isLoading && (Boolean(error) || !day || !hasForecastContent)) {
+        return null;
+    }
+
     return (
         <ModernCard>
             <Box sx={{display: "flex", alignItems: "center", justifyContent: "space-between"}}>
@@ -416,10 +425,6 @@ export default function ForecastWindowsCard({
                         Loading forecast...
                     </Typography>
                 </Box>
-            )}
-
-            {!isLoading && error && (
-                <Typography role="img" aria-label="Forecast unavailable" color="text.secondary" sx={{mt: 1}}>—</Typography>
             )}
 
             <Box

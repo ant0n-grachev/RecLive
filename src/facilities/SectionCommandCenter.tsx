@@ -63,6 +63,14 @@ export default function SectionCommandCenter({
         location,
         summary: computeOccupancySummary([location], {nowMs: nowTs}),
     }));
+    const visibleLocationModels = locationModels.filter(({summary: locationSummary}) => (
+        locationSummary.status === "closed"
+        || (
+            locationSummary.status === "live"
+            && locationSummary.count !== null
+            && locationSummary.percent !== null
+        )
+    ));
     const hasObservedOccupancy = (
         summary.status === "live"
         && summary.count !== null
@@ -109,13 +117,7 @@ export default function SectionCommandCenter({
                 {displayPercent}% full
             </Typography>
         </Box>
-    ) : (
-        <Box sx={{...metricColumnSx, ...metricStackSx}}>
-            <Typography variant="body2" role="img" aria-label="Current count unavailable" sx={{fontWeight: 700, color: "text.secondary"}}>
-                —
-            </Typography>
-        </Box>
-    );
+    ) : null;
 
     const forecastStrip = !!forecast?.length && (
         <Stack direction="row" spacing={0.75} sx={{mb: 1.25, flexWrap: "wrap", rowGap: 0.75}}>
@@ -181,7 +183,7 @@ export default function SectionCommandCenter({
 
     const locationRows = (
         <Stack spacing={0.75}>
-            {locationModels.map(({location: loc, summary: locationSummary}) => {
+            {visibleLocationModels.map(({location: loc, summary: locationSummary}) => {
                 const isClosed = locationSummary.status === "closed";
                 const isObserved = locationSummary.status === "live"
                     && locationSummary.count !== null
@@ -215,16 +217,16 @@ export default function SectionCommandCenter({
                                     ({Math.round(locationSummary.percent)}%)
                                 </Box>
                             </Typography>
-                        ) : (
-                            <Typography variant="body2" role="img" aria-label="Current count unavailable" sx={{fontWeight: 700, color: "text.secondary"}}>
-                                —
-                            </Typography>
-                        )}
+                        ) : null}
                     </Box>
                 );
             })}
         </Stack>
     );
+
+    if (visibleLocationModels.length === 0 && !forecast?.length) {
+        return null;
+    }
 
     if (isSingleLocation) {
         return (

@@ -144,12 +144,47 @@ it("renders loading and error states without stale facility cards", () => {
         </ThemeProvider>
     );
 
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Current count unavailable")).toHaveTextContent("—");
+    expect(screen.getByRole("heading", {name: "RecLive is unavailable."})).toBeVisible();
+    expect(screen.queryByLabelText("Current count unavailable")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", {name: "Try again"}));
     expect(errorProps.state.manualRefresh).toHaveBeenCalledOnce();
     expect(screen.queryByText("Loading...")).not.toBeInTheDocument();
+    expect(screen.queryByText("Live Occupancy")).not.toBeInTheDocument();
+    expect(screen.queryByText("Floor Heat Map")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {name: "How to add RecLive to your home screen"})).not.toBeInTheDocument();
+});
+
+it("replaces expired readings with one unavailable view and recovers without a reload", async () => {
+    const expired = createPageProps({nowTs: Date.parse("2026-08-31T12:10:01Z")});
+    const {rerender} = renderPage(expired);
+    await settlePageImports();
+
+    expect(screen.getByRole("heading", {name: "RecLive is unavailable."})).toBeVisible();
+    expect(screen.queryByText("Live Occupancy")).not.toBeInTheDocument();
+    expect(screen.queryByText("Forecast Today")).not.toBeInTheDocument();
+    expect(screen.queryByText("—")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", {name: "Bakke"})).toBeEnabled();
+
+    const recovered = createPageProps();
+    rerender(<ThemeProvider theme={createAppTheme("light")}><DashboardPage {...recovered}/></ThemeProvider>);
+    await settlePageImports();
+    expect(screen.queryByText("RecLive is unavailable.")).not.toBeInTheDocument();
     expect(screen.getByText("Live Occupancy")).toBeVisible();
+});
+
+it("does not mistake a confirmed live-source closure for an outage", async () => {
+    const locations = fixtureLiveByFacility[1186].locations.map((location) => ({...location, isClosed: true}));
+    renderPage(createPageProps({data: {...fixtureLiveByFacility[1186], locations}, activeSchedule: null}));
+    await settlePageImports();
+    expect(screen.getByRole("heading", {name: "CLOSED"})).toBeVisible();
+    expect(screen.queryByText("RecLive is unavailable.")).not.toBeInTheDocument();
+});
+
+it("keeps usable readings visible during refresh without flashing the outage view", async () => {
+    renderPage(createPageProps({isLoading: true, hasPendingLiveRetry: true}));
+    await settlePageImports();
+    expect(screen.getByText("Live Occupancy")).toBeVisible();
+    expect(screen.queryByText("RecLive is unavailable.")).not.toBeInTheDocument();
 });
 
 it.each([

@@ -1177,9 +1177,9 @@ describe("CrowdAlertSubscriptionCard server-backed alert management", () => {
 
         fireEvent.mouseDown(screen.getByRole("combobox", {name: "Gym area"}));
         expect(screen.getByRole("option", {name: "Entire Facility"})).not.toHaveAttribute("aria-disabled", "true");
-        expect(screen.getByRole("option", {name: "Fitness Floors"})).toHaveAttribute("aria-disabled", "true");
-        expect(screen.getByRole("option", {name: "Unknown Area"})).toHaveAttribute("aria-disabled", "true");
-        expect(screen.getByRole("option", {name: "Insufficient Area"})).toHaveAttribute("aria-disabled", "true");
+        expect(screen.queryByRole("option", {name: "Fitness Floors"})).not.toBeInTheDocument();
+        expect(screen.queryByRole("option", {name: "Unknown Area"})).not.toBeInTheDocument();
+        expect(screen.queryByRole("option", {name: "Insufficient Area"})).not.toBeInTheDocument();
         expect(screen.getByRole("option", {name: "Closed Area"})).toHaveAttribute("aria-disabled", "true");
     });
 

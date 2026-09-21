@@ -107,6 +107,16 @@ describe("facility cache trust boundary", () => {
         expect(getFacilityCache(1186)?.payload).toEqual(payload);
     });
 
+    it("accepts a payload received directly from the official public feed", () => {
+        const officialPayload: FacilityPayload = {
+            ...payload,
+            liveDataSource: "official_api",
+        };
+        storeEntry(entryAt(Date.now(), officialPayload));
+
+        expect(getFacilityCache(1186)?.payload).toEqual(officialPayload);
+    });
+
     it("does not write a payload for the wrong facility", () => {
         setFacilityCache(1186, {
             ...payload,

@@ -53,6 +53,27 @@ forecasts, schedules, and push state from backend-only configuration. MySQL
 retains schema migrations, current occupancy snapshots, history, ingestion
 runs, alert rules, and rate-limit counters.
 
+Live occupancy tries the public feed used by UW RecWell's
+[Live Building Usage widget](https://recwell.wisc.edu/locations/) first, then
+RecLive's `/api/live-counts` snapshots. The public widget integration is separate
+from the private backend ingestion configuration; `LIVE_COUNTS_URL` is never
+sent to the browser. Forecasts, schedules, and push alerts still use RecLive's API.
+
+A source is usable for the selected facility when fresh observations cover at
+least 80% of its open capacity, or every configured area is confirmed closed.
+Malformed, empty, incomplete, or failed responses trigger the backup. Backup
+and saved-browser readings retain their observation timestamps and are usable
+for at most ten minutes; receiving them again does not make them fresh. The
+official adapter timestamps successful observations when received and bypasses
+browser response caching. Both paths ultimately depend on the same official
+measurements, so the backup bridges short outages rather than generating new
+counts.
+
+Missing optional information is hidden. If no usable occupancy remains, the
+dashboard shows only a simple unavailable screen with a retry action and the
+facility selector. Normal facility closures remain distinct from outages. Live
+polling and visibility/reconnection refresh restore the dashboard automatically.
+
 Only the public frontend variables `VITE_API_BASE_URL` and `VITE_SITE_URL` may
 enter the browser build. `VITE_API_BASE_URL` is an origin or deployment prefix,
 without an `/api` suffix; the client appends canonical `/api/...` paths. For a

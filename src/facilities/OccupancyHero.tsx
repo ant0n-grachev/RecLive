@@ -50,6 +50,7 @@ export default function OccupancyHero({
     const progressTrackBg = alpha(theme.palette.text.primary, theme.palette.mode === "dark" ? 0.24 : 0.1);
     const facilityLink = FACILITY_LINKS[facilityId];
     const relativeUpdatedText = formatChicagoUpdatedRelative(summary.latestFetchedAt, new Date(nowTs));
+    if (!hasObservedOccupancy && summary.status !== "closed") return null;
 
     return (
         <Box
@@ -104,21 +105,7 @@ export default function OccupancyHero({
                             />
                         </Stack>
                     </>
-                ) : (
-                    <>
-                        <Typography variant="h3" aria-label="Current count unavailable" sx={{fontWeight: 800, color: "text.secondary"}}>
-                            —
-                        </Typography>
-                        <Box
-                            aria-hidden="true"
-                            sx={{
-                                height: 8,
-                                borderRadius: 999,
-                                bgcolor: progressTrackBg,
-                            }}
-                        />
-                    </>
-                )}
+                ) : null}
 
                 <Stack direction="row" justifyContent="space-between" alignItems="flex-end" spacing={1.25}>
                     <Stack spacing={0.4} sx={{minWidth: 0, flexGrow: 1}}>

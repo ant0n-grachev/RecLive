@@ -35,7 +35,7 @@ beforeEach(() => {
 });
 
 describe("FloorHeatMapCard", () => {
-    it("describes a partial zone as unavailable without exposing its percentage", () => {
+    it("does not create a presentation label for a partial zone", () => {
         expect(zoneAccessibleLabel({
             id: "power-house",
             label: "Power House",
@@ -43,7 +43,7 @@ describe("FloorHeatMapCard", () => {
             percent: 60,
             coverage: 0.6,
             count: 30,
-        })).toBe("Power House: occupancy unavailable");
+        })).toBeNull();
     });
 
     it("removes a stale heatmap debug global in normal production", () => {
@@ -82,10 +82,11 @@ describe("FloorHeatMapCard", () => {
         );
 
         expect(screen.queryByText("20% full")).not.toBeInTheDocument();
-        expect(screen.getByRole("img", {name: "Power House: occupancy unavailable"})).toHaveTextContent("—");
+        expect(screen.queryByRole("dialog", {name: "Power House details"})).not.toBeInTheDocument();
+        expect(screen.queryByLabelText(/Power House: occupancy unavailable/)).not.toBeInTheDocument();
     });
 
-    it("names zone controls by trust state and supports keyboard activation", () => {
+    it("leaves unavailable zones neutral and non-interactive while preserving closures", () => {
         const trackUnavailable = location(5763, "Track", 4, {
             currentCapacity: null,
             fetchedAt: null,
@@ -113,26 +114,9 @@ describe("FloorHeatMapCard", () => {
         );
         fireEvent.click(screen.getByRole("button", {name: "Show map"}));
 
-        const partialZone = screen.getByRole("button", {
-            name: "Racquetball: occupancy unavailable",
-        });
-        const unavailableZone = screen.getByRole("button", {
-            name: "Track: occupancy unavailable",
-        });
-        expect(partialZone).toHaveAttribute("tabindex", "0");
-        expect(partialZone).toHaveAttribute("vector-effect", "non-scaling-stroke");
-        expect(unavailableZone).toHaveAttribute("tabindex", "0");
-        partialZone.focus();
-        expect(partialZone).toHaveFocus();
-
-        fireEvent.keyDown(partialZone, {key: "Enter"});
-        expect(screen.getByRole("dialog", {name: "Racquetball details"})).toBeInTheDocument();
-        expect(screen.getByRole("img", {name: "Racquetball: occupancy unavailable"})).toHaveTextContent("—");
-
-        fireEvent.keyDown(unavailableZone, {key: " "});
-        expect(screen.getByRole("dialog", {name: "Track details"})).toBeInTheDocument();
-        expect(screen.getByRole("img", {name: "Track: occupancy unavailable"})).toHaveTextContent("—");
-        fireEvent.keyDown(document, {key: "Escape"});
+        expect(screen.getByAltText("Floor map 4")).toBeVisible();
+        expect(screen.queryByLabelText(/occupancy unavailable/)).not.toBeInTheDocument();
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
         rerender(
             <FloorHeatMapCard
@@ -144,6 +128,19 @@ describe("FloorHeatMapCard", () => {
             />
         );
         expect(screen.getByRole("button", {name: "Track: CLOSED"})).toBeInTheDocument();
+    });
+
+    it("hides the heat map card when no configured floor is available", () => {
+        render(
+            <FloorHeatMapCard
+                facilityId={1186}
+                locations={[location(9999, "Unknown", 99)]}
+                nowTs={NOW_TS}
+            />,
+        );
+
+        expect(screen.queryByText("Floor Heat Map")).not.toBeInTheDocument();
+        expect(screen.queryByText(/No map configured/)).not.toBeInTheDocument();
     });
 
     it("expands only a narrow zone's invisible hit polygon", () => {
