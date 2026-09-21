@@ -58,6 +58,17 @@ This runbook describes actions for a future explicitly authorized operator. It i
    read-only migration health use that same checksum. Moving an existing
    migration ledger between engines therefore requires a separate reviewed
    data migration; never rewrite ledger checksums to bypass the mismatch.
+
+   MariaDB migration `0003` also snapshots and hashes
+   `mariadb_legacy_timestamps.py`. Preserve this helper after application just
+   like the original frozen helpers. It converts the legacy `VARCHAR(64)`
+   timezone-aware ISO `created_at` values to UTC `DATETIME(6)` before duplicate
+   selection. Every source value is validated before conversion writes; naive
+   or malformed timestamps and unexpected timestamp indexes fail closed.
+   Conversion runs only behind the existing renamed-table cutover barrier,
+   using a marked temporary column and an atomic exclusive-lock swap so
+   interruption can be retried with the same helper and attempt checksum.
+   Existing `DATETIME` values are left unchanged.
 5. Start or restart the backend with the target host's process manager. This compatibility command is available for an authorized local or host-managed process:
 
    ```bash

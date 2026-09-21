@@ -88,6 +88,7 @@ class MigrationSnapshot:
     sql_bytes: bytes
     checksum: str
     artifacts: tuple[tuple[str, Path, bytes], ...] = ()
+    dialect_artifact: tuple[Path, bytes] | None = None
 
 
 def migration_files(migration_dir: Path) -> list[Path]:
@@ -219,7 +220,32 @@ def execution_snapshot(
             encoded = statement.encode("utf-8")
             digest.update(len(encoded).to_bytes(8, "big"))
             digest.update(encoded)
-    return replace(snapshot, sql_bytes=sql_bytes, checksum=digest.hexdigest())
+    dialect_artifact = None
+    if snapshot.path.name == PUSH_MIGRATION_NAME:
+        artifact_path = default_mariadb_timestamp_artifact_path()
+        artifact_bytes = artifact_path.read_bytes()
+        dialect_artifact = (artifact_path, artifact_bytes)
+        for part in (b"mariadb_legacy_timestamps.py", artifact_bytes):
+            digest.update(len(part).to_bytes(8, "big"))
+            digest.update(part)
+    return replace(
+        snapshot, sql_bytes=sql_bytes, checksum=digest.hexdigest(),
+        dialect_artifact=dialect_artifact,
+    )
+
+
+def default_mariadb_timestamp_artifact_path() -> Path:
+    return Path(__file__).with_name("mariadb_legacy_timestamps.py")
+
+
+def run_dialect_pre_backfill(snapshot: MigrationSnapshot, connection, fault_injector) -> None:
+    if snapshot.dialect_artifact is None:
+        return
+    path, contents = snapshot.dialect_artifact
+    module = execute_snapshot_module(
+        f"_reclive_0003_mariadb_timestamps_{snapshot.checksum}", contents, path,
+    )
+    module.prepare_legacy_timestamps(connection, fault_injector)
 
 
 def load_push_migration_hooks(
@@ -552,6 +578,7 @@ def run_migrations(
                         fault_injector, f"{path.name}:{checkpoint}"
                     )
 
+                run_dialect_pre_backfill(snapshot, connection, scoped_fault)
                 run_post_sql_hook(
                     path.name,
                     hook_connection,
