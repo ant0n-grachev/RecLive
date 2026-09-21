@@ -92,14 +92,21 @@ test("shows one quiet unavailable view when both live sources fail and preserves
         await page.screenshot({path: join(screenshotDir, "reclive-outage-desktop.png"), fullPage: true});
     }
 
+    const switchRequestStart = mocks.liveRequestOrder.length;
     await page.getByRole("button", {name: "Bakke", exact: true}).click();
     await expect(page).toHaveURL(/\/bakke$/);
+    await expect(page.getByRole("button", {name: "Bakke", exact: true})).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", {name: "Nick", exact: true})).toHaveAttribute("aria-pressed", "false");
     await expectUnavailableDashboard(page);
-    expect(mocks.liveRequestOrder.length).toBeGreaterThanOrEqual(4);
-    expect(mocks.liveRequestOrder.length % 2).toBe(0);
-    for (let index = 0; index < mocks.liveRequestOrder.length; index += 2) {
-        expect(mocks.liveRequestOrder.slice(index, index + 2)).toEqual(["official", "backup"]);
-    }
+    await expect(page.getByRole("button", {name: "Try again", exact: true})).toBeEnabled();
+    await expect.poll(() => mocks.liveRequestOrder.slice(switchRequestStart).slice(-2))
+        .toEqual(["official", "backup"]);
+
+    const switchRequestOrder = mocks.liveRequestOrder.slice(switchRequestStart);
+    // The keyed route remount may cancel one intermediate request after its official attempt.
+    const cancelledOrCompletedIntermediateAttempt = switchRequestOrder.slice(0, -2);
+    expect([[], ["official"], ["official", "backup"]])
+        .toContainEqual(cancelledOrCompletedIntermediateAttempt);
 });
 
 test("rejects a stale backup snapshot when the official source is unavailable", async ({page}) => {
