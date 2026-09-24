@@ -18,7 +18,7 @@ def test_ci_workflows_enforce_phase_one_required_gates() -> None:
     security = load_workflow("security.yml")
 
     assert ci["on"] == {
-        "push": {"branches": ["main", "hardening/reclive-security-data-trust"]},
+        "push": {"branches": ["main"]},
         "pull_request": "",
     }
     assert ci["permissions"] == {"contents": "read"}

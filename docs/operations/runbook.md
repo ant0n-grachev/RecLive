@@ -36,7 +36,7 @@ This runbook describes actions for a future explicitly authorized operator. It i
 1. Obtain explicit release authorization for the exact commit SHA and target. Record the source branch, target environment, backup evidence, and responsible operator.
 2. Build and publish the frontend using only the two public browser variables. Serve the generated `dist/` artifact with SPA fallback for `/nick` and `/bakke`; do not publish `.env`, forecast or model artifacts, database data, push material, or private backup bundles.
 3. Inject backend-only settings through the backend host. Do not place backend settings in the frontend build or record their values.
-4. With a verified backup and the migration-`0003` cutover safeguards from `README.md` in place, an explicitly authorized operator may run:
+4. With a verified backup and the migration-`0003` cutover safeguards in [Database migrations](database.md) in place, an explicitly authorized operator may run:
 
    ```bash
    python server/migrate.py
@@ -109,7 +109,7 @@ This runbook describes actions for a future explicitly authorized operator. It i
    ```
 
    These commands can contact upstream services, write artifacts or database state, and train forecasts; do not run them as a documentation or read-only health check. A nonzero result is failed, not unexecuted, and must retain only the fixed event/category and bounded counts.
-3. For `migrations: stale`, stop rollout. Confirm the intended release contains the expected contiguous migration artifacts and follow the coordinated backup, legacy-process drain, fixed hash-key, and recovery procedure in `README.md`. Only an explicitly authorized migration application may invoke `python server/migrate.py`; never repair the ledger directly. For `migrations: unavailable`, first resolve the database/query, malformed-ledger, or local snapshot-read boundary without relabeling it as drift.
+3. For `migrations: stale`, stop rollout. Confirm the intended release contains the expected contiguous migration artifacts and follow the coordinated backup, legacy-process drain, fixed hash-key, and recovery procedure in [Database migrations](database.md). Only an explicitly authorized migration application may invoke `python server/migrate.py`; never repair the ledger directly. For `migrations: unavailable`, first resolve the database/query, malformed-ledger, or local snapshot-read boundary without relabeling it as drift.
 4. For `database: unavailable`, inspect host-side service status and sanitized application events. Do not copy connection settings, SQL values, records, or raw errors into incident notes.
 5. For `push: unavailable`, validate local configuration bindings and database prerequisites by name only. Provider acceptance and delivery require separately authorized, credential-backed evidence; local readiness does not prove them.
 6. For suspected secret exposure, follow `SECURITY.md`: report privately, contain access through the owning provider or secret manager, perform credential rotation out of band, and verify without printing the old or new value. Do not assume a history rewrite removed external copies.
@@ -158,7 +158,7 @@ health/route evidence when authorized. Record each step separately in this order
    public-value injection only; production-mode parser tests prove validation.
 3. Run `ruff check server tests` and `python -m pytest -v` using only the synthetic
    `TEST_MYSQL_*` fixture configuration. Run `python -m pytest tests/backend/test_migrate.py -v`
-   explicitly against local MySQL 8.4, retaining clean, already-migrated, and
+   explicitly against local MySQL 8.4, retaining clean and already-migrated MySQL 8.4 coverage, plus
    failure-recovery results. Do not run the production migration entry point as a test.
 4. Verify the six frozen migration artifacts against their approved checksums.
    Run `gitleaks git --redact --log-opts="--all"`, `npm audit --omit=dev`, a bounded
@@ -169,3 +169,122 @@ health/route evidence when authorized. Record each step separately in this order
    Production deployment/health, real notification delivery/clicks, OS installation,
    and model training require their own authorized evidence; local mocks and a
    configured workflow do not establish these outcomes.
+
+## Official facility hours
+
+Refresh the saved Nick and Bakke schedules with:
+
+```bash
+python server/facility_hours_fetch.py
+```
+
+The command validates the complete two-facility artifact before replacing the
+existing file atomically. If one facility cannot be refreshed, only an earlier
+valid schedule for that facility may be retained; it is marked stale, the other
+valid fresh facility is still published, and the command exits nonzero. Without
+a valid earlier schedule, the failed facility is published without invented
+hours and the command also exits nonzero.
+
+`SCHEDULE_STALE_AFTER_SECONDS=21600` is the canonical six-hour freshness
+setting. At runtime, the legacy `SCHEDULE_MAX_AGE_SECONDS` value is used only
+when the canonical setting is absent. Fetch and publication errors use fixed,
+sanitized categories and never expose upstream request data, response content,
+paths, or credentials.
+
+
+## Runtime commands and recommended cadences
+
+```bash
+python server/gym_fetch.py
+python server/facility_hours_fetch.py
+python server/forecast_job.py
+uvicorn server.forecast_api:app --host 127.0.0.1 --port 8000
+curl -fsS http://127.0.0.1:8000/health
+```
+
+Recommended cadences are live ingestion at least every 90 seconds, forecast
+generation every 15 minutes, facility-hours ingestion every 4 hours, and push
+evaluation at its configured interval. These are operating recommendations,
+not scheduler configuration supplied by the entry points. Run only one
+scheduler for each command. The database-backed evaluator lock protects
+cross-process alert dispatch; it does not make duplicate ingestion or forecast
+cron entries safe.
+
+The three freshness thresholds are positive seconds:
+`INGESTION_STALE_AFTER_SECONDS=600`,
+`FORECAST_STALE_AFTER_SECONDS=21600`, and
+`SCHEDULE_STALE_AFTER_SECONDS=21600`. A nonpositive value is invalid in every
+environment. `SCHEDULE_STALE_AFTER_SECONDS` is canonical;
+`SCHEDULE_MAX_AGE_SECONDS` is a backward-compatible alias used only when the
+canonical variable is absent.
+
+
+## Health and operational output
+
+`GET /health` is an unauthenticated, read-only readiness report. Its top-level
+keys are exactly `status`, `checkedAt`, and `components`; component names are
+exactly `api`, `database`, `migrations`, `ingestion`, `forecast`, `schedules`,
+and `push`. Each component is limited to `status`, `observedAt`, `ageSeconds`,
+and `detail`, with a status of `ready`, `stale`, `missing`, or `unavailable`.
+All timestamps are UTC ISO-8601 values. A safely generated degraded report
+returns HTTP 200. Inability to produce any safe report returns HTTP 503 with the
+fixed detail `health_unavailable`. The separate `/health/push` route remains
+protected.
+
+Health migration readiness compares the migration runner's filenames and
+effective checksums, including the frozen helper bytes that contribute to
+migration `0003`. Source health retains independent database, artifact, and
+schedule evidence: future, unreadable, malformed, stale, or missing sources do
+not become ready. Ready push health only verifies local prerequisites; it does
+not verify provider acceptance, notification delivery, OS installation, or
+device display.
+
+Executable operational output is allowlisted JSON with an aware UTC timestamp,
+bounded event/category names, and nonnegative counts where applicable.
+Configuration failures report variable names and fixed reasons, never rejected
+values. Output does not include environment dictionaries, database values,
+upstream bodies, subscriptions, endpoints, artifact paths, exception text, or
+tracebacks.
+
+
+## Push alert limits, lifecycle, and maintenance
+
+Push rules default to 24 hours (`PUSH_RULE_DEFAULT_TTL_SECONDS=86400`) and
+cannot exceed seven days (`PUSH_RULE_MAX_TTL_SECONDS=604800`). The API permits
+ten active rules per push endpoint (`PUSH_MAX_ACTIVE_RULES_PER_ENDPOINT=10`)
+and twenty write attempts per ten-minute window (`PUSH_WRITE_RATE_LIMIT=20`,
+`PUSH_WRITE_RATE_WINDOW_SECONDS=600`). Rule management uses server-backed list
+and cancel operations.
+
+The write limit is per hashed subject: a usable normalized subscription
+endpoint is the subject, and only requests without one fall back to the hashed
+immediate client address. Different usable endpoints therefore have independent
+counters. This is not a global traffic ceiling, and the rate-limit table stores
+no raw endpoint or client address.
+
+Pending rows can become expired or cancelled without being claimed. Normal
+claimed sends terminalize as sent, failed, or invalid subscription. A crash or
+ambiguous post-claim failure can intentionally leave the row permanently
+claimed and never retried. The claim is committed before provider I/O; this
+preserves at-most-once provider attempts but does not guarantee terminal state
+or delivery. Provider acceptance and device display remain outside RecLive's
+control.
+
+Raw push endpoints, subscription keys, client subjects, and provider response
+bodies are never returned or logged. Operational output is count-only. Never
+dump the environment or include private database settings in logs or support
+artifacts.
+
+Prune rate-limit rows older than two 600-second windows with:
+
+```bash
+python server/prune_push_rate_limits.py
+```
+
+The command reads the same private `GYM_DB_HOST`, `GYM_DB_PORT`, `GYM_DB_USER`,
+`GYM_DB_PASSWORD`, and `GYM_DB_NAME` settings as the application. On success it
+prints only `pruned_push_rate_limit_windows=<count>`; failures return a fixed,
+non-sensitive error without settings, SQL, exceptions, or tracebacks.
+
+
+An attempted check that fails is failed; a check not run because it is unavailable or unauthorized is unexecuted, with its reason.

@@ -17,8 +17,12 @@ def test_release_docs_require_actual_evidence_and_prohibit_automatic_deploy() ->
         assert required in combined
 
 
-def test_readme_documents_safe_operations_and_preserves_existing_runbooks() -> None:
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+def test_linked_docs_preserve_safe_operations_and_existing_runbooks() -> None:
+    readme = "\n".join(
+        (ROOT / name).read_text(encoding="utf-8")
+        for name in ("README.md", "docs/architecture.md",
+                     "docs/operations/database.md", "docs/operations/runbook.md")
+    )
     normalized = " ".join(readme.split())
 
     for required in (
@@ -56,8 +60,8 @@ def test_readme_documents_safe_operations_and_preserves_existing_runbooks() -> N
     assert "git reset --hard" not in readme
 
 
-def test_readme_documents_exact_health_and_sanitized_output_contracts() -> None:
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+def test_runbook_documents_exact_health_and_sanitized_output_contracts() -> None:
+    readme = (ROOT / "docs/operations/runbook.md").read_text(encoding="utf-8")
     normalized = " ".join(readme.split())
 
     for required in (
@@ -74,8 +78,8 @@ def test_readme_documents_exact_health_and_sanitized_output_contracts() -> None:
         assert required in normalized
 
 
-def test_readme_qualifies_public_forecast_metrics() -> None:
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+def test_forecasting_docs_qualify_public_forecast_metrics() -> None:
+    readme = (ROOT / "docs/forecasting.md").read_text(encoding="utf-8")
     normalized = " ".join(readme.split())
 
     for required in (

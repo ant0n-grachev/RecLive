@@ -1,385 +1,177 @@
 # RecLive
 
-*Train smarter. Skip the crowd.*
+**Train smarter. Skip the crowd.**
 
-RecLive is a live gym intelligence app for UW students.
+RecLive helps UW–Madison students decide when to visit the Nicholas Recreation Center (Nick) and Bakke Recreation & Wellbeing Center. Check current crowd levels, explore floor maps, find quieter forecast windows, and get a one-time alert when an area drops below your chosen threshold.
 
-It helps people answer one simple question before they walk over:
-**"Is it worth going right now?"**
+[Open RecLive](https://reclive.netlify.app) · [Nick](https://reclive.netlify.app/nick) · [Bakke](https://reclive.netlify.app/bakke)
 
-## The Idea
+## What it does
 
-Campus gyms can feel random.
-Sometimes they are perfect, sometimes they are packed.
-RecLive gives students a fast read on current crowd levels and near-term trends so they can plan better workouts.
+- Live occupancy by building and gym area, with floor-map heatmaps.
+- Seven-day crowd forecasts, quieter visit windows, and official opening hours.
+- One-time Web Push alerts with expiry and cancellation.
+- A responsive, installable Progressive Web App with an offline app shell.
+- Freshness and coverage checks: missing readings stay unavailable instead of becoming zero.
 
-## What RecLive Does
+RecLive depends on the official RecWell measurements and schedules. Forecasts are estimates, and cached readings have a limited lifetime. Offline installation does not provide new live data.
 
-- Shows real-time occupancy for Nick and Bakke
-- Breaks crowd levels down by key gym areas
-- Highlights daily forecast windows (low, medium, peak)
-- Sends one-time alerts when occupancy drops below your threshold
-- Works as a mobile-first Progressive Web App
+## Technologies
 
-## Why It Matters
+| Layer | Technologies | How RecLive uses them |
+| --- | --- | --- |
+| App | React 19, TypeScript, React Router 7 | Dashboard components, typed state, and `/nick` and `/bakke` routes. |
+| Design | Material UI 7, MUI icons, Emotion, Roboto, Framer Motion | Responsive layouts, themes, accessible controls, typography, and motion. |
+| Data client | Axios, Zod | API requests, response validation, cancellation, and safe fallback between live sources. |
+| Build and PWA | Vite 7, vite-plugin-pwa, Workbox, Web App Manifest | Production bundles, a custom service worker, app-shell caching, installation, and update prompts. |
+| Visualizations | SVG and TypeScript | Interactive floor-map overlays and crowd forecast charts. |
+| API | Python, FastAPI, Uvicorn | HTTP endpoints for occupancy, forecasts, schedules, health, and push subscriptions. |
+| Database | MySQL 8.0/8.4 or MariaDB 10.11, PyMySQL | Current snapshots, historical counts, ingestion records, alert rules, and rate limits. Versioned SQL migrations manage the schema. |
+| Collection | Requests, Beautiful Soup | Occupancy-feed ingestion and parsing official RecWell opening hours. |
+| Forecasting | NumPy, XGBoost, pytz, Open-Meteo | Historical and calendar features, weather inputs, model training, calibrated forecasts, and timezone handling. |
+| Notifications | Push API, Notifications API, pywebpush, VAPID | Browser subscriptions and one-time server-triggered crowd alerts. |
+| Configuration | python-dotenv, Vite environment variables | Local backend settings and two explicitly public frontend URLs. |
+| Quality | ESLint, TypeScript, Ruff, Vitest, Testing Library, MSW, pytest, HTTPX, freezegun | Static checks, component tests, mocked API behavior, backend and time-dependent tests. |
+| Browser testing | Playwright, axe-core, vitest-axe, jsdom | Route, interaction, PWA, and accessibility checks. |
+| Automation | GitHub Actions, Dependabot, Gitleaks, npm audit | Frontend checks, MySQL/MariaDB integration tests, dependency review, updates, and secret scanning. |
+| Hosting | Netlify and Synology | Netlify serves the frontend; the Python API runs on a privately managed Synology host. |
 
-- Less time wasted traveling to packed gyms
-- Better workout consistency
-- Better experience for both beginners and regulars
+Dependency versions are recorded in [`package-lock.json`](package-lock.json) and [`server/requirements.txt`](server/requirements.txt); backend test tools are in [`server/requirements-dev.txt`](server/requirements-dev.txt).
 
-## Product Focus
+## How it works
 
-RecLive is designed to be:
-
-- Fast to read
-- Simple to trust
-- Useful in seconds
-
-No dashboard overload. Just the info you need to decide when to go.
-
-## Tech Stack
-
-- Frontend: React, TypeScript, Vite, Material UI
-- Backend API: FastAPI (Python)
-- Data: MySQL + live occupancy feed ingestion
-- Forecasting: XGBoost predictions
-- Notifications: Web Push (VAPID)
-- Platform: Progressive Web App (PWA)
-
-## Architecture and configuration boundaries
-
-The browser is a React/Vite PWA. The FastAPI service reads current snapshots,
-forecasts, schedules, and push state from backend-only configuration. MySQL
-retains schema migrations, current occupancy snapshots, history, ingestion
-runs, alert rules, and rate-limit counters.
-
-Live occupancy tries the public feed used by UW RecWell's
-[Live Building Usage widget](https://recwell.wisc.edu/locations/) first, then
-RecLive's `/api/live-counts` snapshots. The public widget integration is separate
-from the private backend ingestion configuration; `LIVE_COUNTS_URL` is never
-sent to the browser. Forecasts, schedules, and push alerts still use RecLive's API.
-
-A source is usable for the selected facility when fresh observations cover at
-least 80% of its open capacity, or every configured area is confirmed closed.
-Malformed, empty, incomplete, or failed responses trigger the backup. Backup
-and saved-browser readings retain their observation timestamps and are usable
-for at most ten minutes; receiving them again does not make them fresh. The
-official adapter timestamps successful observations when received and bypasses
-browser response caching. Both paths ultimately depend on the same official
-measurements, so the backup bridges short outages rather than generating new
-counts.
-
-Missing optional information is hidden. If no usable occupancy remains, the
-dashboard shows only a simple unavailable screen with a retry action and the
-facility selector. Normal facility closures remain distinct from outages. Live
-polling and visibility/reconnection refresh restore the dashboard automatically.
-
-Only the public frontend variables `VITE_API_BASE_URL` and `VITE_SITE_URL` may
-enter the browser build. `VITE_API_BASE_URL` is an origin or deployment prefix,
-without an `/api` suffix; the client appends canonical `/api/...` paths. For a
-local frontend-origin build, use
-`VITE_API_BASE_URL=http://127.0.0.1:4173` and
-`VITE_SITE_URL=http://127.0.0.1:4173`, with a same-origin proxy routing
-`/api/...` to FastAPI. A separately exposed backend origin can instead be the
-prefix when that is the real deployment topology.
-
-`LIVE_COUNTS_URL`, database settings, `PUSH_VAPID_PUBLIC_KEY`, the VAPID private
-key, the endpoint-hash key, and the admin token are backend-only environment
-inputs and must never gain a `VITE_` prefix. The public VAPID value is delivered
-at runtime by GET `/api/push/public-key` as `{ "publicKey": ... }`; it is not a
-third build-time variable. Push subscriptions are browser-generated runtime
-material sent to the backend. They must not be bundled, logged, or exposed by
-public/readiness responses, while the VAPID private key always remains on the
-backend.
-
-## Local setup
-
-```bash
-npm ci
-python -m pip install -r server/requirements.txt
-python -m pip install -r server/requirements-dev.txt
-cp .env.example .env
+```mermaid
+flowchart LR
+    Feed[Official RecWell occupancy] --> Browser[React PWA]
+    Feed --> Collector[Python ingestion job]
+    Collector --> DB[(MySQL / MariaDB)]
+    Hours[Official opening hours] --> Schedules[Schedule collector]
+    Weather[Open-Meteo weather] --> Forecast[XGBoost forecast job]
+    DB --> Forecast
+    Schedules --> Forecast
+    Forecast --> JSON[Forecast artifact]
+    DB --> API[FastAPI]
+    Schedules --> API
+    JSON --> API
+    API --> Browser
+    Browser --> Rules[Push subscriptions and rules]
+    Rules --> API
+    API --> Push[Web Push provider]
+    Push --> Browser
 ```
 
-Use only local, non-production values in `.env`. In production, inject private
-variables through the backend host's secret manager or process manager. Do not
-upload `.env` to the frontend host. Production CORS configuration must contain
-explicit, comma-separated HTTPS origins; wildcard CORS is rejected.
+1. **Collect:** the ingestion job validates and deduplicates official measurements, saves the latest snapshots, and records history. A separate collector refreshes Nick and Bakke schedules.
+2. **Forecast:** the forecast job combines historical occupancy, calendar patterns, opening hours, and weather, then writes a forecast artifact. FastAPI serves that artifact without training a model during a page request.
+3. **Display:** the browser tries the public RecWell widget feed first, then the API snapshots and recent browser cache. A usable source needs fresh coverage of at least 80% of open capacity, or confirmation that every configured area is closed. Backup readings expire after ten minutes.
+4. **Refresh:** visibility-aware polling and reconnect events refresh the dashboard. Missing optional sections are hidden; unavailable occupancy gets a simple retry screen.
+5. **Notify:** the backend stores alert rules and evaluates them against occupancy. A committed claim prevents repeated provider attempts; provider acceptance and device delivery are separate outcomes.
 
-## Database migrations
+See [architecture and configuration boundaries](docs/architecture.md), [forecasting and metric definitions](docs/forecasting.md), and the [operator runbook](docs/operations/runbook.md).
 
-Apply checked-in MySQL schema changes before starting an application process that
-needs new tables or columns:
+## Run locally
+
+Use Node.js 22, Python 3.12, and a dedicated local MySQL 8.0/8.4 or MariaDB 10.11 database. Run commands from the repository root.
 
 ```bash
+git clone https://github.com/ant0n-grachev/RecLive.git
+cd RecLive
+npm ci
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r server/requirements.txt -r server/requirements-dev.txt
+cp -n .env.example .env
+```
+
+Fill in `.env` with local database settings and your backend integration configuration. For separate local frontend and API processes, use:
+
+```dotenv
+VITE_API_BASE_URL=http://127.0.0.1:8000
+VITE_SITE_URL=http://127.0.0.1:5173
+FORECAST_API_ALLOW_ORIGINS=http://127.0.0.1:5173
+APP_ENV=development
+PUSH_EVALUATOR_ENABLED=false
+```
+
+`VITE_API_BASE_URL` is an origin or deployment prefix **without an `/api` suffix**. Only it and `VITE_SITE_URL` belong in the public frontend build. `LIVE_COUNTS_URL`, database credentials, VAPID settings, and push secrets are backend-only. See [`.env.example`](.env.example) for the available settings.
+
+For a new, empty local database, initialize the schema and start the API:
+
+```bash
+source .venv/bin/activate
 python server/migrate.py
+uvicorn server.forecast_api:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-The command reads the private `GYM_DB_HOST`, `GYM_DB_PORT`, `GYM_DB_USER`,
-`GYM_DB_PASSWORD`, and `GYM_DB_NAME` environment variables. It records every
-applied migration filename and SHA-256 checksum in `schema_migrations`. Most
-migrations hash their exact SQL bytes. Migration `0003` records an effective,
-domain-separated checksum over its exact SQL, push-rule backfill, and push
-identity artifacts; never edit any applied migration artifact.
+Existing databases require the [migration and coordinated cutover procedure](docs/operations/database.md), including a verified backup. Do not point local setup commands at production.
 
-The `0003` push-rule contract migration is an explicit coordinated cutover. To
-apply it, first take and verify a recoverable database backup, then drain every
-legacy process that reads or writes the raw `push_rules.endpoint` column. Keep
-the same `PUSH_ENDPOINT_HASH_KEY` available for the entire attempt and every
-recovery run. Then set `PUSH_RULE_SCHEMA_CUTOVER_READY=1`, run the migration
-command, and start the Phase 5 application code that consumes the hashed
-push-rule schema. Do not enable the gate while a legacy process is still
-running, and do not start the legacy application again after the cutover.
-
-During a legacy conversion, `0003` atomically moves the source table behind an
-internal cutover name before it snapshots or backfills any row. The public
-legacy table name stays absent through validation, so stale INSERT, duplicate
-update, UPDATE, and DELETE statements fail closed. If the command stops, leave
-the internal table and migration-attempt records in place, keep legacy writers
-drained, preserve the exact migration artifacts and hash key, and rerun the same
-command; do not rename tables or edit attempt rows by hand. Only after the raw
-column is removed and the final contract validates does the migration atomically
-restore `push_rules`. The temporary cutover table must then be absent, and stale
-endpoint-based statements fail structurally against the final schema.
-
-Use a least-privilege MySQL account that can read and write RecLive tables but
-cannot administer unrelated schemas. Apply migrations once before starting a
-new application process that needs the schema. The migration runner compares
-the exact filenames and effective checksums already recorded; a missing,
-additional, reordered, or mismatched artifact stops the operation rather than
-silently accepting drift.
-
-## Official facility hours
-
-Refresh the saved Nick and Bakke schedules with:
+In a second terminal, from `RecLive/`:
 
 ```bash
+npm run dev -- --host 127.0.0.1 --port 5173
+```
+
+Open [the local dashboard](http://127.0.0.1:5173/nick) and [API documentation](http://127.0.0.1:8000/docs). To populate your local database and artifacts after configuring the sources:
+
+```bash
+source .venv/bin/activate
 python server/facility_hours_fetch.py
-```
-
-The command validates the complete two-facility artifact before replacing the
-existing file atomically. If one facility cannot be refreshed, only an earlier
-valid schedule for that facility may be retained; it is marked stale, the other
-valid fresh facility is still published, and the command exits nonzero. Without
-a valid earlier schedule, the failed facility is published without invented
-hours and the command also exits nonzero.
-
-`SCHEDULE_STALE_AFTER_SECONDS=21600` is the canonical six-hour freshness
-setting. At runtime, the legacy `SCHEDULE_MAX_AGE_SECONDS` value is used only
-when the canonical setting is absent. Fetch and publication errors use fixed,
-sanitized categories and never expose upstream request data, response content,
-paths, or credentials.
-
-## Runtime commands and recommended cadences
-
-```bash
 python server/gym_fetch.py
-python server/facility_hours_fetch.py
 python server/forecast_job.py
-uvicorn server.forecast_api:app --host 127.0.0.1 --port 8000
-curl -fsS http://127.0.0.1:8000/health
 ```
 
-Recommended cadences are live ingestion at least every 90 seconds, forecast
-generation every 15 minutes, facility-hours ingestion every 4 hours, and push
-evaluation at its configured interval. These are operating recommendations,
-not scheduler configuration supplied by the entry points. Run only one
-scheduler for each command. The database-backed evaluator lock protects
-cross-process alert dispatch; it does not make duplicate ingestion or forecast
-cron entries safe.
+These jobs fetch real upstream data and write local state. Forecasts need historical observations; a new database will not immediately have useful predictions. Enable push only after configuring VAPID and endpoint-hash settings; deployed Web Push requires HTTPS and browser permission.
 
-The three freshness thresholds are positive seconds:
-`INGESTION_STALE_AFTER_SECONDS=600`,
-`FORECAST_STALE_AFTER_SECONDS=21600`, and
-`SCHEDULE_STALE_AFTER_SECONDS=21600`. A nonpositive value is invalid in every
-environment. `SCHEDULE_STALE_AFTER_SECONDS` is canonical;
-`SCHEDULE_MAX_AGE_SECONDS` is a backward-compatible alias used only when the
-canonical variable is absent.
+## Deploy
 
-## Health and operational output
+The frontend is hosted at [reclive.netlify.app](https://reclive.netlify.app), backed by FastAPI on a Synology host. Netlify is connected to `main`, uses `npm run build`, and publishes `dist/`.
 
-`GET /health` is an unauthenticated, read-only readiness report. Its top-level
-keys are exactly `status`, `checkedAt`, and `components`; component names are
-exactly `api`, `database`, `migrations`, `ingestion`, `forecast`, `schedules`,
-and `push`. Each component is limited to `status`, `observedAt`, `ageSeconds`,
-and `detail`, with a status of `ready`, `stale`, `missing`, or `unavailable`.
-All timestamps are UTC ISO-8601 values. A safely generated degraded report
-returns HTTP 200. Inability to produce any safe report returns HTTP 503 with the
-fixed detail `health_unavailable`. The separate `/health/push` route remains
-protected.
+1. Run the checks below and record the source commit and actual results.
+2. Configure **only** `VITE_API_BASE_URL` and `VITE_SITE_URL` on the frontend host, using the production API and site URLs. Run `npm ci` and `npm run build`. Publish only `dist/`; its `_redirects` file provides SPA fallback for both facility routes.
+3. Install the Python runtime requirements on the backend host. Supply private configuration through its process manager, set `APP_ENV=production`, and allow the exact frontend HTTPS origin in CORS.
+4. Follow the [database migration procedure](docs/operations/database.md) before starting code that needs a schema change. Keep database contents, keys, model files, and generated forecast artifacts outside the frontend deployment.
+5. Start the API with `uvicorn server.forecast_api:app --host 127.0.0.1 --port 8000` behind an HTTPS reverse proxy. Register one scheduler per job: ingestion at least every 90 seconds, forecasts every 15 minutes, and schedules every four hours. These are recommended cadences; the commands do not install schedulers.
+6. Check `/health` on the backend and its public URL, then open `/nick` and `/bakke` in a browser. A successful upload alone does not verify a release.
 
-Health migration readiness compares the migration runner's filenames and
-effective checksums, including the frozen helper bytes that contribute to
-migration `0003`. Source health retains independent database, artifact, and
-schedule evidence: future, unreadable, malformed, stale, or missing sources do
-not become ready. Ready push health only verifies local prerequisites; it does
-not verify provider acceptance, notification delivery, OS installation, or
-device display.
+Use the existing Synology service and scheduler configuration when updating an established installation; do not add duplicate jobs. The [operator runbook](docs/operations/runbook.md) covers backups, migration compatibility, push lifecycle, health interpretation, maintenance, and recovery. Keep a previous verified deployment available for rollback; application rollback does not reverse schema changes.
 
-Executable operational output is allowlisted JSON with an aware UTC timestamp,
-bounded event/category names, and nonnegative counts where applicable.
-Configuration failures report variable names and fixed reasons, never rejected
-values. Output does not include environment dictionaries, database values,
-upstream bodies, subscriptions, endpoints, artifact paths, exception text, or
-tracebacks.
-
-## Forecast reporting diagnostics
-
-The generated forecast's `modelInfo.metrics` and `modelInfo.metricContext`
-describe qualified reporting diagnostics:
-
-- `metrics.maePeople` is mean absolute error in people for location rows where
-  both the cleaned observed people target and prediction are finite.
-- `metrics.rmsePeople` is root mean square error in people over the same valid
-  actual-plus-prediction rows.
-- `metrics.maeCapacityPercentagePoints` divides absolute people error by that
-  row's finite, positive per-location normalization capacity and multiplies by
-  100. Its valid population can be smaller than the people-error population.
-- `metrics.predictionIntervalCoverage` is a fraction from 0 to 1 for valid
-  observed targets within a finite, ordered lower/upper interval; it is not a
-  0-to-100 percentage field.
-- `metrics.simpleBaselineMaePeople` is mean absolute error in people against a
-  per-location raw last-observation persistence baseline frozen at each UTC
-  window start. Observation and fetched/availability times must both strictly
-  precede the window start; late, absent, invalid, or ambiguous observations
-  provide no baseline for that row.
-- `metricContext.observationCounts` and each window's `observationCounts` give
-  separate samples for every metric; the valid populations are not assumed to
-  match.
-
-The overall and per-facility method is `fixed_model_terminal_holdout`, and
-`independentBacktest` is `false`. One fitted model is evaluated across
-non-overlapping UTC windows anchored at the actual terminal split, normally 24
-hours with a possibly shorter final window. This is not rolling-origin
-retraining. Retrospective preprocessing, full-history priors, tuning/selection,
-and later calibration/champion selection prevent an independent-backtest
-claim.
-
-Rows are location observations from freshly trained-and-saved selected
-facility-wide `__all__` models for facilities `1186` and `1656`; they are not
-facility totals or final served/blended forecasts. The target is the cleaned,
-schedule-adjusted bucket mean retained before ratio clipping. Model ratios,
-predictions, and intervals are converted to people with each row's normalization
-capacity: the maximum capacity encountered in loaded model history, not an
-as-of historical capacity.
-
-The `metricContext.timestampAlignment` reporting guard requires every
-contributing location's canonical DB observation instant to match its preserved
-model instant. Missing, unparseable, mismatched, or mixed alignment suppresses
-that selected model's rows and windows instead of publishing uncertain
-coverage. This reporting guard does not repair or reinterpret the preserved DB
-timezone/source-time integration.
-
-When a valid population is empty, scalar metrics are JSON `null`, its count is
-zero, and `rollingHoldoutByFacility` is empty when no facility has qualified
-evidence. A missing baseline can leave only the baseline metric/count
-unavailable, and one qualifying facility may still contribute when the other
-is suppressed. `metricContext.compatibilityAliases` maps public `valMae` and
-`valRmse` to the people metrics. Legacy `byFacility`/`byModel` `valMae`,
-`valRmse`, `holdoutMae`, and `holdoutRmse` remain weighted occupancy ratios;
-guardrail, drift, and blend telemetry retain their algorithm-specific units.
-
-## Push alert limits, lifecycle, and maintenance
-
-Push rules default to 24 hours (`PUSH_RULE_DEFAULT_TTL_SECONDS=86400`) and
-cannot exceed seven days (`PUSH_RULE_MAX_TTL_SECONDS=604800`). The API permits
-ten active rules per push endpoint (`PUSH_MAX_ACTIVE_RULES_PER_ENDPOINT=10`)
-and twenty write attempts per ten-minute window (`PUSH_WRITE_RATE_LIMIT=20`,
-`PUSH_WRITE_RATE_WINDOW_SECONDS=600`). Rule management uses server-backed list
-and cancel operations.
-
-The write limit is per hashed subject: a usable normalized subscription
-endpoint is the subject, and only requests without one fall back to the hashed
-immediate client address. Different usable endpoints therefore have independent
-counters. This is not a global traffic ceiling, and the rate-limit table stores
-no raw endpoint or client address.
-
-Pending rows can become expired or cancelled without being claimed. Normal
-claimed sends terminalize as sent, failed, or invalid subscription. A crash or
-ambiguous post-claim failure can intentionally leave the row permanently
-claimed and never retried. The claim is committed before provider I/O; this
-preserves at-most-once provider attempts but does not guarantee terminal state
-or delivery. Provider acceptance and device display remain outside RecLive's
-control.
-
-Raw push endpoints, subscription keys, client subjects, and provider response
-bodies are never returned or logged. Operational output is count-only. Never
-dump the environment or include private database settings in logs or support
-artifacts.
-
-Prune rate-limit rows older than two 600-second windows with:
-
-```bash
-python server/prune_push_rate_limits.py
-```
-
-The command reads the same private `GYM_DB_HOST`, `GYM_DB_PORT`, `GYM_DB_USER`,
-`GYM_DB_PASSWORD`, and `GYM_DB_NAME` settings as the application. On success it
-prints only `pruned_push_rate_limit_windows=<count>`; failures return a fixed,
-non-sensitive error without settings, SQL, exceptions, or tracebacks.
-
-## Deployment
-
-Build the frontend with only its two public frontend variables present:
-
-```bash
-npm ci
-npm run build
-```
-
-Serve `dist/` from the frontend host with SPA fallback for `/nick` and `/bakke`.
-Deploy the backend with private variables injected by the backend host. Run
-`python server/migrate.py` once before starting new backend processes, then
-verify both the backend-local route and the externally routed deployment return
-the sanitized `/health` contract. This describes the deployment verification
-to perform; it is not evidence that a deployment or external route was checked.
-
-Do not deploy `.env`, `server/forecast.json`, model artifacts, database dumps,
-push subscriptions, or private backup bundles to the frontend host. The PWA
-requires HTTPS in production, a manifest, a service worker, and install icons.
-
-## Testing and security checks
+## Verify changes
 
 ```bash
 npm run lint
-npm run build
-npm run test:run
-npm run test:e2e
+env -u NODE_OPTIONS node tests/frontend/run-isolated.cjs build
+env -u NODE_OPTIONS node tests/frontend/run-isolated.cjs test:run
+npx playwright install chromium
+env -u NODE_OPTIONS node tests/frontend/run-isolated.cjs test:e2e
+source .venv/bin/activate
 ruff check server tests
 python -m pytest -q
 npm audit --omit=dev
-git diff --check
 gitleaks git --redact --log-opts="--all"
+git diff --check
 ```
 
-The Gitleaks command scans all reachable history while redacting suspected
-secret values from output. Do not infer provider, deployment, or notification
-success from mocks or local readiness. An attempted check that fails is failed;
-a check not run because it is unavailable or unauthorized is unexecuted with
-its reason.
+The isolated frontend launcher uses synthetic public URLs and blocks checkout `.env` reads; its build is for verification. Production builds use the production URLs. Backend tests likewise isolate application configuration. Real database tests require a disposable database configured through `TEST_MYSQL_*`; GitHub Actions runs them against MySQL 8.4 and MariaDB 10.11. See the [full verification procedure](docs/operations/runbook.md#evidence-record), including coverage and dependency checks. Install Gitleaks separately for the history scan.
 
-## Re-cloning after the history rewrite
+## Repository layout
 
-The repository history was rewritten before this implementation branch.
-Collaborators must re-clone the repository or carefully rebase a clean local
-branch onto the rewritten remote history. Rewriting published references does
-not erase copies retained in private backups, forks, caches, or old clones.
+```text
+src/app/                 App shell, routing, theme, and refresh hooks
+src/features/            Dashboard, forecasts, heatmaps, and alerts
+src/facilities/          Shared facility UI and compatibility components
+src/lib/                 API clients, validation, configuration, and storage
+src/pwa/                 Service worker and update lifecycle
+public/                  Floor maps, icons, manifest, and Netlify redirects
+shared/                  Facility capacity definitions
+server/reclive/          API, ingestion, forecasting, database, and push services
+server/migrations/       Immutable versioned SQL migrations
+server/*.py              Operational command and compatibility entry points
+tests/                   Backend, browser, isolation tests, and fixtures
+docs/                    Architecture, forecasting, and operations guides
+.github/                 CI, security checks, and dependency updates
+```
 
-## Built by
+Completed implementation plans remain in Git history. Private configuration, generated artifacts, test output, and local recovery copies are ignored. Please use [SECURITY.md](SECURITY.md) for vulnerability reporting and handling sensitive material.
 
-Built by Anton and [Alex](https://github.com/alexgabrichidze).
+## License and credits
 
-## Release evidence
-
-Verification does not authorize merging or deployment. Do not merge or deploy
-automatically; do not deploy without explicit release authorization. This is an
-operator/workflow constraint, not a claim that external host settings were inspected.
-Before proposing a release, retain the source commit SHA and record the exact
-command and actual result of every attempted check. Mark a failed attempt as
-failed; mark a check not run because it is unavailable or unauthorized as
-**unexecuted**, with its reason. Follow the ordered checklist in
-[`docs/operations/runbook.md`](docs/operations/runbook.md#evidence-record), including
-`git diff --check`, frontend build/tests, backend tests, migration tests on clean
-and already-migrated MySQL 8.4, Gitleaks, and `npm audit --omit=dev`.
-Never infer provider delivery, OS installation, or deployment success from a mock,
-upload, workflow configuration, build, or deployment command alone.
+Licensed under [Apache 2.0](LICENSE). Built by Anton and [Alex](https://github.com/alexgabrichidze).

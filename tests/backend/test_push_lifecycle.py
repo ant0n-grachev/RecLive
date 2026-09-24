@@ -5688,8 +5688,8 @@ def test_prune_package_module_reaches_database_and_sanitizes_failure(
     assert "Traceback" not in result.stdout + result.stderr
 
 
-def test_readme_documents_push_limits_lifecycle_privacy_and_pruning() -> None:
-    readme = (Path(__file__).resolve().parents[2] / "README.md").read_text()
+def test_runbook_documents_push_limits_lifecycle_privacy_and_pruning() -> None:
+    readme = (Path(__file__).resolve().parents[2] / "docs/operations/runbook.md").read_text()
     normalized_readme = " ".join(readme.split())
     required_text = (
         "python server/prune_push_rate_limits.py",

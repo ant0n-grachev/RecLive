@@ -32,6 +32,18 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Local tooling, recovery copies, and generated backend artifacts
+.local/
+.superpowers/
+.netlify/
+*.bundle
+/server/forecast.json
+/server/model_artifacts/
+/model_artifacts/
 
 # Environment files
 .env
