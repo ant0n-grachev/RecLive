@@ -24,7 +24,7 @@
     "axios": "^1.18.0",
     "framer-motion": "^12.34.3",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0",
+    "react-dom": "^19.3.0",
     "react-router-dom": "^7.18.2",
     "zod": "4.1.12"
   },
@@ -37,7 +37,7 @@
     "@testing-library/user-event": "^14.6.7",
     "@types/node": "^24.10.0",
     "@types/react": "^19.2.2",
-    "@types/react-dom": "^19.2.2",
+    "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.1.0",
     "@vitest/coverage-v8": "4.1.11",
     "axe-core": "4.10.3",
