@@ -4,11 +4,23 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 1
+    groups:
+      frontend-dependencies:
+        patterns: ["*"]
   - package-ecosystem: "pip"
     directory: "/server"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 1
+    groups:
+      backend-dependencies:
+        patterns: ["*"]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 1
+    groups:
+      github-actions:
+        patterns: ["*"]
