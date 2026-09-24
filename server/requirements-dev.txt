@@ -1,9 +1,9 @@
-pytest==8.3.4
-pytest-cov==6.0.0
-ruff==0.9.7
+pytest==9.1.1
+pytest-cov==7.1.0
+ruff==0.16.8
 httpx==0.28.1
 # Temporary TestClient compatibility: Starlette 0.45.x uses the pre-4.15 alias.
 # Remove when a compatible released Starlette uses anyio.from_thread.BlockingPortal.
-anyio==4.14.2
-freezegun==1.5.1
-pyyaml==6.0.2
+anyio==4.15.1
+freezegun==1.5.5
+pyyaml==6.0.3
