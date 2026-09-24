@@ -5,5 +5,5 @@ httpx==0.28.1
 # Temporary TestClient compatibility: Starlette 0.45.x uses the pre-4.15 alias.
 # Remove when a compatible released Starlette uses anyio.from_thread.BlockingPortal.
 anyio==4.14.2
-freezegun==1.5.1
+freezegun==1.5.5
 pyyaml==6.0.2
