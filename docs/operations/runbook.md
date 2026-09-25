@@ -119,6 +119,32 @@ This runbook describes actions for a future explicitly authorized operator. It i
 
 - Recommended operating cadences are live ingestion at least every 90 seconds, forecast generation every 15 minutes, facility-hours ingestion every 4 hours, and push evaluation at its configured interval. These are recommendations, not proof that a scheduler is installed or running.
 - Review the read-only `/health` result after scheduler, configuration, migration, or release changes. Investigate stale, missing, unavailable, and future-timestamp evidence without converting it into a success claim.
+
+### Synology forecast verification
+
+The hourly verifier is an isolated backend command, not a model-training job.
+On the established Synology installation its versioned code lives under
+`/volume1/homes/superuser/reclive/operations/forecast-verification/releases/`,
+with a `current` symlink. The existing minute ingestion launcher starts the
+verifier as a separate process with `--hourly`; its lock and successful-run marker
+gate execution to once per hour after minute 07. Ingestion does not wait for the
+comparison. This reuses the existing scheduler and boot behavior without adding
+a duplicate ingestion or forecast schedule.
+
+Results survive code releases in
+`/volume1/homes/superuser/reclive/shared/forecast-verification/`:
+
+- `hourly-comparisons.txt`: per-hour predicted and recorded people, errors,
+  crowd-category agreement, lead time, publication time, coverage and exclusions.
+- `summary.txt`: cumulative per-gym results for the 1-hour and 24-hour groups.
+- `verification-state.json`: retained machine-readable evidence and last successful run.
+- `runner.log`: bounded event lines per completed or failed attempt, with no credentials.
+
+Check the report's update time and `runner.log` to confirm continued operation.
+The website's `/health` does not certify this optional verifier. A new installation
+initially reports `n/a` until a forecast published far enough ahead has a completed
+target hour. See [forecasting](../forecasting.md#hourly-verification) for eligibility,
+metric definitions, retry behavior and manual catch-up options.
 - After explicit database-maintenance authorization, prune rate-limit rows older than two configured 600-second windows with `python server/prune_push_rate_limits.py`. Record only the bounded count or fixed failure category.
 - Review CI results, redacted full-history Gitleaks output, dependency review on pull requests, Dependabot updates, `npm audit --omit=dev`, backup-restoration evidence, and migration immutability weekly. A scanner or workflow result is evidence for the checked scope, not proof of provider or deployment success.
 - Keep private pre-rewrite backup bundles untracked and access-controlled. Because the history rewrite does not erase private backups, forks, caches, and old clones, new collaborators must re-clone the rewritten repository (or carefully rebase clean work) and must not republish old references.

@@ -43,6 +43,7 @@ __pycache__/
 *.bundle
 /server/forecast.json
 forecast-history/
+forecast-verification/
 /server/model_artifacts/
 /model_artifacts/
 

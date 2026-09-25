@@ -100,3 +100,51 @@ qualified actuals, grouped by lead time. Compare the final served counts with a
 simple baseline. The historical chart and the terminal model metrics documented above are
 not substitutes for that evaluation. Archiving makes future verification possible;
 it does not itself establish an accuracy score.
+
+## Hourly verification
+
+`server/verify_forecasts.py` compares immutable published forecasts with completed
+hourly attendance in a read-only database transaction. It produces private,
+cumulative `hourly-comparisons.txt` and `summary.txt` files, plus
+`verification-state.json` with the exact archive and timestamps behind each row.
+These files are operational records, not browser assets.
+
+Two separate groups measure predictions published **1–2 hours** and **24–25
+hours** before each target hour starts (upper bounds exclusive). The newest
+eligible publication is selected. Four quarter-hour predictions are averaged
+and rounded like the hourly chart; forecasts revised after the cutoff cannot
+replace them. Scored records remain unchanged on subsequent runs. Crowd-category
+agreement uses each prediction's archived thresholds for both counts.
+
+Only completed, fully open hours with qualified attendance are scored. Closed,
+partly open, unknown-schedule, missing-forecast, and insufficient-observation
+hours remain visible with an exclusion status. Missing data is never treated as
+zero or perfect accuracy. Attendance represents recorded hourly average
+occupancy, not unique visitors or an independent validation of the source counter.
+Official opening-hour eligibility uses the current fresh schedule for the target
+date; historical changes to that schedule are not independently archived.
+
+The summary reports sample counts, mean absolute error in people, signed bias
+(positive means overprediction), root mean squared error, and crowd-category
+agreement, separately for each gym and lead group. It does not yet compare the
+model with a simple baseline or establish an overall accuracy percentage.
+
+Use the backend environment and existing Python runtime:
+
+```bash
+python server/verify_forecasts.py \
+  --archive-dir /path/to/shared/forecast-history \
+  --output-dir /path/to/shared/forecast-verification \
+  --hourly
+```
+
+Invoke from one existing scheduler each minute, or hourly after minute 07.
+`--hourly` uses a process lock and persistent successful-run marker to perform
+one check per UTC hour, after seven minutes of ingestion grace. Failed runs
+remain retryable; retries cannot duplicate rows. Each run revisits the last
+three Chicago dates for delayed observations or brief outages. For a longer
+outage, omit `--hourly` and use `--lookback-days N` (up to 60). Records already
+scored remain unchanged. Text reports and state are replaced atomically, with
+state committed last so interrupted report writes are retried. Keep the output
+directory private and preserve it across releases; reports have no automatic
+pruning. Source forecast archives retain their existing 90-day policy.
