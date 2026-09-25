@@ -192,3 +192,89 @@ def test_precomputed_future_estimate_uses_observed_trajectory(monkeypatch, cache
 
     assert medians[1, 0] == pytest.approx(20.0)
     assert all(timestamp > NOW for timestamp in context["recursive_ratio_cache"][("test", 11)])
+
+
+class AdvancingLagModel:
+    """Deterministic inference that exposes which trajectory the features use."""
+
+    def __init__(self, lag_column):
+        self.lag_column = lag_column
+        self.batch_sizes = []
+
+    def predict(self, matrix):
+        self.batch_sizes.append(matrix.num_row())
+        return np.asarray(matrix.get_data().toarray()[:, self.lag_column] + 0.1, dtype=np.float32)
+
+
+def recursive_context(now, model, location_ids=(11,)):
+    location = {
+        "bucket_map": {now: 0.2}, "bucket_times": [now], "bucket_values": [0.2],
+        "raw_times": [now], "raw_values": [20.0], "max_cap": 100,
+        "fallback_avg_overall": (0.2, 1000), "is_stale": False,
+    }
+    context = estimate_context(location)
+    context.update({
+        "now": now,
+        "max_caps": {loc_id: 100 for loc_id in location_ids},
+        "loc_data": {loc_id: dict(location) for loc_id in location_ids},
+        "loc_samples": {loc_id: 1000 for loc_id in location_ids},
+        "avg_overall": {loc_id: (0.2, 1000) for loc_id in location_ids},
+        "loc_to_model_key": {loc_id: "test" for loc_id in location_ids},
+        "models_by_key": {"test": {"p50": model}},
+        "onehot_by_key": {"test": {loc_id: [1.0] for loc_id in location_ids}},
+        "model_prediction_cache": {}, "feature_cache": {},
+    })
+    return context
+
+
+def test_recursive_batch_uses_corrected_prior_forecast_and_keeps_location_batching(monkeypatch):
+    monkeypatch.setattr(config, "LIVE_BIAS_ENABLED", False)
+    monkeypatch.setattr(config, "MODEL_MISSING_FEATURE_BLEND_ENABLED", False)
+    monkeypatch.setattr(config, "MODEL_LONG_HORIZON_BLEND_ENABLED", True)
+    monkeypatch.setattr(config, "MODEL_LONG_HORIZON_BLEND_START_HOURS", 4.0)
+    monkeypatch.setattr(config, "MODEL_LONG_HORIZON_BLEND_FULL_HOURS", 12.0)
+    monkeypatch.setattr(config, "MODEL_LONG_HORIZON_BLEND_MAX_WEIGHT", 0.28)
+    now = datetime(2026, 9, 24, 17, tzinfo=timezone.utc)
+    model = AdvancingLagModel(lag_column=30)
+    context = recursive_context(now, model, location_ids=(11, 22))
+    targets = [now + timedelta(hours=hours) for hours in (12, 13, 14)]
+
+    _, _, _, (_, medians, _, _) = prediction.precompute_target_estimate_matrices_for_locations(
+        [11, 22], list(reversed(targets)), context,
+    )
+
+    # First corrected count is .72 * 30 + .28 * 20 = 27.2. Each next
+    # raw prediction adds ten to the corrected count, then blends again.
+    for column in range(2):
+        assert medians[:, column] == pytest.approx([27.2, 32.384, 36.11648])
+    assert model.batch_sizes == [2, 2, 2]
+
+
+@pytest.mark.parametrize("boundary,lag_column,target_hours,want", [
+    ("opening", 29, (10.0, 10.25, 10.5), [0.0, 10.0, 20.0]),
+    ("closing", 33, (2.0, 14.0), [0.0, 10.0]),
+])
+def test_recursive_batch_uses_schedule_boundary_zero_for_later_targets(
+    monkeypatch, boundary, lag_column, target_hours, want,
+):
+    monkeypatch.setattr(config, "LIVE_BIAS_ENABLED", False)
+    monkeypatch.setattr(config, "MODEL_MISSING_FEATURE_BLEND_ENABLED", False)
+    monkeypatch.setattr(config, "MODEL_LONG_HORIZON_BLEND_ENABLED", False)
+    monkeypatch.setattr(config, "SCHEDULE_BOUNDARY_ZERO_ENABLED", True)
+    now = datetime(2026, 9, 24, 20, tzinfo=timezone.utc)
+    sections = [{"title": "Building Hours", "rows": [{"label": "Mon-Fri", "hours": "6:00 am - 10:00 pm"}]}]
+    context = recursive_context(now, AdvancingLagModel(lag_column))
+    context["loc_data"][11]["schedule_sections"] = sections
+    context.update({
+        "facility_schedule_by_id": {1186: {"sections": sections}},
+        "location_facility_map": {11: 1186}, "schedule_boundary_cache": {},
+        "schedule_date_range_cache": {}, "schedule_weekday_cache": {},
+        "schedule_hours_cache": {},
+    })
+    targets = [now + timedelta(hours=hours) for hours in target_hours]
+
+    _, _, _, (_, medians, _, _) = prediction.precompute_target_estimate_matrices_for_locations(
+        [11], targets, context,
+    )
+
+    assert medians[:, 0] == pytest.approx(want), boundary

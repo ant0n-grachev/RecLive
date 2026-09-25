@@ -3449,12 +3449,6 @@ def precompute_target_estimate_matrices_for_locations(
             empty_i,
         )
 
-    prime_model_prediction_cache_for_targets(
-        loc_ids=normalized_loc_ids,
-        targets=normalized_targets,
-        ctx=ctx,
-    )
-
     height = len(normalized_targets)
     width = len(normalized_loc_ids)
     p10 = np.zeros((height, width), dtype=np.float32)
@@ -3463,6 +3457,13 @@ def precompute_target_estimate_matrices_for_locations(
     samples = np.zeros((height, width), dtype=np.int32)
 
     for t_idx, target in enumerate(normalized_targets):
+        # Batch locations at this target, then finish corrections and boundary
+        # zeros before building the next target's recursive lag features.
+        prime_model_prediction_cache_for_targets(
+            loc_ids=normalized_loc_ids,
+            targets=[target],
+            ctx=ctx,
+        )
         for l_idx, loc_id in enumerate(normalized_loc_ids):
             result = estimate_location(
                 int(loc_id),
