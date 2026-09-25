@@ -6,7 +6,7 @@ const HISTOGRAM_MARGIN_RIGHT = 2;
 const HISTOGRAM_MARGIN_TOP = 30;
 const HISTOGRAM_MARGIN_BOTTOM = 70;
 const HISTOGRAM_PLOT_HEIGHT = 146;
-const HISTOGRAM_SLOT_WIDTH = 11;
+const HISTOGRAM_SLOT_WIDTH = 22;
 const HISTOGRAM_TICK_TARGET = 5;
 export const HISTOGRAM_HOUR_LABEL_FONT_SIZE = 9;
 
@@ -20,12 +20,6 @@ export interface ForecastDisplaySlot {
     source: "actual" | "predicted" | "mixed";
     level: HistogramBandLevel;
 }
-
-export const FORECAST_SOURCE_LABELS = {
-    actual: "Actual",
-    predicted: "Forecast",
-    mixed: "Actual + forecast",
-} as const;
 
 export interface HistogramBar extends ForecastDisplaySlot {
     axisLabel: string;
@@ -99,7 +93,7 @@ export const buildHistogramModel = (
     const viewBoxWidth = HISTOGRAM_MARGIN_LEFT + plotWidth + HISTOGRAM_MARGIN_RIGHT;
     const viewBoxHeight = HISTOGRAM_MARGIN_TOP + HISTOGRAM_PLOT_HEIGHT + HISTOGRAM_MARGIN_BOTTOM;
     const baselineY = HISTOGRAM_MARGIN_TOP + HISTOGRAM_PLOT_HEIGHT;
-    const labelStepMinutes = slotSpan > 24 ? 120 : 60;
+    const labelStepMinutes = slotSpan > 12 ? 120 : 60;
     const bars: HistogramBar[] = sortedSlots.map((slot, index) => {
         const height = (slot.count / yMax) * HISTOGRAM_PLOT_HEIGHT;
         const x = HISTOGRAM_MARGIN_LEFT + ((slot.startTs - firstStartTs) / slotDurationMs) * HISTOGRAM_SLOT_WIDTH;

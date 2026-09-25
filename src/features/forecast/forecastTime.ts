@@ -4,13 +4,12 @@ import type {FacilityOpenWindow} from "../../shared/utils/facilityScheduleStatus
 import {getOccupancyTone, type OccupancyThresholds} from "../../shared/utils/styles";
 import {
     buildBandTimeRanges,
-    getLevelAtTimestamp,
     occupancyToneToBandLevel,
     type CrowdBand,
 } from "./forecastBands";
 import type {ForecastDisplaySlot} from "./forecastHistogram";
 
-export const FORECAST_DISPLAY_SLOT_MINUTES = 30;
+export const FORECAST_DISPLAY_SLOT_MINUTES = 60;
 const MINUTES_PER_DAY = 24 * 60;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const MS_PER_HOUR = 60 * 60 * 1000;
@@ -151,12 +150,6 @@ const getChicagoHourStartTimestamp = (timestampMs: number): number | null => {
     return Number.isFinite(timestampMs) ? Math.floor(timestampMs / MS_PER_HOUR) * MS_PER_HOUR : null;
 };
 
-const isRangeWithinOpenWindows = (
-    startMinute: number,
-    endMinute: number,
-    windows: FacilityOpenWindow[]
-): boolean => windows.some((window) => startMinute >= window.startMinutes && endMinute <= window.endMinutes);
-
 export const buildForecastDisplaySlots = (
     day: ForecastDay | null,
     openWindows: FacilityOpenWindow[],
@@ -169,6 +162,34 @@ export const buildForecastDisplaySlots = (
 
     const actualCutoffTs = getChicagoHourStartTimestamp(nowTs);
     const fallbackRanges = buildBandTimeRanges(fallbackBands);
+    const getFallbackLevel = (startTs: number, endTs: number) => {
+        const overlapping = fallbackRanges.filter((range) => range.endTs > startTs && range.startTs < endTs);
+        if (overlapping.length === 0) return null;
+        const level = overlapping[0].level;
+        if (overlapping.some((range) => range.level !== level)) return null;
+        let coveredUntil = startTs;
+        for (const range of overlapping) {
+            if (range.startTs > coveredUntil) return null;
+            coveredUntil = Math.max(coveredUntil, range.endTs);
+        }
+        return coveredUntil >= endTs ? level : null;
+    };
+    const getSlotBounds = (timestampMs: number, minuteOfDay: number) => {
+        const hourStartMinute = Math.floor(minuteOfDay / FORECAST_DISPLAY_SLOT_MINUTES) * FORECAST_DISPLAY_SLOT_MINUTES;
+        const hourStartTs = Math.floor(timestampMs / MS_PER_DISPLAY_SLOT) * MS_PER_DISPLAY_SLOT;
+        const window = enforceWorkingHours
+            ? openWindows.find((candidate) => minuteOfDay >= candidate.startMinutes && minuteOfDay < candidate.endMinutes)
+            : null;
+        if (enforceWorkingHours && !window) return null;
+        const startMinute = Math.max(hourStartMinute, window?.startMinutes ?? hourStartMinute);
+        const endMinute = Math.min(hourStartMinute + FORECAST_DISPLAY_SLOT_MINUTES, window?.endMinutes ?? Infinity);
+        return {
+            startMinute,
+            endMinute,
+            startTs: hourStartTs + (startMinute - hourStartMinute) * 60 * 1000,
+            endTs: hourStartTs + (endMinute - hourStartMinute) * 60 * 1000,
+        };
+    };
     const totalHours = Array.isArray(day.totalHours) ? day.totalHours : [];
     const dayIndex = getDateKeyDayIndex(day.date);
     const businessDayMinute = (timestampMs: number): number | null => {
@@ -186,6 +207,7 @@ export const buildForecastDisplaySlots = (
     if (totalHours.length > 0) {
         const bySlot = new Map<number, {
             startMinute: number;
+            endMinute: number;
             startTs: number;
             endTs: number;
             sumCount: number;
@@ -200,11 +222,8 @@ export const buildForecastDisplaySlots = (
             const minuteOfDay = timestampMs === null ? null : businessDayMinute(timestampMs);
             if (timestampMs === null || minuteOfDay === null) continue;
 
-            const slotStartMinute = Math.floor(minuteOfDay / FORECAST_DISPLAY_SLOT_MINUTES) * FORECAST_DISPLAY_SLOT_MINUTES;
-            const slotEndMinute = slotStartMinute + FORECAST_DISPLAY_SLOT_MINUTES;
-            if (enforceWorkingHours && !isRangeWithinOpenWindows(slotStartMinute, slotEndMinute, openWindows)) {
-                continue;
-            }
+            const bounds = getSlotBounds(timestampMs, minuteOfDay);
+            if (!bounds) continue;
 
             const useActual = actualCutoffTs !== null
                 && timestampMs < actualCutoffTs
@@ -220,14 +239,9 @@ export const buildForecastDisplaySlots = (
                         : null
                 )
                 : hour.expectedPct;
-            const slotStartTs = Math.floor(timestampMs / MS_PER_DISPLAY_SLOT) * MS_PER_DISPLAY_SLOT;
-            const slotEndTs = slotStartTs + MS_PER_DISPLAY_SLOT;
-
-            const current = bySlot.get(slotStartTs);
-            bySlot.set(slotStartTs, {
-                startMinute: slotStartMinute,
-                startTs: current?.startTs ?? slotStartTs,
-                endTs: current?.endTs ?? slotEndTs,
+            const current = bySlot.get(bounds.startTs);
+            bySlot.set(bounds.startTs, {
+                ...bounds,
                 sumCount: (current?.sumCount ?? 0) + resolvedCount,
                 sumPct: (current?.sumPct ?? 0) + (
                     typeof resolvedPct === "number" && Number.isFinite(resolvedPct)
@@ -247,14 +261,16 @@ export const buildForecastDisplaySlots = (
         return [...bySlot.values()]
             .sort((a, b) => a.startTs - b.startTs)
             .map((bucket) => {
-                const percent = bucket.pctCount > 0 ? bucket.sumPct / bucket.pctCount : null;
+                const percent = bucket.pctCount === bucket.pointCount ? bucket.sumPct / bucket.pointCount : null;
                 const tone = percent === null ? null : getOccupancyTone(percent * 100, thresholds);
                 const level = occupancyToneToBandLevel(tone)
-                    ?? (bucket.actualPointCount === 0 ? getLevelAtTimestamp(bucket.startTs, fallbackRanges) : null)
+                    ?? (bucket.actualPointCount === 0 && (bucket.pctCount === 0 || percent !== null)
+                        ? getFallbackLevel(bucket.startTs, bucket.endTs)
+                        : null)
                     ?? "unknown";
                 return {
                     startMinute: bucket.startMinute,
-                    endMinute: bucket.startMinute + FORECAST_DISPLAY_SLOT_MINUTES,
+                    endMinute: bucket.endMinute,
                     startTs: bucket.startTs,
                     endTs: bucket.endTs,
                     count: Math.max(0, Math.round(bucket.sumCount / Math.max(1, bucket.pointCount))),
@@ -287,11 +303,7 @@ export const buildForecastDisplaySlots = (
             const minuteOfDay = timestampMs === null ? null : businessDayMinute(timestampMs);
             if (timestampMs === null || minuteOfDay === null) continue;
 
-            const slotStartMinute = Math.floor(minuteOfDay / FORECAST_DISPLAY_SLOT_MINUTES) * FORECAST_DISPLAY_SLOT_MINUTES;
-            const slotEndMinute = slotStartMinute + FORECAST_DISPLAY_SLOT_MINUTES;
-            if (enforceWorkingHours && !isRangeWithinOpenWindows(slotStartMinute, slotEndMinute, openWindows)) {
-                continue;
-            }
+            if (!getSlotBounds(timestampMs, minuteOfDay)) continue;
 
             const useActual = actualCutoffTs !== null
                 && timestampMs < actualCutoffTs
@@ -313,6 +325,7 @@ export const buildForecastDisplaySlots = (
 
     const bySlot = new Map<number, {
         startMinute: number;
+        endMinute: number;
         startTs: number;
         endTs: number;
         sumCount: number;
@@ -322,20 +335,17 @@ export const buildForecastDisplaySlots = (
     }>();
 
     for (const [timestampMs, point] of byTimestamp.entries()) {
-        const slotStartMinute = Math.floor(point.minuteOfDay / FORECAST_DISPLAY_SLOT_MINUTES) * FORECAST_DISPLAY_SLOT_MINUTES;
-        const slotStartTs = Math.floor(timestampMs / MS_PER_DISPLAY_SLOT) * MS_PER_DISPLAY_SLOT;
-        const slotEndTs = slotStartTs + MS_PER_DISPLAY_SLOT;
+        const bounds = getSlotBounds(timestampMs, point.minuteOfDay);
+        if (!bounds) continue;
 
         const pointSource: ForecastDisplaySlot["source"] = point.actualCategoryCount <= 0
             ? "predicted"
             : point.actualCategoryCount >= point.totalCategoryCount
                 ? "actual"
                 : "mixed";
-        const current = bySlot.get(slotStartTs);
-        bySlot.set(slotStartTs, {
-            startMinute: slotStartMinute,
-            startTs: current?.startTs ?? slotStartTs,
-            endTs: current?.endTs ?? slotEndTs,
+        const current = bySlot.get(bounds.startTs);
+        bySlot.set(bounds.startTs, {
+            ...bounds,
             sumCount: (current?.sumCount ?? 0) + point.resolvedCount,
             pointCount: (current?.pointCount ?? 0) + 1,
             actualPointCount: (current?.actualPointCount ?? 0) + (pointSource === "actual" ? 1 : 0),
@@ -347,7 +357,7 @@ export const buildForecastDisplaySlots = (
         .sort((a, b) => a.startTs - b.startTs)
         .map((bucket) => ({
             startMinute: bucket.startMinute,
-            endMinute: bucket.startMinute + FORECAST_DISPLAY_SLOT_MINUTES,
+            endMinute: bucket.endMinute,
             startTs: bucket.startTs,
             endTs: bucket.endTs,
             count: Math.max(0, Math.round(bucket.sumCount / Math.max(1, bucket.pointCount))),
@@ -358,7 +368,7 @@ export const buildForecastDisplaySlots = (
                     ? "actual"
                     : "predicted",
             level: bucket.actualPointCount === 0 && bucket.mixedPointCount === 0
-                ? getLevelAtTimestamp(bucket.startTs, fallbackRanges) ?? "unknown"
+                ? getFallbackLevel(bucket.startTs, bucket.endTs) ?? "unknown"
                 : "unknown",
         }));
 };

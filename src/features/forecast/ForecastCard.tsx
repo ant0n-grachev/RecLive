@@ -25,7 +25,7 @@ import {
     getDateKeyDayIndex,
     parseShortDate,
 } from "./forecastTime";
-import {buildHistogramModel, FORECAST_SOURCE_LABELS} from "./forecastHistogram";
+import {buildHistogramModel} from "./forecastHistogram";
 import ForecastChart from "./ForecastChart";
 import ForecastDayControls from "./ForecastDayControls";
 import ForecastWindowsList from "./ForecastWindowsList";
@@ -515,10 +515,7 @@ export default function ForecastWindowsCard({
                                             }}
                                         >
                                             <Typography variant="caption" color="text.secondary" sx={{fontWeight: 700}}>
-                                                People by half hour
-                                            </Typography>
-                                            <Typography variant="caption" color="text.secondary" sx={{display: "block", mt: 0.25}}>
-                                                Each bar covers 30 minutes. Past bars use actual hourly averages when available; other bars show forecasts.
+                                                People by hour
                                             </Typography>
                                             <Box sx={{mt: 0.75, overflowX: "hidden", pb: 0.6}}>
                                                 <ForecastChart
@@ -532,11 +529,11 @@ export default function ForecastWindowsCard({
                                                 <Typography variant="body2" color="text.secondary" sx={{display: "block", mt: 0.4, fontWeight: 700}}>
                                                     Max people: {Math.round(histogram.maxCount)}
                                                 </Typography>
-                                                <Typography variant="body2" color="text.primary" sx={{display: "block", mt: 0.25, fontWeight: 700}}>
-                                                    {selectedHistogramBar
-                                                        ? `${selectedHistogramBar.rangeLabel}: ${Math.round(selectedHistogramBar.count)} people (${FORECAST_SOURCE_LABELS[selectedHistogramBar.source]})`
-                                                        : "Tap a bar for its count and source"}
-                                                </Typography>
+                                                {selectedHistogramBar && (
+                                                    <Typography variant="body2" color="text.primary" sx={{display: "block", mt: 0.25, fontWeight: 700}}>
+                                                        {selectedHistogramBar.rangeLabel}: {Math.round(selectedHistogramBar.count)}
+                                                    </Typography>
+                                                )}
                                             </Box>
                                         </Box>
                                     </Collapse>

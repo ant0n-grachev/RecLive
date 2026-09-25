@@ -158,9 +158,9 @@ describe("mergeActualHoursIntoDays", () => {
         const slots = buildForecastDisplaySlots(merged[0], [], false, {lowMax: 35, peakMin: 70}, [], Date.parse("2026-09-24T09:15:00-05:00"));
 
         expect(slots.map(({count, source}) => ({count, source}))).toEqual([
-            {count: 90, source: "predicted"}, {count: 90, source: "predicted"},
-            {count: 40, source: "actual"}, {count: 40, source: "actual"},
-            {count: 90, source: "predicted"}, {count: 90, source: "predicted"},
+            {count: 90, source: "predicted"},
+            {count: 40, source: "actual"},
+            {count: 90, source: "predicted"},
         ]);
     });
 

@@ -62,11 +62,11 @@ guardrail, drift, and blend telemetry retain their algorithm-specific units.
 
 ## Display and serving correctness
 
-Each chart bar covers 30 minutes. Its height, count, and crowd color describe
+Each chart bar covers one hour. Its height, count, and crowd color describe
 that same interval; the display does not smooth counts or recolor short periods.
 Completed hours use qualified actual attendance across every contained forecast
-timestamp. Current and future hours remain forecasts. The selected bar identifies
-its source, and missing actual coverage falls back to a labeled forecast.
+timestamp. Current and future hours remain forecasts. The interface shows only
+the hour and people count; missing actual coverage falls back to a forecast.
 
 Crowd thresholds are learned relative to historical attendance, rather than
 fixed percentages meaning a building is nearly full. Live and forecast use the
@@ -77,7 +77,9 @@ Successful collection time controls the live correction's freshness; an unchange
 count does not make a successful fetch stale. Source measurement time remains
 separate and can be unknown. Observed lag values take precedence over recursive
 predictions, and only future targets seed that recursion. Live correction never
-changes targets before the run's observation cutoff.
+changes targets before the run's observation cutoff. Each future timestamp is
+fully corrected, including schedule boundary zeros, before the next timestamp
+builds its lag features. Locations remain batched within each timestamp.
 
 Saved XGBoost models are written through temporary filenames retaining the JSON
 suffix. Readers also accept earlier UBJSON models mistakenly named `.json`,

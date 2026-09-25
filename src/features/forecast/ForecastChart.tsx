@@ -6,7 +6,6 @@ import {
     type CrowdBandLevel,
 } from "./forecastBands";
 import {
-    FORECAST_SOURCE_LABELS,
     HISTOGRAM_HOUR_LABEL_FONT_SIZE,
     type HistogramModel,
 } from "./forecastHistogram";
@@ -45,7 +44,7 @@ export default function ForecastChart({
             component="svg"
             viewBox={`0 0 ${histogram.viewBoxWidth} ${histogram.viewBoxHeight}`}
             role="img"
-            aria-label="People by half hour"
+            aria-label="People by hour"
             sx={{
                 display: "block",
                 width: "100%",
@@ -99,7 +98,7 @@ export default function ForecastChart({
                             event.preventDefault();
                             onToggleBar(bar.startTs);
                         }}
-                        aria-label={`${bar.rangeLabel}, ${FORECAST_SOURCE_LABELS[bar.source]}, ${roundedCount} people`}
+                        aria-label={`${bar.rangeLabel}, ${roundedCount} people`}
                         aria-hidden={!isVisible}
                         style={{cursor: isVisible ? "pointer" : "default"}}
                     >
