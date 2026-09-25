@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
-from server.reclive import db
+from server.reclive import db, facility_schedule
 from server.reclive.forecasting.verification_observations import (
     _hour_status,
     _schedule_sections,
@@ -220,6 +220,78 @@ def test_unknown_section_alone_is_not_promoted_to_building_hours(setup_observati
     rows = collect_actual_hours(settings, ["2026-08-31"], NOW)
     assert {row["observationStatus"] for row in rows} == {"schedule_unavailable"}
     assert calls == []
+
+
+def _minute_reference_status(schedule, window):
+    states = {
+        facility_schedule.get_facility_schedule_open_state(
+            schedule, window.start + timedelta(minutes=minute)
+        )
+        for minute in range(60)
+    }
+    if None in states:
+        return "schedule_unavailable"
+    if states == {True}:
+        return "ready"
+    return "closed" if states == {False} else "partial_open"
+
+
+@pytest.mark.parametrize(
+    "date_key", ["2026-09-24", "2026-11-25", "2026-11-28", "2026-12-13", "2027-01-05"]
+)
+def test_checkpoint_schedule_equals_all_minutes_for_full_production_fixture(date_key):
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "fixtures"
+        / "verification_facility_hours.json"
+    )
+    settings = replace(Settings.for_test(), facility_hours_json_path=str(path))
+    schedules = _schedule_sections(settings, datetime(2026, 9, 25, 2, tzinfo=UTC))
+    for schedule in schedules.values():
+        for window in build_chicago_hour_windows(date_key):
+            assert _hour_status(schedule, window) == _minute_reference_status(
+                schedule, window
+            )
+
+
+def test_short_open_interval_inside_hour_is_not_missed_and_uses_only_boundaries(
+    monkeypatch,
+):
+    schedule = [
+        {
+            "title": "Building Hours",
+            "rows": [{"label": "Daily", "hours": "10:15 am - 10:45 am"}],
+        }
+    ]
+    window = next(
+        w
+        for w in build_chicago_hour_windows("2026-09-24")
+        if w.start.astimezone(CHICAGO).hour == 10
+    )
+    original = facility_schedule.get_facility_schedule_open_state
+    calls = []
+
+    def record(schedule, at):
+        calls.append(at)
+        return original(schedule, at)
+
+    monkeypatch.setattr(facility_schedule, "get_facility_schedule_open_state", record)
+    assert _hour_status(schedule, window) == "partial_open"
+    assert [at.astimezone(CHICAGO).minute for at in calls] == [0, 15, 45]
+
+
+@pytest.mark.parametrize("date_key", ["2026-03-08", "2026-11-01", "2026-09-24"])
+def test_checkpoint_schedule_equals_all_minutes_for_overnight_and_dst(date_key):
+    schedule = [
+        {
+            "title": "Building Hours",
+            "rows": [{"label": "Daily", "hours": "10:15 pm - 1:45 am"}],
+        }
+    ]
+    for window in build_chicago_hour_windows(date_key):
+        assert _hour_status(schedule, window) == _minute_reference_status(
+            schedule, window
+        )
 
 
 def test_observed_zero_remains_valid_and_missing_data_is_distinct(setup_observations):

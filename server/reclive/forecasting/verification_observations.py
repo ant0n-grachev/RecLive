@@ -130,13 +130,26 @@ def _schedule_sections(settings: Settings, now: datetime) -> dict[int, list[dict
 def _hour_status(schedule: list[dict] | None, window: HourWindow) -> str:
     if not schedule:
         return "schedule_unavailable"
-    # The official schedule parser has minute precision. Inspect the complete
-    # half-open hour, including partial opening/closing and overnight windows.
+    # The official parser changes state only on an opening/closing minute or a
+    # local date boundary. Inspect those checkpoints across the half-open hour,
+    # rather than reparsing the entire published schedule sixty times. Include
+    # every row's boundaries before precedence resolution, so even an opening
+    # interval wholly inside the hour or an overnight gap remains detectable.
+    boundary_minutes = {0}
+    for section in schedule:
+        for row in section["rows"]:
+            hours = facility_schedule.parse_schedule_hours_window(row["hours"])
+            if hours is not None and not hours[2]:
+                boundary_minutes.update(value % 1440 for value in hours[:2])
+    checkpoints = [window.start]
+    for minute in range(1, 60):
+        at = window.start + timedelta(minutes=minute)
+        local = at.astimezone(CHICAGO)
+        if local.hour * 60 + local.minute in boundary_minutes:
+            checkpoints.append(at)
     states = {
-        facility_schedule.get_facility_schedule_open_state(
-            schedule, window.start + timedelta(minutes=minute)
-        )
-        for minute in range(60)
+        facility_schedule.get_facility_schedule_open_state(schedule, at)
+        for at in checkpoints
     }
     if None in states:
         return "schedule_unavailable"
