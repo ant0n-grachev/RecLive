@@ -1,0 +1,11 @@
+[
+  {
+    "slug": "nick",
+    "link": "https://recwell.example.test/locations/nick/",
+    "modified_gmt": "2026-08-31T12:00:00",
+    "title": {"rendered": "Nick"},
+    "content": {
+      "rendered": "<h2>Nick Building Hours</h2><table><tr><th>Dates</th><th>Hours</th></tr><tr><td>Aug 31 - Sep 4</td><td>6:00 am - 10:00 pm</td></tr><tr><td>Sep 5</td><td>Closed</td></tr></table>"
+    }
+  }
+]

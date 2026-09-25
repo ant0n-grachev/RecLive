@@ -1,0 +1,53 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+/coverage/
+/playwright-report/
+/test-results/
+/blob-report/
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Local tooling, recovery copies, and generated backend artifacts
+.local/
+.superpowers/
+.netlify/
+*.bundle
+/server/forecast.json
+forecast-history/
+forecast-verification/
+/server/model_artifacts/
+/model_artifacts/
+
+# Environment files
+.env
+.env.*
+!.env.example

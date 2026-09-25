@@ -1,0 +1,11 @@
+[
+  {
+    "slug": "bakke",
+    "link": "https://recwell.example.test/locations/bakke/",
+    "modified_gmt": "2026-08-31T12:05:00",
+    "title": {"rendered": "Bakke"},
+    "content": {
+      "rendered": "<h2>Bakke Building Hours</h2><table><tr><th>Days</th><th>Hours</th></tr><tr><td>Weekdays</td><td>5:30 am - 11:00 pm</td></tr><tr><td>Weekends</td><td>8:00 am - 10:00 pm</td></tr></table>"
+    }
+  }
+]

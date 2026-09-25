@@ -1,0 +1,515 @@
+{
+  "generatedAt": "2026-09-24T21:00:04.881426Z",
+  "sourceSite": "https://recwell.wisc.edu",
+  "facilities": [
+    {
+      "facilityId": 1186,
+      "facilityName": "Nick",
+      "slug": "nick",
+      "url": "https://recwell.wisc.edu/locations/nick/",
+      "resolvedUrl": "https://recwell.wisc.edu/locations/nick/",
+      "status": "ok",
+      "source": "direct_html",
+      "sourceModifiedGmt": null,
+      "sections": [
+        {
+          "title": "August 24 – December 17",
+          "rows": [
+            {
+              "label": "Monday - Thursday",
+              "hours": "6am - Midnight"
+            },
+            {
+              "label": "Friday",
+              "hours": "6am - 10pm"
+            },
+            {
+              "label": "Saturday",
+              "hours": "8am - 10pm"
+            },
+            {
+              "label": "Sunday",
+              "hours": "8am - Midnight"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "Thanksgiving Weekend",
+          "rows": [
+            {
+              "label": "November 25",
+              "hours": "6am - 6:30pm"
+            },
+            {
+              "label": "November 26 - 28",
+              "hours": "CLOSED"
+            },
+            {
+              "label": "November 29",
+              "hours": "10am - Midnight"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "Final Exam Week",
+          "rows": [
+            {
+              "label": "December 11",
+              "hours": "6am - 10pm"
+            },
+            {
+              "label": "December 12",
+              "hours": "8am - 10pm"
+            },
+            {
+              "label": "December 13 (Commencement)",
+              "hours": "8am - 10pm"
+            },
+            {
+              "label": "December 14 - 16",
+              "hours": "6am - 10pm"
+            },
+            {
+              "label": "December 17",
+              "hours": "6am - 8pm"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "December 18 – January 17, 2027",
+          "rows": [
+            {
+              "label": "December 18 - January 6",
+              "hours": "CLOSED"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "January 7 – January 17",
+          "rows": [
+            {
+              "label": "Monday - Friday",
+              "hours": "6am - 8pm"
+            },
+            {
+              "label": "Saturday - Sunday",
+              "hours": "8am - 8pm"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "January 18 – May 9",
+          "rows": [
+            {
+              "label": "Monday - Thursday",
+              "hours": "6am - Midnight"
+            },
+            {
+              "label": "Friday",
+              "hours": "6am - 10pm"
+            },
+            {
+              "label": "Saturday",
+              "hours": "8am - 10pm"
+            },
+            {
+              "label": "Sunday",
+              "hours": "8am - Midnight"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "Final Exam Week",
+          "rows": [
+            {
+              "label": "May 3",
+              "hours": "8am - 10pm"
+            },
+            {
+              "label": "May 4 - 7",
+              "hours": "6am - 10pm"
+            },
+            {
+              "label": "May 8",
+              "hours": "6am - 8pm"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "Commencement Weekend",
+          "rows": [
+            {
+              "label": "May 9",
+              "hours": "CLOSED"
+            },
+            {
+              "label": "May 10",
+              "hours": "Noon - 6pm"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "March 27 – April 5",
+          "rows": [
+            {
+              "label": "March 27",
+              "hours": "6am - 8pm"
+            },
+            {
+              "label": "March 28 - March 29",
+              "hours": "10am - 8pm"
+            },
+            {
+              "label": "March 30 - April 3",
+              "hours": "8am - 8pm"
+            },
+            {
+              "label": "April 4",
+              "hours": "10am - 8pm"
+            },
+            {
+              "label": "April 5",
+              "hours": "Noon - 8pm"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "May 10 – August 30",
+          "rows": [
+            {
+              "label": "Monday - Thursday",
+              "hours": "6am - 10pm"
+            },
+            {
+              "label": "Friday",
+              "hours": "6am - 8pm"
+            },
+            {
+              "label": "Saturday & Sunday",
+              "hours": "10am - 8pm"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "Adjusted Hours",
+          "rows": [
+            {
+              "label": "May 28",
+              "hours": "6am - 6:30pm"
+            },
+            {
+              "label": "May 29 - 31",
+              "hours": "CLOSED"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "Independence Day",
+          "rows": [
+            {
+              "label": "July 2",
+              "hours": "6am - 6:30pm"
+            },
+            {
+              "label": "July 3 - 4",
+              "hours": "CLOSED"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "Maintenance Closures",
+          "rows": [],
+          "note": "No scheduled maintenance closures at this time."
+        }
+      ],
+      "sourceFetchedAt": "2026-09-24T21:00:04.881426Z",
+      "lastSuccessfulAt": "2026-09-24T21:00:04.881426Z",
+      "stale": false,
+      "error": null,
+      "errorCategory": null,
+      "updatedAt": "2026-09-24T21:00:04.881426Z"
+    },
+    {
+      "facilityId": 1656,
+      "facilityName": "Bakke",
+      "slug": "bakke",
+      "url": "https://recwell.wisc.edu/locations/bakke/",
+      "resolvedUrl": "https://recwell.wisc.edu/locations/bakke/",
+      "status": "ok",
+      "source": "direct_html",
+      "sourceModifiedGmt": null,
+      "sections": [
+        {
+          "title": "August 24 – December 18",
+          "rows": [
+            {
+              "label": "Monday - Thursday",
+              "hours": "6am - Midnight"
+            },
+            {
+              "label": "Friday",
+              "hours": "6am - 10pm"
+            },
+            {
+              "label": "Saturday",
+              "hours": "8am - 10pm"
+            },
+            {
+              "label": "Sunday",
+              "hours": "8am - Midnight"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "Thanksgiving Weekend",
+          "rows": [
+            {
+              "label": "November 25",
+              "hours": "6am - 6:30pm"
+            },
+            {
+              "label": "November 26 - 27",
+              "hours": "CLOSED"
+            },
+            {
+              "label": "November 28",
+              "hours": "10am - 6pm"
+            },
+            {
+              "label": "November 29",
+              "hours": "10am - Midnight"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "Final Exam Week",
+          "rows": [
+            {
+              "label": "December 11",
+              "hours": "6am - 10pm"
+            },
+            {
+              "label": "December 12",
+              "hours": "8am - 10pm"
+            },
+            {
+              "label": "December 13 (Commencement)",
+              "hours": "8am - 10pm"
+            },
+            {
+              "label": "December 14 - 16",
+              "hours": "6am - 10pm"
+            },
+            {
+              "label": "December 17",
+              "hours": "6am - 8pm"
+            },
+            {
+              "label": "December 18",
+              "hours": "6am - 6:30pm"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "December 19 – January 17, 2027",
+          "rows": [
+            {
+              "label": "December 19 - December 25",
+              "hours": "CLOSED"
+            },
+            {
+              "label": "December 26 - December 30",
+              "hours": "10am - 6pm"
+            },
+            {
+              "label": "December 31 - January 1",
+              "hours": "CLOSED"
+            },
+            {
+              "label": "January 2 - January 3",
+              "hours": "8am - 8pm"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "January 4 – January 17",
+          "rows": [
+            {
+              "label": "Monday - Friday",
+              "hours": "6am - 8pm"
+            },
+            {
+              "label": "Saturday - Sunday",
+              "hours": "8am - 8pm"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "January 19 – May 10",
+          "rows": [
+            {
+              "label": "Monday - Thursday",
+              "hours": "6am - Midnight"
+            },
+            {
+              "label": "Friday",
+              "hours": "6am - 10pm"
+            },
+            {
+              "label": "Saturday",
+              "hours": "8am - 10pm"
+            },
+            {
+              "label": "Sunday",
+              "hours": "8am - Midnight"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "Final Exam Week",
+          "rows": [
+            {
+              "label": "May 2",
+              "hours": "8am - 10pm"
+            },
+            {
+              "label": "May 3 - 6",
+              "hours": "6am - 10pm"
+            },
+            {
+              "label": "May 7",
+              "hours": "6am - 8pm"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "Commencement Weekend",
+          "rows": [
+            {
+              "label": "May 8 - 9",
+              "hours": "CLOSED"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "March 27 – April 5",
+          "rows": [
+            {
+              "label": "March 27",
+              "hours": "6am - 8pm"
+            },
+            {
+              "label": "March 28 - April 5",
+              "hours": "CLOSED"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "May 11 – August 23",
+          "rows": [
+            {
+              "label": "Monday - Thursday",
+              "hours": "6am - 10pm"
+            },
+            {
+              "label": "Friday",
+              "hours": "6am - 8pm"
+            },
+            {
+              "label": "Saturday & Sunday",
+              "hours": "10am - 8pm"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "Adjusted Hours",
+          "rows": [
+            {
+              "label": "May 11 - 17",
+              "hours": "CLOSED"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "Adjusted Hours",
+          "rows": [
+            {
+              "label": "May 28",
+              "hours": "6am - 6:30pm"
+            },
+            {
+              "label": "May 29 - 31",
+              "hours": "CLOSED"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "Independence Day",
+          "rows": [
+            {
+              "label": "July 2",
+              "hours": "6am - 6:30pm"
+            },
+            {
+              "label": "July 3 - 4",
+              "hours": "CLOSED"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "Sub Zero Ice Rink",
+          "rows": [
+            {
+              "label": "May 10 - 17",
+              "hours": "CLOSED"
+            }
+          ],
+          "note": null
+        },
+        {
+          "title": "Bakke",
+          "rows": [
+            {
+              "label": "May 10 - 17",
+              "hours": "CLOSED"
+            }
+          ],
+          "note": null
+        }
+      ],
+      "sourceFetchedAt": "2026-09-24T21:00:04.881426Z",
+      "lastSuccessfulAt": "2026-09-24T21:00:04.881426Z",
+      "stale": false,
+      "error": null,
+      "errorCategory": null,
+      "updatedAt": "2026-09-24T21:00:04.881426Z"
+    }
+  ],
+  "okCount": 2,
+  "totalCount": 2
+}
