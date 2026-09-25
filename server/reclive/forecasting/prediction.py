@@ -1471,8 +1471,12 @@ def seed_recursive_ratio_overrides(
     lag_ratio_override: Optional[Dict[datetime, float]],
     target: datetime,
     ratio: float,
+    *,
+    as_of: Optional[datetime] = None,
 ) -> None:
     if not isinstance(lag_ratio_override, dict):
+        return
+    if isinstance(as_of, datetime) and target <= as_of:
         return
     numeric = features.to_float_or_none(ratio)
     if numeric is None:
@@ -1844,16 +1848,9 @@ def latest_live_ratio_and_age_minutes(
 ) -> Tuple[Optional[float], Optional[float]]:
     if max_cap <= 0:
         return None, None
-    live_count = latest_live_count_for_location(loc_entry, now)
+    live_count, age_min = _latest_live_count_and_age_minutes(loc_entry, now)
     if live_count is None:
         return None, None
-    raw_times = (loc_entry or {}).get("raw_times") or []
-    if not raw_times:
-        return None, None
-    latest_ts = raw_times[-1]
-    if not isinstance(latest_ts, datetime):
-        return None, None
-    age_min = max(0.0, (now - latest_ts).total_seconds() / 60.0)
     return clamp_ratio(float(live_count) / float(max_cap)), float(age_min)
 
 
@@ -2093,7 +2090,7 @@ def estimate_location(
     now = ctx.get("now")
     hours_ahead = 0.0
     if isinstance(now, datetime):
-        hours_ahead = max(0.0, (target - now).total_seconds() / 3600.0)
+        hours_ahead = (target - now).total_seconds() / 3600.0
 
     loc_data = ctx["loc_data"]
     loc_samples = ctx["loc_samples"]
@@ -2128,7 +2125,7 @@ def estimate_location(
         )
         if not isinstance(existing, dict):
             return
-        seed_recursive_ratio_overrides(existing, target, 0.0)
+        seed_recursive_ratio_overrides(existing, target, 0.0, as_of=now)
 
     sample_count: Optional[int] = None
 
@@ -2224,7 +2221,7 @@ def estimate_location(
                     and cached_p50 is not None
                     and cached_p90 is not None
                 ):
-                    seed_recursive_ratio_overrides(lag_ratio_override, target, float(cached_p50))
+                    seed_recursive_ratio_overrides(lag_ratio_override, target, float(cached_p50), as_of=now)
                     return (
                         float(cached_p10),
                         float(cached_p50),
@@ -2350,9 +2347,9 @@ def estimate_location(
                 p10_ratio, p50_ratio, p90_ratio, cached_sample_count = cached
             else:
                 p10_ratio, p50_ratio, p90_ratio = cached
-            seed_recursive_ratio_overrides(override_map_for_model(primary_key), target, float(p50_ratio))
+            seed_recursive_ratio_overrides(override_map_for_model(primary_key), target, float(p50_ratio), as_of=now)
             if fallback_key and fallback_key != primary_key:
-                seed_recursive_ratio_overrides(override_map_for_model(fallback_key), target, float(p50_ratio))
+                seed_recursive_ratio_overrides(override_map_for_model(fallback_key), target, float(p50_ratio), as_of=now)
             out_sample_count = features.to_float_or_none(cached_sample_count)
             if out_sample_count is None:
                 out_sample_count = float(resolve_sample_count())
@@ -2681,9 +2678,9 @@ def estimate_location(
 
     if isinstance(prediction_cache, dict):
         prediction_cache[cache_key] = (p10_ratio, p50_ratio, p90_ratio, float(sample_count))
-    seed_recursive_ratio_overrides(primary_override, target, float(p50_ratio))
+    seed_recursive_ratio_overrides(primary_override, target, float(p50_ratio), as_of=now)
     if fallback_key and fallback_key != primary_key:
-        seed_recursive_ratio_overrides(fallback_override, target, float(p50_ratio))
+        seed_recursive_ratio_overrides(fallback_override, target, float(p50_ratio), as_of=now)
 
     return cache_and_return(
         {
@@ -2719,6 +2716,7 @@ def prime_model_prediction_cache_for_targets(
     if not isinstance(model_prediction_cache, dict):
         return
 
+    now = ctx.get("now")
     models_by_key = ctx.get("models_by_key", {})
     loc_to_model_key = ctx.get("loc_to_model_key", {})
     loc_to_fallback_key = ctx.get("loc_to_fallback_key", {})
@@ -2775,7 +2773,7 @@ def prime_model_prediction_cache_for_targets(
                 if isinstance(cached_pred, tuple) and len(cached_pred) >= 2:
                     cached_p50 = features.to_float_or_none(cached_pred[1])
                     if cached_p50 is not None:
-                        seed_recursive_ratio_overrides(override_map, target, float(cached_p50))
+                        seed_recursive_ratio_overrides(override_map, target, float(cached_p50), as_of=now)
                     continue
 
                 loc_entry = loc_data.get(int(loc_id)) if isinstance(loc_data, dict) else None
@@ -2884,6 +2882,7 @@ def prime_model_prediction_cache_for_targets(
                     batch_override_maps[idx] if idx < len(batch_override_maps) else None,
                     target,
                     float(p50_ratio),
+                    as_of=now,
                 )
 
 
@@ -2935,26 +2934,43 @@ def safe_parse_hour_start(value: object) -> Optional[datetime]:
         return None
 
 
-def latest_live_count_for_location(loc_entry: Optional[Dict[str, object]], now: datetime) -> Optional[float]:
+def _latest_live_count_and_age_minutes(
+    loc_entry: Optional[Dict[str, object]], now: datetime,
+) -> Tuple[Optional[float], Optional[float]]:
     if not loc_entry:
-        return None
-    raw_times = loc_entry.get("raw_times") or []
-    raw_values = loc_entry.get("raw_values") or []
-    if not raw_times or not raw_values:
-        return None
+        return None, None
+    if "live_snapshot" in loc_entry:
+        snapshot = loc_entry["live_snapshot"]
+        if not isinstance(snapshot, dict):
+            return None, None
+        ts = snapshot.get("fetched_at")
+        value = snapshot.get("count")
+    else:
+        # Compatibility for callers with historical observations only.
+        raw_times = loc_entry.get("raw_times") or []
+        raw_values = loc_entry.get("raw_values") or []
+        if not raw_times or not raw_values:
+            return None, None
+        ts = raw_times[-1]
+        value = raw_values[-1]
 
-    ts = raw_times[-1]
-    value = raw_values[-1]
-    if ts is None or value is None:
-        return None
+    numeric = features.to_float_or_none(value)
+    if not isinstance(ts, datetime) or numeric is None or numeric < 0:
+        return None, None
 
-    age_min = (now - ts).total_seconds() / 60.0
-    if age_min < 0:
-        age_min = 0.0
-    if age_min > config.SPIKE_AWARE_MAX_AGE_MIN:
-        return None
+    try:
+        age_min = (now - ts).total_seconds() / 60.0
+    except TypeError:
+        return None, None
+    if age_min < 0 or age_min > config.SPIKE_AWARE_MAX_AGE_MIN:
+        return None, None
 
-    return max(0.0, float(value))
+    return float(numeric), float(age_min)
+
+
+def latest_live_count_for_location(loc_entry: Optional[Dict[str, object]], now: datetime) -> Optional[float]:
+    count, _age_min = _latest_live_count_and_age_minutes(loc_entry, now)
+    return count
 
 
 def category_live_total(
@@ -3433,12 +3449,6 @@ def precompute_target_estimate_matrices_for_locations(
             empty_i,
         )
 
-    prime_model_prediction_cache_for_targets(
-        loc_ids=normalized_loc_ids,
-        targets=normalized_targets,
-        ctx=ctx,
-    )
-
     height = len(normalized_targets)
     width = len(normalized_loc_ids)
     p10 = np.zeros((height, width), dtype=np.float32)
@@ -3447,6 +3457,13 @@ def precompute_target_estimate_matrices_for_locations(
     samples = np.zeros((height, width), dtype=np.int32)
 
     for t_idx, target in enumerate(normalized_targets):
+        # Batch locations at this target, then finish corrections and boundary
+        # zeros before building the next target's recursive lag features.
+        prime_model_prediction_cache_for_targets(
+            loc_ids=normalized_loc_ids,
+            targets=[target],
+            ctx=ctx,
+        )
         for l_idx, loc_id in enumerate(normalized_loc_ids):
             result = estimate_location(
                 int(loc_id),

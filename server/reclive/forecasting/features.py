@@ -723,14 +723,15 @@ def ratio_value_from_maps(
     ts: datetime,
     lag_ratio_override: Optional[Dict[datetime, float]] = None,
 ) -> Optional[float]:
+    numeric = to_float_or_none(bucket_map.get(ts))
+    if numeric is not None:
+        return float(numeric)
     if lag_ratio_override is not None:
         override = lag_ratio_override.get(ts)
         numeric = to_float_or_none(override)
         if numeric is not None:
             return float(numeric)
-    raw = bucket_map.get(ts)
-    numeric = to_float_or_none(raw)
-    return float(numeric) if numeric is not None else None
+    return None
 
 
 def rolling_mean(

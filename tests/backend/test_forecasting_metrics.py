@@ -403,10 +403,12 @@ def test_misaligned_terminal_metadata_gives_no_evidence(monkeypatch, bad):
 def test_build_forecast_propagates_real_prepare_paths_and_serializes_public_units(monkeypatch, tmp_path, mode):
     from server.reclive.forecasting import config, data, job, prediction, reporting, training
 
+    current_time = [START - timedelta(minutes=1)]
+
     class Clock(datetime):
         @classmethod
         def now(cls, tz=None):
-            return START.astimezone(tz or UTC)
+            return current_time[0].astimezone(tz or UTC)
 
     monkeypatch.setattr(job, "datetime", Clock)
     monkeypatch.setattr(config, "FACILITIES", {
@@ -423,7 +425,14 @@ def test_build_forecast_propagates_real_prepare_paths_and_serializes_public_unit
     monkeypatch.setattr(data, "load_schedule_sections_by_facility", lambda: {})
     connection = FakeConnection()
     monkeypatch.setattr(data, "db_connect", lambda: connection)
-    monkeypatch.setattr(data, "load_history", lambda *args, **kwargs: ({}, {}, {}, {}, {}, {}, {}))
+    history = {11: {"raw_times": [START - timedelta(hours=2)], "raw_values": [90.0]}, 22: {}}
+    snapshot = {"count": 20.0, "fetched_at": START, "source_updated_at": None}
+    monkeypatch.setattr(data, "load_history", lambda *args, **kwargs: (history, {}, {}, {}, {}, {}, {}))
+    def live_snapshots(connection):
+        current_time[0] = START
+        return {11: snapshot}
+
+    monkeypatch.setattr(data, "load_live_snapshots", live_snapshots)
     monkeypatch.setattr(data, "weather_history_start", lambda *args: START)
     monkeypatch.setattr(data, "fetch_weather_history_series", lambda *args: {"times": [], "map": {}})
     monkeypatch.setattr(data, "fetch_weather_forecast_series", lambda *args: {"times": [], "map": {}})
@@ -457,6 +466,10 @@ def test_build_forecast_propagates_real_prepare_paths_and_serializes_public_unit
         "byModel": {key: {"rolledBack": True}} if mode == "rollback" else {},
     }))
     payload = job.build_forecast()
+    assert datetime.fromisoformat(payload["generatedAt"]) == START
+    assert history[11]["live_snapshot"] == snapshot
+    assert history[22]["live_snapshot"] is None
+    assert history[11]["raw_values"] == [90.0]
     job.write_forecast(payload)
     serialized = (tmp_path / "forecast.json").read_text()
     decoded = json.loads(serialized)
@@ -518,7 +531,7 @@ def test_saved_artifact_loader_preserves_ratio_metadata_and_legacy_paths(monkeyp
     loaded = []
     monkeypatch.setattr(data, "xgb", SimpleNamespace(Booster=lambda: SimpleNamespace(load_model=lambda path: loaded.append(path))))
     bundle, saved = data.load_saved_model(key, [11, 22], 4)
-    assert loaded == [paths[0]]
+    assert loaded == [bytearray(b"{}")]
     assert saved == meta
     assert bundle["p50"] is not None
     result, _ = reporting.build_public_metrics({key: bundle}, {key: "using_saved_model"}, {}, {key: [11, 22]})

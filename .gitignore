@@ -42,6 +42,7 @@ __pycache__/
 .netlify/
 *.bundle
 /server/forecast.json
+forecast-history/
 /server/model_artifacts/
 /model_artifacts/
 

@@ -1,7 +1,7 @@
 """Forecasting job owner; mechanically transferred definitions."""
 
 import sys as _sys
-from server.reclive.forecasting import config, data, features, prediction, reporting, training
+from server.reclive.forecasting import config, data, features, prediction, publication, reporting, training
 import json
 import os
 from datetime import date, datetime, timedelta
@@ -26,15 +26,6 @@ from server.reclive.observability import log_event, log_configuration_failure
 
 
 def build_forecast():
-    now = datetime.now(config.TZ)
-    forecast_start_hour, forecast_end_hour = prediction.normalized_forecast_hour_bounds()
-    week_dates = [(now + timedelta(days=offset)).date() for offset in range(7)]
-    day_targets_by_date: Dict[date, List[datetime]] = {
-        day_date: prediction.get_targets_for_date(day_date) for day_date in week_dates
-    }
-    window_targets_by_date: Dict[date, List[datetime]] = {
-        day_date: prediction.get_window_targets_for_date(day_date) for day_date in week_dates
-    }
     saved_meta_snapshot = data.collect_saved_meta_snapshots()
     adaptive_controls = training.derive_adaptive_runtime_controls(saved_meta_snapshot)
     facility_schedule_by_id = data.load_schedule_sections_by_facility()
@@ -53,8 +44,24 @@ def build_forecast():
             conn,
             facility_schedule_by_id=facility_schedule_by_id,
         )
+        live_snapshots = data.load_live_snapshots(conn)
     finally:
         conn.close()
+
+    for loc_id, entry in loc_data.items():
+        entry["live_snapshot"] = live_snapshots.get(loc_id)
+
+    # A poll can complete while history is loading. Anchor the run after its inputs
+    # have been read so a valid new snapshot is not rejected as a future reading.
+    now = datetime.now(config.TZ)
+    forecast_start_hour, forecast_end_hour = prediction.normalized_forecast_hour_bounds()
+    week_dates = [(now + timedelta(days=offset)).date() for offset in range(7)]
+    day_targets_by_date: Dict[date, List[datetime]] = {
+        day_date: prediction.get_targets_for_date(day_date) for day_date in week_dates
+    }
+    window_targets_by_date: Dict[date, List[datetime]] = {
+        day_date: prediction.get_window_targets_for_date(day_date) for day_date in week_dates
+    }
 
     history_start = data.weather_history_start(loc_data, now)
     weather_history_series = data.fetch_weather_history_series(history_start, now)
@@ -789,9 +796,11 @@ def write_forecast(payload: Dict[str, object]) -> None:
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
     tmp_path = config.FORECAST_JSON_PATH + ".tmp"
+    sanitized = reporting.sanitize_for_json(payload)
     with open(tmp_path, "w", encoding="utf-8") as handle:
-        json.dump(reporting.sanitize_for_json(payload), handle, ensure_ascii=False, allow_nan=False)
+        json.dump(sanitized, handle, ensure_ascii=False, allow_nan=False)
     os.replace(tmp_path, config.FORECAST_JSON_PATH)
+    publication.archive_published_forecast(sanitized, config.FORECAST_JSON_PATH)
 
 
 def main() -> int:
