@@ -24,7 +24,7 @@ for (const viewport of viewports) {
         await expect(page).toHaveURL(/\/nick$/);
         await expect(page).toHaveTitle(/Nick/i);
         await expect(page.getByText("Forecast Today")).toBeVisible();
-        await expect(page.getByRole("button", {name: "Show hourly chart"})).toBeVisible();
+        await expect(page.getByRole("button", {name: "Show crowd chart"})).toBeVisible();
         await expect(page.locator("vite-error-overlay")).toHaveCount(0);
 
         await page.getByRole("button", {name: "LOW", exact: true}).click();
@@ -32,20 +32,20 @@ for (const viewport of viewports) {
         await page.getByRole("button", {name: "LOW", exact: true}).click();
         await expect(page.getByText("9:00 AM – 9:30 AM")).toBeVisible();
 
-        await page.getByRole("button", {name: "Show hourly chart"}).click();
-        const chart = page.getByRole("img", {name: "People histogram by hourly forecast bar"});
+        await page.getByRole("button", {name: "Show crowd chart"}).click();
+        const chart = page.getByRole("img", {name: "People by half hour"});
         await expect(chart).toBeVisible();
-        const bar = chart.getByRole("button", {name: "9:00 AM – 10:00 AM, 50 people"});
+        const bar = chart.getByRole("button", {name: "9:00 AM – 9:30 AM, Forecast, 50 people"});
         await bar.focus();
         await page.keyboard.press("Enter");
-        await expect(page.getByText("9:00 AM – 10:00 AM: 50")).toBeVisible();
+        await expect(page.getByText("9:00 AM – 9:30 AM: 50 people (Forecast)")).toBeVisible();
 
         await page.screenshot({
             path: testInfo.outputPath(`nick-${viewport.name}-expanded-selected.png`),
             fullPage: true,
         });
 
-        await page.getByRole("button", {name: "Hide hourly chart"}).click();
+        await page.getByRole("button", {name: "Hide crowd chart"}).click();
         await expect(chart).toBeHidden();
         expect(pageErrors).toEqual([]);
         expect(consoleProblems).toEqual([]);

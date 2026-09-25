@@ -147,6 +147,33 @@ def collect_saved_meta_snapshots() -> Dict[str, Dict[str, object]]:
     return output
 
 
+def load_live_snapshots(conn) -> Dict[int, Dict[str, object]]:
+    """Read per-location successful fetches without altering historical inputs.
+
+    Ingestion commits snapshot updates and the succeeded run together. Unchanged
+    values still advance fetched_at; stalled or failed collection does not.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT location_id, is_closed, current_capacity, max_capacity, "
+            "source_updated_at, fetched_at FROM location_snapshot ORDER BY location_id"
+        )
+        rows = cur.fetchall()
+
+    snapshots: Dict[int, Dict[str, object]] = {}
+    for loc_id, is_closed, count, _max_cap, source_updated_at, fetched_at in rows:
+        numeric = features.to_float_or_none(count)
+        fetched_utc = metrics.reporting_utc(fetched_at, trusted_db=True)
+        if numeric is None or numeric < 0 or fetched_utc is None:
+            continue
+        snapshots[int(loc_id)] = {
+            "count": 0.0 if is_closed else float(numeric),
+            "fetched_at": fetched_utc,
+            "source_updated_at": metrics.reporting_utc(source_updated_at, trusted_db=True),
+        }
+    return snapshots
+
+
 def load_history(
     conn,
     facility_schedule_by_id: Optional[Dict[int, Dict[str, object]]] = None,
@@ -477,6 +504,15 @@ def ensure_dir(path: str) -> None:
     os.makedirs(path, exist_ok=True)
 
 
+def _load_model_artifact(path: str) -> xgb.Booster:
+    # Older releases wrote UBJSON to a .tmp file then renamed it to .json.
+    # Loading bytes lets XGBoost detect the content for both current and .prev.
+    model = xgb.Booster()
+    with open(path, "rb") as handle:
+        model.load_model(bytearray(handle.read()))
+    return model
+
+
 def load_saved_model(
     model_key: str,
     expected_loc_ids: List[int],
@@ -501,9 +537,8 @@ def load_saved_model(
     if str(meta.get("modelKey", "")) != str(model_key):
         return None, None
 
-    p50 = xgb.Booster()
     try:
-        p50.load_model(p50_path)
+        p50 = _load_model_artifact(p50_path)
     except Exception:
         return None, None
 
@@ -511,14 +546,12 @@ def load_saved_model(
     p90 = None
     if os.path.exists(p10_path):
         try:
-            p10 = xgb.Booster()
-            p10.load_model(p10_path)
+            p10 = _load_model_artifact(p10_path)
         except Exception:
             p10 = None
     if os.path.exists(p90_path):
         try:
-            p90 = xgb.Booster()
-            p90.load_model(p90_path)
+            p90 = _load_model_artifact(p90_path)
         except Exception:
             p90 = None
 
@@ -555,9 +588,8 @@ def load_saved_previous_model(
     if str(meta.get("modelKey", "")) != str(model_key):
         return None, None
 
-    p50 = xgb.Booster()
     try:
-        p50.load_model(p50_path)
+        p50 = _load_model_artifact(p50_path)
     except Exception:
         return None, None
 
@@ -565,14 +597,12 @@ def load_saved_previous_model(
     p90 = None
     if os.path.exists(p10_path):
         try:
-            p10 = xgb.Booster()
-            p10.load_model(p10_path)
+            p10 = _load_model_artifact(p10_path)
         except Exception:
             p10 = None
     if os.path.exists(p90_path):
         try:
-            p90 = xgb.Booster()
-            p90.load_model(p90_path)
+            p90 = _load_model_artifact(p90_path)
         except Exception:
             p90 = None
 
@@ -624,7 +654,7 @@ def save_model_artifacts(
 ) -> None:
     p50_path, p10_path, p90_path, meta_path = model_artifact_paths(model_key)
     ensure_dir(config.MODEL_ARTIFACT_DIR)
-    tmp_p50 = p50_path + ".tmp"
+    tmp_p50 = p50_path + ".tmp.json"
     tmp_meta = meta_path + ".tmp"
 
     p50 = model_bundle["p50"]
@@ -639,14 +669,14 @@ def save_model_artifacts(
     p90 = model_bundle.get("p90")
 
     if p10 is not None:
-        tmp_p10 = p10_path + ".tmp"
+        tmp_p10 = p10_path + ".tmp.json"
         p10.save_model(tmp_p10)
         os.replace(tmp_p10, p10_path)
     else:
         _safe_remove(p10_path)
 
     if p90 is not None:
-        tmp_p90 = p90_path + ".tmp"
+        tmp_p90 = p90_path + ".tmp.json"
         p90.save_model(tmp_p90)
         os.replace(tmp_p90, p90_path)
     else:

@@ -5,7 +5,7 @@ import {
     OCCUPANCY_MAIN_HEX,
     OCCUPANCY_SOFT_BG,
 } from "../../shared/utils/styles";
-import type {ForecastDisplaySlot, HistogramBar} from "./forecastHistogram";
+import type {ForecastDisplaySlot} from "./forecastHistogram";
 
 export type CrowdBandLevel = ForecastBand["level"];
 export type HistogramBandLevel = CrowdBandLevel | "unknown";
@@ -32,7 +32,6 @@ export const UNKNOWN_BAND_STYLE = {
     bg: "rgba(100, 116, 139, 0.16)",
 } as const;
 
-const CROWD_BAND_BRIDGE_MINUTES = 90;
 const CROWD_BAND_CONTIGUITY_TOLERANCE_MS = 60 * 1000;
 export const EMPTY_CROWD_BANDS: CrowdBand[] = [];
 
@@ -49,15 +48,6 @@ export const isHistogramLevelVisible = (
     if (level === "unknown") return false;
     return selected.has(level);
 };
-
-export const getVisibleHistogramSegments = (
-    bar: HistogramBar,
-    selected: Set<CrowdBandLevel>,
-    showDefault: boolean
-): [boolean, boolean] => [
-    isHistogramLevelVisible(bar.segmentLevels[0], selected, showDefault),
-    isHistogramLevelVisible(bar.segmentLevels[1], selected, showDefault),
-];
 
 export const sortBands = (bands: CrowdBand[]): CrowdBand[] =>
     bands
@@ -98,66 +88,6 @@ const mergeAdjacentCrowdBands = (bands: CrowdBand[]): CrowdBand[] => {
     }
 
     return merged;
-};
-
-const smoothCrowdBandBridges = (bands: CrowdBand[]): CrowdBand[] => {
-    let smoothed = mergeAdjacentCrowdBands(bands);
-    if (smoothed.length < 3 || CROWD_BAND_BRIDGE_MINUTES <= 0) {
-        return smoothed;
-    }
-
-    const maxBridgeDurationMs = CROWD_BAND_BRIDGE_MINUTES * 60 * 1000;
-
-    while (true) {
-        let changed = false;
-        const nextBands = smoothed.map((band) => ({...band}));
-
-        for (let index = 1; index < smoothed.length - 1; index += 1) {
-            const previous = smoothed[index - 1];
-            const current = smoothed[index];
-            const next = smoothed[index + 1];
-
-            if (previous.level !== next.level || current.level === previous.level) {
-                continue;
-            }
-
-            const previousEndTs = getChicagoTimestampMs(previous.end);
-            const currentStartTs = getChicagoTimestampMs(current.start);
-            const currentEndTs = getChicagoTimestampMs(current.end);
-            const nextStartTs = getChicagoTimestampMs(next.start);
-            if (
-                previousEndTs === null
-                || currentStartTs === null
-                || currentEndTs === null
-                || nextStartTs === null
-            ) {
-                continue;
-            }
-
-            const isContiguous = Math.abs(currentStartTs - previousEndTs) <= CROWD_BAND_CONTIGUITY_TOLERANCE_MS
-                && Math.abs(nextStartTs - currentEndTs) <= CROWD_BAND_CONTIGUITY_TOLERANCE_MS;
-            if (!isContiguous) {
-                continue;
-            }
-
-            const durationMs = currentEndTs - currentStartTs;
-            if (durationMs > maxBridgeDurationMs) {
-                continue;
-            }
-
-            nextBands[index] = {
-                ...current,
-                level: previous.level,
-            };
-            changed = true;
-        }
-
-        if (!changed) {
-            return smoothed;
-        }
-
-        smoothed = mergeAdjacentCrowdBands(nextBands);
-    }
 };
 
 export const occupancyToneToBandLevel = (
@@ -203,30 +133,7 @@ export const buildCrowdBandsFromDisplaySlots = (slots: ForecastDisplaySlot[]): C
             level: slot.level,
         }));
 
-    return smoothCrowdBandBridges(bands);
-};
-
-export const applyCrowdBandsToDisplaySlots = (
-    slots: ForecastDisplaySlot[],
-    bands: CrowdBand[]
-): ForecastDisplaySlot[] => {
-    if (slots.length === 0 || bands.length === 0) {
-        return slots;
-    }
-
-    const ranges = buildBandTimeRanges(bands);
-    if (ranges.length === 0) {
-        return slots;
-    }
-
-    return slots.map((slot) => {
-        const midpointTs = slot.startTs + ((slot.endTs - slot.startTs) / 2);
-        const level = getLevelAtTimestamp(midpointTs, ranges) ?? slot.level;
-        return {
-            ...slot,
-            level,
-        };
-    });
+    return mergeAdjacentCrowdBands(bands);
 };
 
 export const isCurrentBand = (band: CrowdBand, nowTs: number): boolean => {

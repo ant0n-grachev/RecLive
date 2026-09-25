@@ -3,6 +3,7 @@ import {env} from "../config/env";
 import {server} from "../../test/msw/server";
 import * as forecastParser from "./forecastParser";
 import type {ForecastDay} from "../types/forecast";
+import {buildForecastDisplaySlots} from "../../features/forecast/forecastTime";
 
 const fallbackForecastDays = (): ForecastDay[] => [
     {
@@ -120,6 +121,74 @@ const deferred = <T,>() => {
 };
 
 describe("mergeActualHoursIntoDays", () => {
+    it.each(["total", "category"])("applies a qualified hourly actual to every contained quarter hour in %s data", (path) => {
+        const hours = ["08:00", "08:15", "08:30", "08:45", "09:00"].map((time) => ({
+            hourStart: `2026-09-24T${time}:00-05:00`, expectedCount: 90, expectedPct: 0.45,
+        }));
+        const days: ForecastDay[] = [{date: "2026-09-24", dayName: "Thursday",
+            ...(path === "total" ? {totalHours: hours} : {categories: [{key: "fitness floors", title: "Fitness Floors", hours}]}),
+        }];
+        const actual = actualHour({hourStart: "2026-09-24T08:00:00-05:00", observedCount: 0, actualCount: 0, actualPct: 0});
+        const merged = forecastParser.mergeActualHoursIntoDays(days, actualPayload({date: "2026-09-24",
+            totalHours: path === "total" ? [actual] : [],
+            categories: path === "category" ? [{key: "fitness floors", title: "Fitness Floors", hours: [actual]}] : [],
+        }));
+        const mergedHours = path === "total" ? merged[0].totalHours : merged[0].categories?.[0].hours;
+
+        expect(mergedHours?.map((hour) => hour.actualCount)).toEqual([0, 0, 0, 0, undefined]);
+        expect(mergedHours?.map((hour) => hour.expectedCount)).toEqual([90, 90, 90, 90, 90]);
+        expect(mergedHours?.[3]).toMatchObject({actualPct: 0, actualCoverage: 1, temporalCoverage: 1});
+    });
+
+    it.each(["total", "category"])("uses forecasts for incomplete hours and low-coverage actuals in %s data", (path) => {
+        const hours = ["07:00", "07:15", "07:30", "07:45", "08:00", "08:15", "08:30", "08:45", "09:00", "09:15", "09:30", "09:45"]
+            .map((time) => ({hourStart: `2026-09-24T${time}:00-05:00`, expectedCount: 90, expectedPct: 0.45}));
+        const days: ForecastDay[] = [{date: "2026-09-24", dayName: "Thursday",
+            ...(path === "total" ? {totalHours: hours} : {categories: [{key: "fitness floors", title: "Fitness Floors", hours}]}),
+        }];
+        const actuals = [
+            actualHour({hourStart: "2026-09-24T07:00:00-05:00", actualCount: null, actualPct: null, temporalCoverage: 0.25}),
+            actualHour({hourStart: "2026-09-24T08:00:00-05:00"}),
+            actualHour({hourStart: "2026-09-24T09:00:00-05:00"}),
+        ];
+        const merged = forecastParser.mergeActualHoursIntoDays(days, actualPayload({date: "2026-09-24",
+            totalHours: path === "total" ? actuals : [],
+            categories: path === "category" ? [{key: "fitness floors", title: "Fitness Floors", hours: actuals}] : [],
+        }));
+        const slots = buildForecastDisplaySlots(merged[0], [], false, {lowMax: 35, peakMin: 70}, [], Date.parse("2026-09-24T09:15:00-05:00"));
+
+        expect(slots.map(({count, source}) => ({count, source}))).toEqual([
+            {count: 90, source: "predicted"}, {count: 90, source: "predicted"},
+            {count: 40, source: "actual"}, {count: 40, source: "actual"},
+            {count: 90, source: "predicted"}, {count: 90, source: "predicted"},
+        ]);
+    });
+
+    it("keeps all quarter hours of repeated fall-back hours distinct", () => {
+        const days = fallbackForecastDays();
+        days[0].totalHours = ["-05:00", "-06:00"].flatMap((offset) => ["00", "15", "30", "45"].map((minute) => ({
+            hourStart: `2026-11-01T01:${minute}:00${offset}`, expectedCount: 90,
+        })));
+        const merged = forecastParser.mergeActualHoursIntoDays(days, actualPayload({totalHours: [
+            actualHour({hourStart: "2026-11-01T06:00:00Z", observedCount: 30, actualCount: 30}),
+            actualHour({hourStart: "2026-11-01T07:00:00Z", observedCount: 40, actualCount: 40}),
+        ]}));
+
+        expect(merged[0].totalHours?.map((hour) => hour.actualCount)).toEqual([30, 30, 30, 30, 40, 40, 40, 40]);
+    });
+
+    it("rejects every contained quarter hour of an ambiguous actual hour", () => {
+        const days = fallbackForecastDays();
+        days[0].totalHours = ["00", "15", "30", "45"].map((minute) => ({
+            hourStart: `2026-11-01T01:${minute}:00-06:00`, expectedCount: 90,
+        }));
+        const merged = forecastParser.mergeActualHoursIntoDays(days, actualPayload({totalHours: [
+            actualHour(), actualHour({hourStart: "2026-11-01T07:00:00Z", observedCount: 41, actualCount: 41}),
+        ]}));
+
+        expect(merged[0].totalHours).toEqual(days[0].totalHours);
+    });
+
     it.each(["failed", "mismatched", "wrong-date", "unmatched", "low-location", "low-time", "missing-location", "missing-time", "missing-threshold", "valid"])(
         "uses only the qualified actual overlay in both hour paths: %s", async (scenario) => {
             const date = chicagoDateToday();

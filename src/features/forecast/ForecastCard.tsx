@@ -9,12 +9,11 @@ import type {FacilityHoursFacilityPayload} from "../../lib/types/facilitySchedul
 import {INNER_SURFACE_SX, type OccupancyThresholds} from "../../shared/utils/styles";
 import {getFacilityOpenWindowsForDate} from "../../shared/utils/facilityScheduleStatus";
 import {
-    applyCrowdBandsToDisplaySlots,
     BAND_LEVEL_ORDER,
     BAND_STYLES,
     buildCrowdBandsFromDisplaySlots,
     EMPTY_CROWD_BANDS,
-    getVisibleHistogramSegments,
+    isHistogramLevelVisible,
     sortBands,
     type CrowdBandLevel,
 } from "./forecastBands";
@@ -23,11 +22,10 @@ import {
     clipBandsToWorkingHours,
     filterWindowsToWorkingHours,
     getChicagoDateKeyFromTimestamp,
-    getChicagoMinuteOfDayFromTimestamp,
     getDateKeyDayIndex,
     parseShortDate,
 } from "./forecastTime";
-import {buildHistogramModel} from "./forecastHistogram";
+import {buildHistogramModel, FORECAST_SOURCE_LABELS} from "./forecastHistogram";
 import ForecastChart from "./ForecastChart";
 import ForecastDayControls from "./ForecastDayControls";
 import ForecastWindowsList from "./ForecastWindowsList";
@@ -95,8 +93,8 @@ export default function ForecastWindowsCard({
     const [trendExpanded, setTrendExpanded] = useState(false);
     const [selectedHistogramSelection, setSelectedHistogramSelection] = useState<{
         date: string | null;
-        startMinute: number | null;
-    }>({date: null, startMinute: null});
+        startTs: number | null;
+    }>({date: null, startTs: null});
     const swipeAreaRef = useRef<HTMLDivElement | null>(null);
     const touchStartRef = useRef<{x: number; y: number} | null>(null);
     const swipeIntentRef = useRef<"pending" | "horizontal" | "vertical">("pending");
@@ -141,10 +139,6 @@ export default function ForecastWindowsCard({
         () => buildCrowdBandsFromDisplaySlots(displaySlots),
         [displaySlots]
     );
-    const chartDisplaySlots = useMemo(
-        () => applyCrowdBandsToDisplaySlots(displaySlots, slotDerivedBands),
-        [displaySlots, slotDerivedBands]
-    );
     const histogramScaleMaxCount = useMemo(() => {
         const daysForScale = comparisonDays.length > 0 ? comparisonDays : (day ? [day] : []);
         return daysForScale.reduce((globalMax, comparisonDay) => {
@@ -159,23 +153,17 @@ export default function ForecastWindowsCard({
                 comparisonFallbackCrowdBands,
                 nowTs
             );
-            const comparisonBands = buildCrowdBandsFromDisplaySlots(comparisonDisplaySlots);
-            const comparisonChartSlots = applyCrowdBandsToDisplaySlots(comparisonDisplaySlots, comparisonBands);
-            const comparisonHistogram = buildHistogramModel(
-                comparisonChartSlots,
-                null,
-                occupancyThresholds
-            );
+            const comparisonHistogram = buildHistogramModel(comparisonDisplaySlots);
             return Math.max(globalMax, comparisonHistogram?.maxCount ?? 0);
         }, 0);
     }, [comparisonDays, day, schedule, occupancyThresholds, nowTs]);
 
     const workingHoursBands = useMemo(() => {
-        if (slotDerivedBands.length > 0) {
+        if (displaySlots.length > 0) {
             return slotDerivedBands;
         }
         return clipBandsToWorkingHours(fallbackCrowdBands, openWindows, hasWorkingHours, day?.date ?? null);
-    }, [day?.date, fallbackCrowdBands, hasWorkingHours, openWindows, slotDerivedBands]);
+    }, [day?.date, displaySlots.length, fallbackCrowdBands, hasWorkingHours, openWindows, slotDerivedBands]);
 
     const displayBands = useMemo(() => {
         const allBands = workingHoursBands;
@@ -190,46 +178,43 @@ export default function ForecastWindowsCard({
         return sortBands(allBands).filter((band) => selected.has(band.level));
     }, [workingHoursBands, selectedLevels]);
     const showAllHistogramLevels =
-        selectedLevels.length === 0 || selectedLevels.length === BAND_LEVEL_ORDER.length;
+        workingHoursBands.length === 0
+        || selectedLevels.length === 0
+        || selectedLevels.length === BAND_LEVEL_ORDER.length;
     const selectedLevelSet = useMemo(
         () => new Set(selectedLevels),
         [selectedLevels]
     );
 
     const histogram = useMemo(
-        () => buildHistogramModel(chartDisplaySlots, histogramScaleMaxCount, occupancyThresholds),
-        [chartDisplaySlots, histogramScaleMaxCount, occupancyThresholds]
+        () => buildHistogramModel(displaySlots, histogramScaleMaxCount),
+        [displaySlots, histogramScaleMaxCount]
     );
 
     const filteredBestWindows = useMemo(
-        () => filterWindowsToWorkingHours(day?.bestWindows ?? [], openWindows, hasWorkingHours, day?.date ?? null),
-        [day?.bestWindows, day?.date, openWindows, hasWorkingHours]
+        () => displaySlots.length > 0 ? [] : filterWindowsToWorkingHours(day?.bestWindows ?? [], openWindows, hasWorkingHours, day?.date ?? null),
+        [day?.bestWindows, day?.date, displaySlots.length, openWindows, hasWorkingHours]
     );
 
     const filteredAvoidWindows = useMemo(
-        () => filterWindowsToWorkingHours(day?.avoidWindows ?? [], openWindows, hasWorkingHours, day?.date ?? null),
-        [day?.avoidWindows, day?.date, openWindows, hasWorkingHours]
+        () => displaySlots.length > 0 ? [] : filterWindowsToWorkingHours(day?.avoidWindows ?? [], openWindows, hasWorkingHours, day?.date ?? null),
+        [day?.avoidWindows, day?.date, displaySlots.length, openWindows, hasWorkingHours]
     );
-    const selectedHistogramStartMinute = (
+    const selectedHistogramStartTs = (
         selectedHistogramSelection.date === (day?.date ?? null)
-            ? selectedHistogramSelection.startMinute
+            ? selectedHistogramSelection.startTs
             : null
     );
     const selectedHistogramBar = useMemo(
         () => (
             histogram?.bars.find((bar) => {
-                if (bar.startMinute !== selectedHistogramStartMinute) {
+                if (bar.startTs !== selectedHistogramStartTs) {
                     return false;
                 }
-                const [leftVisible, rightVisible] = getVisibleHistogramSegments(
-                    bar,
-                    selectedLevelSet,
-                    showAllHistogramLevels
-                );
-                return leftVisible || rightVisible;
+                return isHistogramLevelVisible(bar.level, selectedLevelSet, showAllHistogramLevels);
             }) ?? null
         ),
-        [histogram, selectedHistogramStartMinute, selectedLevelSet, showAllHistogramLevels]
+        [histogram, selectedHistogramStartTs, selectedLevelSet, showAllHistogramLevels]
     );
     const currentTimeMarker = useMemo(() => {
         if (!histogram || !day?.date) return null;
@@ -237,24 +222,14 @@ export default function ForecastWindowsCard({
         const todayDateKey = getChicagoDateKeyFromTimestamp(nowTs);
         if (!todayDateKey || day.date !== todayDateKey) return null;
 
-        const nowMinuteOfDay = getChicagoMinuteOfDayFromTimestamp(nowTs);
-        if (nowMinuteOfDay === null) return null;
-
-        const activeBar = histogram.bars.find((bar) => (
-            nowMinuteOfDay >= bar.startMinute && nowMinuteOfDay < bar.endMinute
-        ));
+        const activeBar = histogram.bars.find((bar) => nowTs >= bar.startTs && nowTs < bar.endTs);
         if (!activeBar) return null;
-        const [leftVisible, rightVisible] = getVisibleHistogramSegments(
-            activeBar,
-            selectedLevelSet,
-            showAllHistogramLevels
-        );
-        if (!leftVisible && !rightVisible) return null;
+        if (!isHistogramLevelVisible(activeBar.level, selectedLevelSet, showAllHistogramLevels)) return null;
 
-        const minuteInSlot = nowMinuteOfDay - activeBar.startMinute;
-        const slotDuration = Math.max(1, activeBar.endMinute - activeBar.startMinute);
+        const elapsed = nowTs - activeBar.startTs;
+        const slotDuration = Math.max(1, activeBar.endTs - activeBar.startTs);
         return {
-            x: activeBar.x + ((minuteInSlot / slotDuration) * activeBar.width),
+            x: activeBar.x + ((elapsed / slotDuration) * activeBar.width),
             label: "Now",
         };
     }, [day, histogram, nowTs, selectedLevelSet, showAllHistogramLevels]);
@@ -380,13 +355,13 @@ export default function ForecastWindowsCard({
         handlePrevDay();
     };
 
-    const toggleHistogramSlotSelection = (startMinute: number) => {
+    const toggleHistogramSlotSelection = (startTs: number) => {
         const currentDate = day?.date ?? null;
         setSelectedHistogramSelection((prev) => {
-            const previousStartMinuteForCurrentDay = prev.date === currentDate ? prev.startMinute : null;
+            const previousStartTsForCurrentDay = prev.date === currentDate ? prev.startTs : null;
             return {
                 date: currentDate,
-                startMinute: previousStartMinuteForCurrentDay === startMinute ? null : startMinute,
+                startTs: previousStartTsForCurrentDay === startTs ? null : startTs,
             };
         });
     };
@@ -527,7 +502,7 @@ export default function ForecastWindowsCard({
                                             borderColor: "divider",
                                         }}
                                     >
-                                        {trendExpanded ? "Hide hourly chart" : "Show hourly chart"}
+                                        {trendExpanded ? "Hide crowd chart" : "Show crowd chart"}
                                     </Button>
                                     <Collapse in={trendExpanded} timeout={180} unmountOnExit>
                                         <Box
@@ -540,14 +515,17 @@ export default function ForecastWindowsCard({
                                             }}
                                         >
                                             <Typography variant="caption" color="text.secondary" sx={{fontWeight: 700}}>
-                                                People by hour
+                                                People by half hour
+                                            </Typography>
+                                            <Typography variant="caption" color="text.secondary" sx={{display: "block", mt: 0.25}}>
+                                                Each bar covers 30 minutes. Past bars use actual hourly averages when available; other bars show forecasts.
                                             </Typography>
                                             <Box sx={{mt: 0.75, overflowX: "hidden", pb: 0.6}}>
                                                 <ForecastChart
                                                     histogram={histogram}
                                                     selectedLevelSet={selectedLevelSet}
                                                     showAllHistogramLevels={showAllHistogramLevels}
-                                                    selectedStartMinute={selectedHistogramStartMinute}
+                                                    selectedStartTs={selectedHistogramStartTs}
                                                     onToggleBar={toggleHistogramSlotSelection}
                                                     currentTimeMarker={currentTimeMarker}
                                                 />
@@ -556,8 +534,8 @@ export default function ForecastWindowsCard({
                                                 </Typography>
                                                 <Typography variant="body2" color="text.primary" sx={{display: "block", mt: 0.25, fontWeight: 700}}>
                                                     {selectedHistogramBar
-                                                        ? `${selectedHistogramBar.rangeLabel}: ${Math.round(selectedHistogramBar.count)}`
-                                                        : "Tap a bar to inspect the hourly trend"}
+                                                        ? `${selectedHistogramBar.rangeLabel}: ${Math.round(selectedHistogramBar.count)} people (${FORECAST_SOURCE_LABELS[selectedHistogramBar.source]})`
+                                                        : "Tap a bar for its count and source"}
                                                 </Typography>
                                             </Box>
                                         </Box>

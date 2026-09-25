@@ -13,6 +13,8 @@ import type {ForecastDisplaySlot} from "./forecastHistogram";
 export const FORECAST_DISPLAY_SLOT_MINUTES = 30;
 const MINUTES_PER_DAY = 24 * 60;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const MS_PER_HOUR = 60 * 60 * 1000;
+const MS_PER_DISPLAY_SLOT = FORECAST_DISPLAY_SLOT_MINUTES * 60 * 1000;
 
 const chicagoHourMinuteFormatter = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Chicago",
@@ -144,10 +146,9 @@ export const getChicagoDateKeyFromTimestamp = (timestampMs: number): string | nu
 };
 
 const getChicagoHourStartTimestamp = (timestampMs: number): number | null => {
-    const dateKey = getChicagoDateKeyFromTimestamp(timestampMs);
-    const minuteOfDay = getChicagoMinuteOfDayFromTimestamp(timestampMs);
-    if (!dateKey || minuteOfDay === null) return null;
-    return getChicagoTimestampForDateMinute(dateKey, Math.floor(minuteOfDay / 60) * 60);
+    // Chicago's hours align with UTC hours. Keep the instant so the repeated
+    // fall-back hour is not converted to its first occurrence.
+    return Number.isFinite(timestampMs) ? Math.floor(timestampMs / MS_PER_HOUR) * MS_PER_HOUR : null;
 };
 
 const isRangeWithinOpenWindows = (
@@ -184,6 +185,7 @@ export const buildForecastDisplaySlots = (
 
     if (totalHours.length > 0) {
         const bySlot = new Map<number, {
+            startMinute: number;
             startTs: number;
             endTs: number;
             sumCount: number;
@@ -211,13 +213,19 @@ export const buildForecastDisplaySlots = (
             const resolvedCount = useActual
                 ? Math.max(0, actualCount ?? 0)
                 : Math.max(0, hour.expectedCount ?? 0);
-            const resolvedPct = useActual ? hour.actualPct : hour.expectedPct;
-            const slotStartTs = getChicagoTimestampForDateMinute(day.date, slotStartMinute);
-            const slotEndTs = getChicagoTimestampForDateMinute(day.date, slotEndMinute);
-            if (slotStartTs === null || slotEndTs === null || slotEndTs <= slotStartTs) continue;
+            const resolvedPct = useActual
+                ? hour.actualPct ?? (
+                    hour.expectedCapacity && hour.expectedCapacity > 0
+                        ? resolvedCount / hour.expectedCapacity
+                        : null
+                )
+                : hour.expectedPct;
+            const slotStartTs = Math.floor(timestampMs / MS_PER_DISPLAY_SLOT) * MS_PER_DISPLAY_SLOT;
+            const slotEndTs = slotStartTs + MS_PER_DISPLAY_SLOT;
 
-            const current = bySlot.get(slotStartMinute);
-            bySlot.set(slotStartMinute, {
+            const current = bySlot.get(slotStartTs);
+            bySlot.set(slotStartTs, {
+                startMinute: slotStartMinute,
                 startTs: current?.startTs ?? slotStartTs,
                 endTs: current?.endTs ?? slotEndTs,
                 sumCount: (current?.sumCount ?? 0) + resolvedCount,
@@ -236,17 +244,17 @@ export const buildForecastDisplaySlots = (
             });
         }
 
-        return [...bySlot.entries()]
-            .sort((a, b) => a[0] - b[0])
-            .map(([startMinute, bucket]) => {
+        return [...bySlot.values()]
+            .sort((a, b) => a.startTs - b.startTs)
+            .map((bucket) => {
                 const percent = bucket.pctCount > 0 ? bucket.sumPct / bucket.pctCount : null;
                 const tone = percent === null ? null : getOccupancyTone(percent * 100, thresholds);
                 const level = occupancyToneToBandLevel(tone)
-                    ?? getLevelAtTimestamp(bucket.startTs, fallbackRanges)
+                    ?? (bucket.actualPointCount === 0 ? getLevelAtTimestamp(bucket.startTs, fallbackRanges) : null)
                     ?? "unknown";
                 return {
-                    startMinute,
-                    endMinute: startMinute + FORECAST_DISPLAY_SLOT_MINUTES,
+                    startMinute: bucket.startMinute,
+                    endMinute: bucket.startMinute + FORECAST_DISPLAY_SLOT_MINUTES,
                     startTs: bucket.startTs,
                     endTs: bucket.endTs,
                     count: Math.max(0, Math.round(bucket.sumCount / Math.max(1, bucket.pointCount))),
@@ -304,6 +312,7 @@ export const buildForecastDisplaySlots = (
     }
 
     const bySlot = new Map<number, {
+        startMinute: number;
         startTs: number;
         endTs: number;
         sumCount: number;
@@ -312,19 +321,19 @@ export const buildForecastDisplaySlots = (
         mixedPointCount: number;
     }>();
 
-    for (const point of byTimestamp.values()) {
+    for (const [timestampMs, point] of byTimestamp.entries()) {
         const slotStartMinute = Math.floor(point.minuteOfDay / FORECAST_DISPLAY_SLOT_MINUTES) * FORECAST_DISPLAY_SLOT_MINUTES;
-        const slotStartTs = getChicagoTimestampForDateMinute(day.date, slotStartMinute);
-        const slotEndTs = getChicagoTimestampForDateMinute(day.date, slotStartMinute + FORECAST_DISPLAY_SLOT_MINUTES);
-        if (slotStartTs === null || slotEndTs === null || slotEndTs <= slotStartTs) continue;
+        const slotStartTs = Math.floor(timestampMs / MS_PER_DISPLAY_SLOT) * MS_PER_DISPLAY_SLOT;
+        const slotEndTs = slotStartTs + MS_PER_DISPLAY_SLOT;
 
         const pointSource: ForecastDisplaySlot["source"] = point.actualCategoryCount <= 0
             ? "predicted"
             : point.actualCategoryCount >= point.totalCategoryCount
                 ? "actual"
                 : "mixed";
-        const current = bySlot.get(slotStartMinute);
-        bySlot.set(slotStartMinute, {
+        const current = bySlot.get(slotStartTs);
+        bySlot.set(slotStartTs, {
+            startMinute: slotStartMinute,
             startTs: current?.startTs ?? slotStartTs,
             endTs: current?.endTs ?? slotEndTs,
             sumCount: (current?.sumCount ?? 0) + point.resolvedCount,
@@ -334,21 +343,23 @@ export const buildForecastDisplaySlots = (
         });
     }
 
-    return [...bySlot.entries()]
-        .sort((a, b) => a[0] - b[0])
-        .map(([startMinute, bucket]) => ({
-            startMinute,
-            endMinute: startMinute + FORECAST_DISPLAY_SLOT_MINUTES,
+    return [...bySlot.values()]
+        .sort((a, b) => a.startTs - b.startTs)
+        .map((bucket) => ({
+            startMinute: bucket.startMinute,
+            endMinute: bucket.startMinute + FORECAST_DISPLAY_SLOT_MINUTES,
             startTs: bucket.startTs,
             endTs: bucket.endTs,
             count: Math.max(0, Math.round(bucket.sumCount / Math.max(1, bucket.pointCount))),
             percent: null,
-            source: bucket.mixedPointCount > 0
+            source: bucket.mixedPointCount > 0 || (bucket.actualPointCount > 0 && bucket.actualPointCount < bucket.pointCount)
                 ? "mixed"
                 : bucket.actualPointCount >= bucket.pointCount
                     ? "actual"
                     : "predicted",
-            level: getLevelAtTimestamp(bucket.startTs, fallbackRanges) ?? "unknown",
+            level: bucket.actualPointCount === 0 && bucket.mixedPointCount === 0
+                ? getLevelAtTimestamp(bucket.startTs, fallbackRanges) ?? "unknown"
+                : "unknown",
         }));
 };
 

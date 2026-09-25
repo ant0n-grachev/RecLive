@@ -59,3 +59,42 @@ is suppressed. `metricContext.compatibilityAliases` maps public `valMae` and
 `valRmse` to the people metrics. Legacy `byFacility`/`byModel` `valMae`,
 `valRmse`, `holdoutMae`, and `holdoutRmse` remain weighted occupancy ratios;
 guardrail, drift, and blend telemetry retain their algorithm-specific units.
+
+## Display and serving correctness
+
+Each chart bar covers 30 minutes. Its height, count, and crowd color describe
+that same interval; the display does not smooth counts or recolor short periods.
+Completed hours use qualified actual attendance across every contained forecast
+timestamp. Current and future hours remain forecasts. The selected bar identifies
+its source, and missing actual coverage falls back to a labeled forecast.
+
+Crowd thresholds are learned relative to historical attendance, rather than
+fixed percentages meaning a building is nearly full. Live and forecast use the
+same facility thresholds, but can disagree because their counts differ.
+
+The forecast reads current location snapshots separately from training history.
+Successful collection time controls the live correction's freshness; an unchanged
+count does not make a successful fetch stale. Source measurement time remains
+separate and can be unknown. Observed lag values take precedence over recursive
+predictions, and only future targets seed that recursion. Live correction never
+changes targets before the run's observation cutoff.
+
+Saved XGBoost models are written through temporary filenames retaining the JSON
+suffix. Readers also accept earlier UBJSON models mistakenly named `.json`,
+including rollback copies, so a valid saved model does not trigger unnecessary
+retraining merely because of its filename.
+
+## Published forecast evidence
+
+After publishing `FORECAST_JSON_PATH`, the job records a compact gzip snapshot in
+the adjacent `forecast-history/` directory. Each record contains the final
+facility counts, their timestamps and thresholds, `generatedAt`, and a separate
+`publishedAt` captured after publication. Records are immutable and retained for
+90 days; unrelated files are not pruned. These are backend artifacts and must
+never be included in the frontend deployment.
+
+For genuine forecast evaluation, compare only targets after `publishedAt` with
+qualified actuals, grouped by lead time. Compare the final served counts with a
+simple baseline. The historical chart and the terminal model metrics documented above are
+not substitutes for that evaluation. Archiving makes future verification possible;
+it does not itself establish an accuracy score.

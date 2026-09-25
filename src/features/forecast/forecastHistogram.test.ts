@@ -64,46 +64,62 @@ it.each(["total", "category"])("keeps real schedule post-midnight spillover on i
 });
 
 it("preserves actual, predicted, mixed, and unknown bar counts", () => {
-    const model = buildHistogramModel(fixtureSlots, 240, fixtureThresholds);
+    const model = buildHistogramModel(fixtureSlots, 240);
 
     expect(model).toMatchObject({
-        actualBarCount: 1,
-        predictedBarCount: 2,
-        mixedBarCount: 1,
-        unknownBarCount: 1,
+        actualBarCount: 3,
+        predictedBarCount: 5,
+        mixedBarCount: 0,
+        unknownBarCount: 2,
         yMax: 250,
     });
 });
 
-it("returns a nullable empty model and duplicates a lone half-hour within its hourly bar", () => {
-    expect(buildHistogramModel([], null, fixtureThresholds)).toBeNull();
+it("shows only the available half hour when its neighbor is missing", () => {
+    expect(buildHistogramModel([])).toBeNull();
 
-    const model = buildHistogramModel([fixtureSlots[0]], null, fixtureThresholds);
+    const model = buildHistogramModel([fixtureSlots[0]]);
     expect(model?.bars[0]).toMatchObject({
         count: 40,
-        segmentCounts: [40, 40],
-        segmentLevels: ["low", "low"],
+        startMinute: 360,
+        endMinute: 390,
+        rangeLabel: "6:00 AM – 6:30 AM",
+        level: "low",
         source: "actual",
     });
 });
 
-it("rounds hourly averages, smooths isolated spikes, and honors the cross-day scale override", () => {
+it("preserves actual spikes and each half-hour count on the shared scale", () => {
     const slots: ForecastDisplaySlot[] = [
         {...fixtureSlots[0], startMinute: 360, endMinute: 390, count: 40},
         {...fixtureSlots[1], startMinute: 390, endMinute: 420, count: 41},
-        {...fixtureSlots[2], startMinute: 420, endMinute: 450, count: 200},
-        {...fixtureSlots[3], startMinute: 450, endMinute: 480, count: 200},
+        {...fixtureSlots[2], startMinute: 420, endMinute: 450, count: 200, source: "actual"},
+        {...fixtureSlots[3], startMinute: 450, endMinute: 480, count: 200, source: "actual"},
         {...fixtureSlots[4], startMinute: 480, endMinute: 510, count: 42},
         {...fixtureSlots[5], startMinute: 510, endMinute: 540, count: 43},
     ];
 
-    const model = buildHistogramModel(slots, 240, fixtureThresholds);
-    expect(model?.bars.map(({rawCount, count, wasSmoothed}) => ({rawCount, count, wasSmoothed}))).toEqual([
-        {rawCount: 41, count: 41, wasSmoothed: false},
-        {rawCount: 200, count: 42, wasSmoothed: true},
-        {rawCount: 43, count: 43, wasSmoothed: false},
-    ]);
+    const model = buildHistogramModel(slots, 240);
+    expect(model?.bars.map((bar) => bar.count)).toEqual([40, 41, 200, 200, 42, 43]);
+    expect(model?.maxCount).toBe(200);
+    expect(model?.bars[2].height).toBeCloseTo(116.8);
     expect(model?.yMax).toBe(250);
+});
+
+it("uses one half-hour interval for a bar's height, count, and crowd color", () => {
+    const model = buildHistogramModel([
+        {...fixtureSlots[0], count: 40, level: "low"},
+        {...fixtureSlots[1], count: 160, level: "peak"},
+    ], 200);
+
+    expect(model?.bars.map(({startMinute, endMinute, count, level}) => (
+        {startMinute, endMinute, count, level}
+    ))).toEqual([
+        {startMinute: 360, endMinute: 390, count: 40, level: "low"},
+        {startMinute: 390, endMinute: 420, count: 160, level: "peak"},
+    ]);
+    expect(model?.bars[0].height).toBeCloseTo(29.2);
+    expect(model?.bars[1].height).toBeCloseTo(116.8);
 });
 
 it("keeps totalHours precedence, Chicago cutoff, ratio values, and schedule clipping", () => {
@@ -148,17 +164,70 @@ it("uses category aggregation only when totalHours is empty", () => {
     expect(categorySlots[0]).toMatchObject({startMinute: 450, count: 30, percent: null});
 });
 
-it("merges and bridges slot-derived crowd bands without changing source values", () => {
+it.each(["total", "category"])("keeps repeated clock hours separate and uses actuals only after each hour completes in %s data", (path) => {
+    const hours = ["-05:00", "-06:00"].flatMap((offset) => ["00", "15", "30", "45"].map((minute) => ({
+        hourStart: `2026-11-01T01:${minute}:00${offset}`, expectedCount: 90, expectedPct: 0.45,
+        actualCount: offset === "-05:00" ? 30 : 40, actualPct: offset === "-05:00" ? 0.15 : 0.2,
+    })));
+    const day: ForecastDay = {date: "2026-11-01", dayName: "Sunday",
+        ...(path === "total" ? {totalHours: hours} : {categories: [{key: "fitness floors", title: "Fitness Floors", hours}]}),
+    };
+    const slots = buildForecastDisplaySlots(day, [], false, fixtureThresholds, [], Date.parse("2026-11-01T01:15:00-06:00"));
+
+    expect(slots.map(({startTs, count, source}) => ({startTs, count, source}))).toEqual([
+        {startTs: Date.parse("2026-11-01T06:00:00Z"), count: 30, source: "actual"},
+        {startTs: Date.parse("2026-11-01T06:30:00Z"), count: 30, source: "actual"},
+        {startTs: Date.parse("2026-11-01T07:00:00Z"), count: 90, source: "predicted"},
+        {startTs: Date.parse("2026-11-01T07:30:00Z"), count: 90, source: "predicted"},
+    ]);
+});
+
+it("derives a missing actual percentage from its reported capacity", () => {
+    const day: ForecastDay = {date: "2026-09-24", dayName: "Thursday", totalHours: [{
+        hourStart: "2026-09-24T08:00:00-05:00", expectedCount: 180, expectedPct: 0.9,
+        actualCount: 40, expectedCapacity: 200,
+    }]};
+    const bands = [{start: "2026-09-24T08:00:00-05:00", end: "2026-09-24T09:00:00-05:00", level: "peak" as const}];
+    const slots = buildForecastDisplaySlots(day, [], false, fixtureThresholds, bands, Date.parse("2026-09-24T10:00:00-05:00"));
+
+    expect(slots[0]).toMatchObject({count: 40, percent: 0.2, source: "actual", level: "low"});
+});
+
+it.each(["total", "category"])("does not borrow a forecast color for an unclassified actual count in %s data", (path) => {
+    const hours = [{hourStart: "2026-09-24T08:00:00-05:00", expectedCount: 180, expectedPct: 0.9, actualCount: 40}];
+    const day: ForecastDay = {date: "2026-09-24", dayName: "Thursday",
+        ...(path === "total" ? {totalHours: hours} : {categories: [{key: "fitness floors", title: "Fitness Floors", hours}]}),
+    };
+    const bands = [{start: "2026-09-24T08:00:00-05:00", end: "2026-09-24T09:00:00-05:00", level: "peak" as const}];
+    const slots = buildForecastDisplaySlots(day, [], false, fixtureThresholds, bands, Date.parse("2026-09-24T10:00:00-05:00"));
+
+    expect(slots[0]).toMatchObject({count: 40, percent: null, source: "actual", level: "unknown"});
+    expect(buildCrowdBandsFromDisplaySlots(slots)).toEqual([]);
+});
+
+it("keeps a partially observed category slot labeled as actual plus forecast", () => {
+    const day: ForecastDay = {date: "2026-09-24", dayName: "Thursday", categories: [{
+        key: "fitness floors", title: "Fitness Floors", hours: [
+            {hourStart: "2026-09-24T08:00:00-05:00", expectedCount: 180, actualCount: 40},
+            {hourStart: "2026-09-24T08:15:00-05:00", expectedCount: 180},
+        ],
+    }]};
+    const slots = buildForecastDisplaySlots(day, [], false, fixtureThresholds, [], Date.parse("2026-09-24T10:00:00-05:00"));
+
+    expect(slots[0]).toMatchObject({count: 110, source: "mixed", level: "unknown"});
+});
+
+it("keeps a short different crowd level in the range summary", () => {
     const slots: ForecastDisplaySlot[] = [
         {...fixtureSlots[0], startTs: 0, endTs: 1_800_000, level: "low"},
         {...fixtureSlots[1], startTs: 1_800_000, endTs: 3_600_000, level: "medium"},
         {...fixtureSlots[2], startTs: 3_600_000, endTs: 5_400_000, level: "low"},
     ];
 
-    expect(buildCrowdBandsFromDisplaySlots(slots)).toEqual([{
-        start: "1970-01-01T00:00:00.000Z",
-        end: "1970-01-01T01:30:00.000Z",
-        level: "low",
-    }]);
+    expect(buildCrowdBandsFromDisplaySlots(slots)).toEqual([
+        {start: "1970-01-01T00:00:00.000Z", end: "1970-01-01T00:30:00.000Z", level: "low"},
+        {start: "1970-01-01T00:30:00.000Z", end: "1970-01-01T01:00:00.000Z", level: "medium"},
+        {start: "1970-01-01T01:00:00.000Z", end: "1970-01-01T01:30:00.000Z", level: "low"},
+    ]);
     expect(slots.map((slot) => slot.source)).toEqual(["actual", "actual", "predicted"]);
 });

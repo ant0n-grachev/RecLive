@@ -9,6 +9,8 @@ import {ApiError, requestJson} from "./client";
 import {actualHoursResponseSchema, forecastResponseSchema} from "./schemas";
 
 const CHICAGO_TIMEZONE = "America/Chicago";
+// Chicago hourly buckets also start on UTC hours, including both fall-back offsets.
+const MS_PER_HOUR = 60 * 60 * 1000;
 
 export interface FacilityForecastPayload {
     days: ForecastDay[];
@@ -334,7 +336,7 @@ export const mergeActualHoursIntoDays = (
                 const hours = category.hours.map((hour) => {
                     const hourEpoch = parseExplicitHourEpoch(hour.hourStart);
                     if (hourEpoch === null) return hour;
-                    const actualHour = hoursByStart.get(hourEpoch);
+                    const actualHour = hoursByStart.get(Math.floor(hourEpoch / MS_PER_HOUR) * MS_PER_HOUR);
                     if (!actualHour) return hour;
                     return mergeActualHour(hour, actualHour);
                 });
@@ -347,7 +349,7 @@ export const mergeActualHoursIntoDays = (
             totalHours = day.totalHours.map((hour) => {
                 const hourEpoch = parseExplicitHourEpoch(hour.hourStart);
                 if (hourEpoch === null) return hour;
-                const actualHour = totalHoursByStart.get(hourEpoch);
+                const actualHour = totalHoursByStart.get(Math.floor(hourEpoch / MS_PER_HOUR) * MS_PER_HOUR);
                 if (!actualHour) return hour;
                 return mergeActualHour(hour, actualHour);
             });

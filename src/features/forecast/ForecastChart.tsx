@@ -2,10 +2,11 @@ import {Box} from "@mui/material";
 import {alpha, useTheme} from "@mui/material/styles";
 import {
     getHistogramBandStyle,
-    getVisibleHistogramSegments,
+    isHistogramLevelVisible,
     type CrowdBandLevel,
 } from "./forecastBands";
 import {
+    FORECAST_SOURCE_LABELS,
     HISTOGRAM_HOUR_LABEL_FONT_SIZE,
     type HistogramModel,
 } from "./forecastHistogram";
@@ -14,8 +15,8 @@ interface Props {
     histogram: HistogramModel;
     selectedLevelSet: Set<CrowdBandLevel>;
     showAllHistogramLevels: boolean;
-    selectedStartMinute: number | null;
-    onToggleBar: (startMinute: number) => void;
+    selectedStartTs: number | null;
+    onToggleBar: (startTs: number) => void;
     currentTimeMarker: {x: number; label: string} | null;
 }
 
@@ -23,7 +24,7 @@ export default function ForecastChart({
     histogram,
     selectedLevelSet,
     showAllHistogramLevels,
-    selectedStartMinute,
+    selectedStartTs,
     onToggleBar,
     currentTimeMarker,
 }: Props) {
@@ -44,7 +45,7 @@ export default function ForecastChart({
             component="svg"
             viewBox={`0 0 ${histogram.viewBoxWidth} ${histogram.viewBoxHeight}`}
             role="img"
-            aria-label="People histogram by hourly forecast bar"
+            aria-label="People by half hour"
             sx={{
                 display: "block",
                 width: "100%",
@@ -78,72 +79,31 @@ export default function ForecastChart({
             ))}
             {histogram.bars.map((bar, index) => {
                 const style = getHistogramBandStyle(bar.level);
-                const leftStyle = getHistogramBandStyle(bar.segmentLevels[0]);
-                const rightStyle = getHistogramBandStyle(bar.segmentLevels[1]);
-                const [leftVisible, rightVisible] = getVisibleHistogramSegments(
-                    bar,
-                    selectedLevelSet,
-                    showAllHistogramLevels
-                );
-                const hasVisibleSegments = leftVisible || rightVisible;
+                const isVisible = isHistogramLevelVisible(bar.level, selectedLevelSet, showAllHistogramLevels);
                 const roundedCount = Math.max(0, Math.round(bar.count));
-                const isSelected = selectedStartMinute === bar.startMinute;
+                const isSelected = selectedStartTs === bar.startTs;
                 const axisLabelY = histogram.baselineY + 22;
-                const halfWidth = bar.width / 2;
-                const outlineX = leftVisible ? bar.x : bar.x + halfWidth;
-                const outlineWidth = leftVisible && rightVisible
-                    ? bar.width
-                    : leftVisible
-                        ? halfWidth
-                        : rightVisible
-                            ? bar.width - halfWidth
-                            : 0;
 
                 return (
                     <g
-                        key={`bar-${bar.startMinute}-${index}`}
-                        role={hasVisibleSegments ? "button" : undefined}
-                        tabIndex={hasVisibleSegments ? 0 : -1}
+                        key={`bar-${bar.startTs}-${index}`}
+                        role={isVisible ? "button" : undefined}
+                        tabIndex={isVisible ? 0 : -1}
                         onClick={() => {
-                            if (!hasVisibleSegments) return;
-                            onToggleBar(bar.startMinute);
+                            if (!isVisible) return;
+                            onToggleBar(bar.startTs);
                         }}
                         onKeyDown={(event) => {
-                            if (!hasVisibleSegments) return;
+                            if (!isVisible) return;
                             if (event.key !== "Enter" && event.key !== " ") return;
                             event.preventDefault();
-                            onToggleBar(bar.startMinute);
+                            onToggleBar(bar.startTs);
                         }}
-                        aria-label={`${bar.rangeLabel}, ${roundedCount} people`}
-                        aria-hidden={!hasVisibleSegments}
-                        style={{cursor: hasVisibleSegments ? "pointer" : "default"}}
+                        aria-label={`${bar.rangeLabel}, ${FORECAST_SOURCE_LABELS[bar.source]}, ${roundedCount} people`}
+                        aria-hidden={!isVisible}
+                        style={{cursor: isVisible ? "pointer" : "default"}}
                     >
-                        {bar.hasSplit ? (
-                            <>
-                                {leftVisible && (
-                                    <rect
-                                        x={bar.x}
-                                        y={bar.y}
-                                        width={halfWidth}
-                                        height={bar.height}
-                                        fill={leftStyle.color}
-                                        stroke="none"
-                                        rx={0}
-                                    />
-                                )}
-                                {rightVisible && (
-                                    <rect
-                                        x={bar.x + halfWidth}
-                                        y={bar.y}
-                                        width={bar.width - halfWidth}
-                                        height={bar.height}
-                                        fill={rightStyle.color}
-                                        stroke="none"
-                                        rx={0}
-                                    />
-                                )}
-                            </>
-                        ) : hasVisibleSegments ? (
+                        {isVisible && (
                             <rect
                                 x={bar.x}
                                 y={bar.y}
@@ -153,12 +113,12 @@ export default function ForecastChart({
                                 stroke="none"
                                 rx={0}
                             />
-                        ) : null}
-                        {hasVisibleSegments && (
+                        )}
+                        {isVisible && (
                             <rect
-                                x={outlineX}
+                                x={bar.x}
                                 y={bar.y}
-                                width={outlineWidth}
+                                width={bar.width}
                                 height={bar.height}
                                 fill="none"
                                 stroke={isSelected ? selectedBarStroke : barSeparatorStroke}
