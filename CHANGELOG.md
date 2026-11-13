@@ -5,6 +5,13 @@ and [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+### Changed
+
+- Explain local setup, data flow, and testing in the README and keep deployment
+  procedures in the operator runbook.
+- Clarify the distinction between training diagnostics and the hourly
+  comparisons of published forecasts, including the missing baseline comparison.
+
 ### Fixed
 
 - Keep all occupancy observations from a timestamp together during model tuning

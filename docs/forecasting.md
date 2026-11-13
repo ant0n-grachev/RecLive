@@ -104,11 +104,10 @@ facility counts, their timestamps and thresholds, `generatedAt`, and a separate
 90 days; unrelated files are not pruned. These are backend artifacts and must
 never be included in the frontend deployment.
 
-For genuine forecast evaluation, compare only targets after `publishedAt` with
-qualified actuals, grouped by lead time. Compare the final served counts with a
-simple baseline. The historical chart and the terminal model metrics documented above are
-not substitutes for that evaluation. Archiving makes future verification possible;
-it does not itself establish an accuracy score.
+The hourly verifier compares targets after `publishedAt` with qualified
+actuals, grouped by lead time. A future baseline comparison should use the
+same targets and only data available at each publication cutoff. The chart's
+historical view and the terminal model diagnostics measure different quantities.
 
 ## Hourly verification
 
