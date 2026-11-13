@@ -10,7 +10,8 @@ permissions:
 
 jobs:
   frontend:
-    runs-on: ubuntu-latest
+    # Playwright 1.55 does not install Chromium on Ubuntu 26.04.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,6 +19,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run check:version
       - run: env -u NODE_OPTIONS node --test tests/frontend/isolation.test.mjs tests/frontend/vitest-mocker-security.test.mjs
       - run: npm run lint
       - run: env -u NODE_OPTIONS node tests/frontend/run-isolated.cjs build

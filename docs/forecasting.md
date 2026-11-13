@@ -4,6 +4,15 @@ RecLive uses NumPy and XGBoost to turn historical location counts, calendar patt
 
 The implementation lives in `server/reclive/forecasting/`: `data.py` loads inputs, `features.py` prepares features, `training.py` fits and selects models, `prediction.py` produces forecasts, and `reporting.py` and `metrics.py` qualify diagnostics. `job.py` coordinates the pipeline; `server/forecast_job.py` remains the command entry point.
 
+## Hyperparameter tuning
+
+Tuning expands the training window across successive time cutoffs and validates
+against later, disjoint windows. All location rows at a given timestamp stay
+together, including at both ends of each validation window. Tuning uses up to
+`MODEL_TUNING_CV_FOLDS` folds with at least 20 training and 10 validation rows
+per fold. With no usable fold, the model keeps its base parameters. The final
+training/validation split and the terminal holdout use their own time cutoffs.
+
 ## Forecast reporting diagnostics
 
 The generated forecast's `modelInfo.metrics` and `modelInfo.metricContext`
@@ -95,11 +104,10 @@ facility counts, their timestamps and thresholds, `generatedAt`, and a separate
 90 days; unrelated files are not pruned. These are backend artifacts and must
 never be included in the frontend deployment.
 
-For genuine forecast evaluation, compare only targets after `publishedAt` with
-qualified actuals, grouped by lead time. Compare the final served counts with a
-simple baseline. The historical chart and the terminal model metrics documented above are
-not substitutes for that evaluation. Archiving makes future verification possible;
-it does not itself establish an accuracy score.
+The hourly verifier compares targets after `publishedAt` with qualified
+actuals, grouped by lead time. A future baseline comparison should use the
+same targets and only data available at each publication cutoff. The chart's
+historical view and the terminal model diagnostics measure different quantities.
 
 ## Hourly verification
 

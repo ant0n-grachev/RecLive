@@ -33,6 +33,14 @@ This runbook describes actions for a future explicitly authorized operator. It i
 
 ## Deploy
 
+Netlify serves the frontend from `main` using `npm run build` and the
+`dist/` publish directory. Its `_redirects` file provides the SPA fallback.
+The Python API and scheduled jobs run on a privately managed Synology host.
+Use the existing service and scheduler configuration for an established
+installation. Keep a previous verified deployment available for application
+rollback. Database schema recovery follows the separate
+[database migration procedure](database.md).
+
 1. Obtain explicit release authorization for the exact commit SHA and target. Record the source branch, target environment, backup evidence, and responsible operator.
 2. Build and publish the frontend using only the two public browser variables. Serve the generated `dist/` artifact with SPA fallback for `/nick` and `/bakke`; do not publish `.env`, forecast or model artifacts, database data, push material, or private backup bundles.
 3. Inject backend-only settings through the backend host. Do not place backend settings in the frontend build or record their values.
