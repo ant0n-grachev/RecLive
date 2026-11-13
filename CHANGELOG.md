@@ -13,6 +13,8 @@ and [Semantic Versioning](https://semver.org/).
   procedures in the operator runbook.
 - Clarify the distinction between training diagnostics and the hourly
   comparisons of published forecasts, including the missing baseline comparison.
+- Show how to initialize an empty local database using the local environment
+  file and the migration command's cutover flag.
 
 ### Fixed
 

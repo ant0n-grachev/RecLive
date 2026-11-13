@@ -48,16 +48,18 @@ python -m pip install -r server/requirements.txt -r server/requirements-dev.txt
 cp -n .env.example .env
 ```
 
-Set the local values shown below and point `GYM_DB_*` at a new, empty local database. Apply the migrations and start the API.
+Set the local values shown below and replace the `GYM_DB_*` placeholders with credentials for a new, empty local database. Run the migrations with that local configuration, then start the API.
 
 ```bash
-python server/migrate.py
+PUSH_RULE_SCHEMA_CUTOVER_READY=1 dotenv run --override -- python server/migrate.py
 uvicorn server.forecast_api:app --host 127.0.0.1 --port 8000 --reload
 ```
 
+The cutover flag applies only to the migration command. The [database guide](docs/operations/database.md) covers safeguards for existing databases.
+
 In a second terminal from the repository root, run `npm run dev -- --host 127.0.0.1 --port 5173`. Open [the local dashboard](http://127.0.0.1:5173/nick) or [the API docs](http://127.0.0.1:8000/docs).
 
-To populate local state, configure the upstream sources before running `python server/facility_hours_fetch.py`, `python server/gym_fetch.py`, and `python server/forecast_job.py`. These commands fetch external data and write local state. Meaningful forecasts require historical observations. Use the [database guide](docs/operations/database.md) for an existing installation and the [operator runbook](docs/operations/runbook.md) for deployment and scheduling.
+To populate local state, configure the upstream sources before running `python server/facility_hours_fetch.py`, `python server/gym_fetch.py`, and `python server/forecast_job.py`. These commands fetch external data and write local state. Meaningful forecasts require historical observations. See the [operator runbook](docs/operations/runbook.md) for deployment and scheduling.
 
 ## Configuration
 
@@ -67,6 +69,11 @@ VITE_SITE_URL=http://127.0.0.1:5173
 FORECAST_API_ALLOW_ORIGINS=http://127.0.0.1:5173
 APP_ENV=development
 PUSH_EVALUATOR_ENABLED=false
+GYM_DB_HOST=127.0.0.1
+GYM_DB_PORT=3306
+GYM_DB_NAME=reclive_dev
+GYM_DB_USER=reclive_local
+GYM_DB_PASSWORD=replace_with_local_password
 ```
 
 Only `VITE_API_BASE_URL` and `VITE_SITE_URL` enter the browser build. The API base is an origin or deployment prefix without an `/api` suffix. Keep database credentials, `LIVE_COUNTS_URL`, and VAPID and push settings on the backend. See [the example environment](.env.example) for available settings and defaults.
