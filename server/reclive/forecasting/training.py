@@ -4,6 +4,7 @@ import sys as _sys
 from server.reclive.forecasting import config, data, features, metrics, prediction
 import math
 import random
+from bisect import bisect_left, bisect_right
 from server.reclive.observability import best_effort_event
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
@@ -839,27 +840,42 @@ def sorted_time_indices(times: List[datetime]) -> List[int]:
 
 
 def build_time_series_cv_splits(times: List[datetime], folds: int) -> List[Tuple[List[int], List[int]]]:
+    """Return expanding training windows and disjoint validation windows."""
     n = len(times)
     if n < 60:
         return []
 
     sorted_idx = sorted_time_indices(times)
-    folds = max(2, int(folds))
-    splits: List[Tuple[List[int], List[int]]] = []
+    boundaries = [
+        pos for pos in range(1, n) if times[sorted_idx[pos - 1]] != times[sorted_idx[pos]]
+    ]
+    min_train_rows = 20
+    min_validation_rows = 10
 
-    for fold in range(1, folds + 1):
-        train_end = int(round(n * (fold / float(folds + 1))))
-        val_end = int(round(n * ((fold + 1) / float(folds + 1))))
-        train_end = max(20, min(train_end, n - 20))
-        val_end = max(train_end + 10, min(val_end, n))
-        if val_end - train_end < 10:
-            continue
-        train_idx = sorted_idx[:train_end]
-        val_idx = sorted_idx[train_end:val_end]
-        if len(train_idx) >= 20 and len(val_idx) >= 10:
-            splits.append((train_idx, val_idx))
+    # Reserve room for later folds before placing the earlier boundaries.
+    # Working backward gives the latest possible start of each validation window.
+    latest_starts = []
+    end = n
+    for _ in range(max(1, int(folds))):
+        index = bisect_right(boundaries, end - min_validation_rows) - 1
+        if index < 0 or boundaries[index] < min_train_rows:
+            break
+        end = boundaries[index]
+        latest_starts.append(end)
 
-    return splits
+    starts = []
+    earliest = min_train_rows
+    for fold, latest in enumerate(reversed(latest_starts), start=1):
+        target = round(n * fold / (len(latest_starts) + 1))
+        index = bisect_left(boundaries, max(earliest, target))
+        start = latest if index == len(boundaries) else min(latest, boundaries[index])
+        starts.append(start)
+        earliest = start + min_validation_rows
+
+    return [
+        (sorted_idx[:start], sorted_idx[start:end])
+        for start, end in zip(starts, starts[1:] + [n])
+    ]
 
 
 def tuning_params_complexity_score(params: Dict[str, object]) -> float:

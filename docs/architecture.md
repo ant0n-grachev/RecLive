@@ -2,10 +2,28 @@
 
 ## Architecture and configuration boundaries
 
-The browser is a React/Vite PWA. The FastAPI service reads current snapshots,
-forecasts, schedules, and push state from backend-only configuration. MySQL
-retains schema migrations, current occupancy snapshots, history, ingestion
-runs, alert rules, and rate-limit counters.
+The browser is a React/Vite PWA. The FastAPI service reads current snapshots
+and push state from SQL, plus forecasts and schedules from backend artifacts.
+MySQL or MariaDB retains schema migrations, current occupancy snapshots,
+history, ingestion runs, alert rules, and rate-limit counters.
+
+```mermaid
+flowchart LR
+    Feed[Official occupancy feed] --> Dashboard[React PWA]
+    Feed --> Collector[Occupancy collector]
+    Collector --> DB[(MySQL or MariaDB)]
+    Hours[Official opening hours] --> Schedules[Schedule collector]
+    Schedules --> Forecast[XGBoost forecast job]
+    Weather[Open-Meteo] --> Forecast
+    DB --> Forecast
+    Forecast --> API[FastAPI]
+    DB --> API
+    Schedules --> API
+    API --> Dashboard
+    Dashboard -->|Alert rules| API
+    API --> Push[Web Push provider]
+    Push --> Dashboard
+```
 
 Live occupancy tries the public feed used by UW RecWell's
 [Live Building Usage widget](https://recwell.wisc.edu/locations/) first, then
@@ -45,3 +63,19 @@ third build-time variable. Push subscriptions are browser-generated runtime
 material sent to the backend. They must not be bundled, logged, or exposed by
 public/readiness responses, while the VAPID private key always remains on the
 backend.
+
+## Implementation map
+
+- React Router handles the facility routes. Material UI, Emotion, Roboto,
+  and Framer Motion supply the responsive interface. SVG overlays provide
+  interactive floor maps.
+- Axios and Zod handle requests and response validation. The custom Workbox
+  service worker provides app-shell caching and update prompts.
+- FastAPI runs under Uvicorn and uses PyMySQL for database access. Requests and
+  Beautiful Soup handle occupancy ingestion and schedule extraction.
+- Forecasting uses NumPy and XGBoost with Open-Meteo inputs. The Python backend
+  uses pywebpush and VAPID to send browser notifications.
+
+The dependency pins are in [`package-lock.json`](../package-lock.json),
+[`server/requirements.txt`](../server/requirements.txt), and
+[`server/requirements-dev.txt`](../server/requirements-dev.txt).
