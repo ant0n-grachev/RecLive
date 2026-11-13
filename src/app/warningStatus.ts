@@ -33,7 +33,7 @@ export interface WarningResolution {
 
 const WARNING_TEXT: Record<Exclude<WarningKind, "none">, string> = {
     offline_cache:
-        "You're offline right now. Showing your last saved snapshot; live occupancy is paused and predictions are hidden until the connection is back.",
+        "You're offline right now. Showing your last saved snapshot. Live occupancy is paused and predictions are hidden until the connection is back.",
     total_outage_cache:
         "Live and prediction services are temporarily unavailable right now. Showing the last saved snapshot while systems recover, so occupancy is not live and predictions are hidden.",
     prediction_unavailable:

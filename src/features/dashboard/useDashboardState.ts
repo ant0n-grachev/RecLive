@@ -310,7 +310,7 @@ export function useDashboardState({
 
         window.recliveShowPredictions = () => {
             setPredictionOverride(true);
-            return "Prediction override enabled. Warnings hidden; predictions forced visible.";
+            return "Prediction override enabled. Warnings are hidden and predictions are visible.";
         };
         window.recliveRestoreWarnings = () => {
             setPredictionOverride(false);

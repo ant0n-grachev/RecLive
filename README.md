@@ -1,6 +1,6 @@
 # RecLive
 
-RecLive helps UW–Madison students choose when and where to exercise using gym occupancy, forecasts, and alerts.
+RecLive helps UW-Madison students choose when and where to exercise using gym occupancy, forecasts, and alerts.
 
 ## Overview
 
@@ -129,6 +129,6 @@ The frontend launcher uses synthetic public URLs. Browser tests cover the built 
 
 ## Versioning and credits
 
-See the [changelog](CHANGELOG.md) for upcoming changes. RecLive uses Semantic Versioning. The application version is in [`package.json`](package.json) and is mirrored in [`package-lock.json`](package-lock.json). Release labels use `vX.Y.Z`. The prepared application version is `v0.0.2` (unreleased).
+See the [changelog](CHANGELOG.md) for upcoming changes. RecLive uses Semantic Versioning. The application version is in [`package.json`](package.json) and is mirrored in [`package-lock.json`](package-lock.json). Release labels use `vX.Y.Z`. The prepared application version is `v0.0.3` (unreleased).
 
 Built by Anton and [Alex](https://github.com/alexgabrichidze) under the [Apache 2.0 license](LICENSE). Open an issue for general feedback and follow [the security policy](SECURITY.md) for sensitive reports.

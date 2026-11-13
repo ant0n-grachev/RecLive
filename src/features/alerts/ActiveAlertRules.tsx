@@ -119,7 +119,7 @@ export default function ActiveAlertRules({
                                         <Stack direction={{xs: "column", sm: "row"}} spacing={1} justifyContent="space-between">
                                             <Box>
                                                 <Typography variant="body2">
-                                                    {`${FACILITY_SHORT_NAMES[rule.facilityId]} — ${sectionLabel} — ${rule.threshold}%`}
+                                                    {ruleLabel}
                                                 </Typography>
                                                 <Typography
                                                     component="time"

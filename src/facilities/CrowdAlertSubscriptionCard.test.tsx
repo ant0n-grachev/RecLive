@@ -632,7 +632,7 @@ describe("CrowdAlertSubscriptionCard server-backed alert management", () => {
         const item = await screen.findByRole("listitem", {
             name: "Alert for Bakke Area: legacy cardio at 25%, expires Sep 3, 2026 at 7:00 AM CDT",
         });
-        expect(item).toHaveTextContent("Bakke — Area: legacy cardio — 25%");
+        expect(item).toHaveTextContent("Bakke Area: legacy cardio at 25%");
         const cancel = within(item).getByRole("button", {
             name: "Cancel alert for Bakke Area: legacy cardio at 25%",
         });

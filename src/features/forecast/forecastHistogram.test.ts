@@ -83,7 +83,7 @@ it("shows the available hourly interval without adding neighboring hours", () =>
         count: 40,
         startMinute: 360,
         endMinute: 420,
-        rangeLabel: "6:00 AM – 7:00 AM",
+        rangeLabel: "6:00 AM - 7:00 AM",
         level: "low",
         source: "actual",
     });

@@ -79,11 +79,11 @@ describe("ForecastCard", () => {
         const bar = screen.getAllByRole("button").find((element) => /people$/.test(element.getAttribute("aria-label") ?? ""));
         expect(bar).toBeDefined();
         fireEvent.keyDown(bar!, {key: "Enter"});
-        expect(screen.getByText(/AM – .*AM: \d+$/)).toBeInTheDocument();
+        expect(screen.getByText(/AM - .*AM: \d+$/)).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole("button", {name: "PEAK"}));
         expect(screen.getByText("No matching intervals.")).toBeInTheDocument();
-        expect(screen.queryByText(/AM – .*AM: \d+$/)).not.toBeInTheDocument();
+        expect(screen.queryByText(/AM - .*AM: \d+$/)).not.toBeInTheDocument();
     });
 
     it("shows one hourly count and color that agree with the hourly crowd range", () => {
@@ -98,17 +98,17 @@ describe("ForecastCard", () => {
         });
         fireEvent.click(screen.getByRole("button", {name: "Show crowd chart"}));
         const chart = screen.getByRole("img", {name: "People by hour"});
-        const medium = within(chart).getByRole("button", {name: "10:00 AM – 11:00 AM, 249 people"});
-        const peak = within(chart).getByRole("button", {name: "11:00 AM – 12:00 PM, 300 people"});
+        const medium = within(chart).getByRole("button", {name: "10:00 AM - 11:00 AM, 249 people"});
+        const peak = within(chart).getByRole("button", {name: "11:00 AM - 12:00 PM, 300 people"});
         const mediumRect = medium.querySelector("rect")!;
         const peakRect = peak.querySelector("rect")!;
         expect(Number(peakRect.getAttribute("height")) / Number(mediumRect.getAttribute("height"))).toBeCloseTo(300 / 249);
         expect(peakRect.getAttribute("fill")).not.toBe(mediumRect.getAttribute("fill"));
         fireEvent.click(peak);
-        expect(screen.getByText("11:00 AM – 12:00 PM: 300")).toBeVisible();
+        expect(screen.getByText("11:00 AM - 12:00 PM: 300")).toBeVisible();
 
         fireEvent.click(screen.getByRole("button", {name: "PEAK"}));
-        expect(screen.getByText("11:00 AM – 12:00 PM")).toBeVisible();
+        expect(screen.getByText("11:00 AM - 12:00 PM")).toBeVisible();
         expect(within(chart).getAllByRole("button")).toEqual([peak]);
     });
 
@@ -120,8 +120,8 @@ describe("ForecastCard", () => {
         fireEvent.click(screen.getByRole("button", {name: "Show crowd chart"}));
         const chart = screen.getByRole("img", {name: "People by hour"});
         expect(within(chart).getAllByRole("button")).toHaveLength(1);
-        fireEvent.click(within(chart).getByRole("button", {name: "7:00 AM – 8:00 AM, 65 people"}));
-        expect(screen.getByText("7:00 AM – 8:00 AM: 65")).toBeVisible();
+        fireEvent.click(within(chart).getByRole("button", {name: "7:00 AM - 8:00 AM, 65 people"}));
+        expect(screen.getByText("7:00 AM - 8:00 AM: 65")).toBeVisible();
         expect(screen.queryByText(/actual|each bar covers|hourly averages|count and source/i)).not.toBeInTheDocument();
     });
 
@@ -134,7 +134,7 @@ describe("ForecastCard", () => {
         expect(screen.queryByText(/\(PEAK CROWD\)/)).not.toBeInTheDocument();
         expect(screen.queryByRole("button", {name: "PEAK"})).not.toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", {name: "Show crowd chart"}));
-        expect(screen.getByRole("button", {name: "7:00 AM – 8:00 AM, 40 people"})).toBeVisible();
+        expect(screen.getByRole("button", {name: "7:00 AM - 8:00 AM, 40 people"})).toBeVisible();
     });
 
     it("keeps refreshed actual bars visible when the selected crowd filter becomes unavailable", () => {
@@ -145,7 +145,7 @@ describe("ForecastCard", () => {
         const {props, rerender} = renderCard({day, comparisonDays: []});
         fireEvent.click(screen.getByRole("button", {name: "LOW"}));
         fireEvent.click(screen.getByRole("button", {name: "Show crowd chart"}));
-        fireEvent.click(screen.getByRole("button", {name: "7:00 AM – 8:00 AM, 20 people"}));
+        fireEvent.click(screen.getByRole("button", {name: "7:00 AM - 8:00 AM, 20 people"}));
 
         const actualDay = {...day, categories: [{...day.categories[0], hours: [{
             ...forecastHour, actualCount: 40, actualPct: 0.2,
@@ -159,8 +159,8 @@ describe("ForecastCard", () => {
         );
 
         expect(screen.queryByRole("button", {name: "LOW"})).not.toBeInTheDocument();
-        expect(screen.getByRole("button", {name: "7:00 AM – 8:00 AM, 40 people"})).toBeVisible();
-        expect(screen.getByText("7:00 AM – 8:00 AM: 40")).toBeVisible();
+        expect(screen.getByRole("button", {name: "7:00 AM - 8:00 AM, 40 people"})).toBeVisible();
+        expect(screen.getByText("7:00 AM - 8:00 AM: 40")).toBeVisible();
     });
 
     it("selects the correct count when two bars share a fall-back clock time", () => {
@@ -170,10 +170,10 @@ describe("ForecastCard", () => {
             {hourStart: "2026-11-01T01:00:00-06:00", expectedCount: 90, expectedPct: 0.45, actualCount: 40, actualPct: 0.2},
         ]}, comparisonDays: []});
         fireEvent.click(screen.getByRole("button", {name: "Show crowd chart"}));
-        fireEvent.click(screen.getByRole("button", {name: "1:00 AM – 2:00 AM, 30 people"}));
-        expect(screen.getByText("1:00 AM – 2:00 AM: 30")).toBeVisible();
-        fireEvent.click(screen.getByRole("button", {name: "1:00 AM – 2:00 AM, 90 people"}));
-        expect(screen.getByText("1:00 AM – 2:00 AM: 90")).toBeVisible();
+        fireEvent.click(screen.getByRole("button", {name: "1:00 AM - 2:00 AM, 30 people"}));
+        expect(screen.getByText("1:00 AM - 2:00 AM: 30")).toBeVisible();
+        fireEvent.click(screen.getByRole("button", {name: "1:00 AM - 2:00 AM, 90 people"}));
+        expect(screen.getByText("1:00 AM - 2:00 AM: 90")).toBeVisible();
     });
 
     it("preserves best and avoid window fallback copy", () => {

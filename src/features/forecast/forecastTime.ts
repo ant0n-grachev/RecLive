@@ -37,13 +37,13 @@ export const formatTime = (value?: string): string => {
 export const formatRange = (start?: string, end?: string): string => {
     const formattedStart = formatTime(start);
     const formattedEnd = formatTime(end);
-    return `${formattedStart} – ${formattedEnd}`;
+    return `${formattedStart} - ${formattedEnd}`;
 };
 
 export const formatWindow = (window: {start?: string; end?: string}): string => {
     const start = formatTime(window.start);
     const end = formatTime(window.end);
-    return `${start} – ${end}`;
+    return `${start} - ${end}`;
 };
 
 export const parseShortDate = (value?: string | null): string | null => {
@@ -124,7 +124,7 @@ export const formatMinuteLabel = (minuteOfDay: number, includeMinutes: boolean):
 };
 
 export const formatHistogramRangeLabel = (startMinute: number, endMinute: number): string => {
-    return `${formatMinuteLabel(startMinute, true)} – ${formatMinuteLabel(endMinute, true)}`;
+    return `${formatMinuteLabel(startMinute, true)} - ${formatMinuteLabel(endMinute, true)}`;
 };
 
 export const getChicagoMinuteOfDayFromTimestamp = (timestampMs: number): number | null => {

@@ -30,15 +30,15 @@ for (const viewport of viewports) {
         await page.getByRole("button", {name: "LOW", exact: true}).click();
         await expect(page.getByText("No matching intervals.")).toBeVisible();
         await page.getByRole("button", {name: "LOW", exact: true}).click();
-        await expect(page.getByText("9:00 AM – 10:00 AM")).toBeVisible();
+        await expect(page.getByText("9:00 AM - 10:00 AM")).toBeVisible();
 
         await page.getByRole("button", {name: "Show crowd chart"}).click();
         const chart = page.getByRole("img", {name: "People by hour"});
         await expect(chart).toBeVisible();
-        const bar = chart.getByRole("button", {name: "9:00 AM – 10:00 AM, 50 people"});
+        const bar = chart.getByRole("button", {name: "9:00 AM - 10:00 AM, 50 people"});
         await bar.focus();
         await page.keyboard.press("Enter");
-        await expect(page.getByText("9:00 AM – 10:00 AM: 50")).toBeVisible();
+        await expect(page.getByText("9:00 AM - 10:00 AM: 50")).toBeVisible();
 
         await page.screenshot({
             path: testInfo.outputPath(`nick-${viewport.name}-expanded-selected.png`),

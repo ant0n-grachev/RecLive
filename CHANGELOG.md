@@ -11,6 +11,7 @@ and [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Use UW-Madison consistently and simplify punctuation in the dashboard and documentation.
 - Prepare `v0.0.1` for the tuning fix and check the application version against
   both npm lockfile root fields in CI.
 - Explain local setup, data flow, and testing in the README and keep deployment

@@ -3,7 +3,7 @@ import {ApiError} from "./client";
 import {explicitIsoDateTimeSchema, localIsoDateTimeSchema} from "./schemas";
 
 const PUBLIC_COUNTS_ENDPOINT = "https://goboardapi.azurewebsites.net/api/FacilityCount/GetCountsByAccount";
-// This identifier is published by UW–Madison's public Live Building Usage widget.
+// This identifier is published by UW-Madison's public Live Building Usage widget.
 const PUBLIC_WIDGET_ACCOUNT_ID = "7938fc89-a15c-492d-9566-12c961bc1f27";
 export const PUBLIC_LIVE_COUNTS_TIMEOUT_MS = 4_000;
 
