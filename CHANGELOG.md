@@ -5,6 +5,10 @@ and [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+### Added
+
+- Show live occupancy, the expanded crowd forecast, the floor heat map, and room-level counts in the README.
+
 ### Changed
 
 - Prepare `v0.0.1` for the tuning fix and check the application version against

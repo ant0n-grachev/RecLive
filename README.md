@@ -10,7 +10,25 @@ Check how busy the Nicholas Recreation Center (Nick) and Bakke Recreation & Well
 
 [Open RecLive](https://reclive.netlify.app) · [Nick](https://reclive.netlify.app/nick) · [Bakke](https://reclive.netlify.app/bakke)
 
-[Screenshot of the Nick dashboard with sample data](docs/media/nick-dashboard.webp)
+### Screenshots
+
+Captured on the live RecLive website. Select any preview to open the full-size screenshot.
+
+#### Nick occupancy and forecast
+
+<a href="docs/media/nick-dashboard.webp"><img src="docs/media/nick-dashboard.webp" width="260" alt="Nick live occupancy, opening hours, and tomorrow’s forecast with crowd bands and the hourly chart expanded"></a>
+
+#### Bakke floor heat map
+
+<a href="docs/media/bakke-floor-map.webp"><img src="docs/media/bakke-floor-map.webp" width="400" alt="Bakke’s first-floor map with occupancy overlays and controls for all four floors"></a>
+
+#### Bakke area occupancy
+
+<a href="docs/media/bakke-area-occupancy.webp"><img src="docs/media/bakke-area-occupancy.webp" width="310" alt="Bakke’s current counts and capacities for fitness floors, courts, track, pool, climbing, skating, esports, and simulators"></a>
+
+#### Bakke fitness floor details
+
+<a href="docs/media/bakke-fitness-floors.webp"><img src="docs/media/bakke-fitness-floors.webp" width="400" alt="Bakke’s Fitness Floors section expanded to show current counts and capacities for six rooms"></a>
 
 ## Features
 
@@ -111,6 +129,6 @@ The frontend launcher uses synthetic public URLs. Browser tests cover the built 
 
 ## Versioning and credits
 
-See the [changelog](CHANGELOG.md) for upcoming changes. RecLive uses Semantic Versioning. The application version is in [`package.json`](package.json) and is mirrored in [`package-lock.json`](package-lock.json). Release labels use `vX.Y.Z`. The prepared application version is `v0.0.1` (unreleased).
+See the [changelog](CHANGELOG.md) for upcoming changes. RecLive uses Semantic Versioning. The application version is in [`package.json`](package.json) and is mirrored in [`package-lock.json`](package-lock.json). Release labels use `vX.Y.Z`. The prepared application version is `v0.0.2` (unreleased).
 
 Built by Anton and [Alex](https://github.com/alexgabrichidze) under the [Apache 2.0 license](LICENSE). Open an issue for general feedback and follow [the security policy](SECURITY.md) for sensitive reports.
