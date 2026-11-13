@@ -26,7 +26,7 @@ def test_ci_workflows_enforce_phase_one_required_gates() -> None:
     assert set(ci_jobs) == {"frontend", "backend"}
 
     frontend = ci_jobs["frontend"]
-    assert frontend["runs-on"] == "ubuntu-latest"
+    assert frontend["runs-on"] == "ubuntu-24.04"
     frontend_steps = frontend["steps"]
     assert frontend_steps == [
         {"uses": "actions/checkout@v4"},

@@ -18,3 +18,5 @@ and [Semantic Versioning](https://semver.org/).
 
 - Keep all occupancy observations from a timestamp together during model tuning
   so that validation always uses later observations than training.
+- Run frontend CI on Ubuntu 24.04 so the pinned Playwright version can install
+  Chromium and run browser checks.
