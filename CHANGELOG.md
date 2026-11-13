@@ -7,6 +7,8 @@ and [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Prepare `v0.0.1` for the tuning fix and check the application version against
+  both npm lockfile root fields in CI.
 - Explain local setup, data flow, and testing in the README and keep deployment
   procedures in the operator runbook.
 - Clarify the distinction between training diagnostics and the hourly

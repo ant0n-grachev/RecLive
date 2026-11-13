@@ -1,12 +1,13 @@
 {
   "name": "reclive",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "check:version": "node --test tests/frontend/version.test.mjs",
     "preview": "vite preview",
     "audit": "npm audit",
     "audit:prod": "npm audit --omit=dev",

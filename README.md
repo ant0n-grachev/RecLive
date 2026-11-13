@@ -74,6 +74,7 @@ Only `VITE_API_BASE_URL` and `VITE_SITE_URL` enter the browser build. The API ba
 ## Testing
 
 ```bash
+npm run check:version
 npm run lint
 env -u NODE_OPTIONS node tests/frontend/run-isolated.cjs build
 env -u NODE_OPTIONS node tests/frontend/run-isolated.cjs test:run
@@ -103,6 +104,6 @@ The frontend launcher uses synthetic public URLs. Browser tests cover the built 
 
 ## Versioning and credits
 
-See the [changelog](CHANGELOG.md) for upcoming changes. RecLive uses Semantic Versioning. The application version is in [`package.json`](package.json) and is mirrored in [`package-lock.json`](package-lock.json). Release labels use `vX.Y.Z`.
+See the [changelog](CHANGELOG.md) for upcoming changes. RecLive uses Semantic Versioning. The application version is in [`package.json`](package.json) and is mirrored in [`package-lock.json`](package-lock.json). Release labels use `vX.Y.Z`. The prepared application version is `v0.0.1` (unreleased).
 
 Built by Anton and [Alex](https://github.com/alexgabrichidze) under the [Apache 2.0 license](LICENSE). Open an issue for general feedback and follow [the security policy](SECURITY.md) for sensitive reports.

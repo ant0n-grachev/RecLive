@@ -35,6 +35,7 @@ def test_ci_workflows_enforce_phase_one_required_gates() -> None:
             "with": {"node-version": "22", "cache": "npm"},
         },
         {"run": "npm ci"},
+        {"run": "npm run check:version"},
         {"run": "env -u NODE_OPTIONS node --test tests/frontend/isolation.test.mjs tests/frontend/vitest-mocker-security.test.mjs"},
         {"run": "npm run lint"},
         {"run": "env -u NODE_OPTIONS node tests/frontend/run-isolated.cjs build"},
